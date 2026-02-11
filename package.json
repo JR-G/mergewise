@@ -42,6 +42,9 @@
     "test:coverage:check": "bash scripts/check-coverage.sh 80",
     "prepublishOnly": "bun run lint && bun run typecheck && bun run test"
   },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "@typescript-eslint/eslint-plugin": "^8.54.0",
