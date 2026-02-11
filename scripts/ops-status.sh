@@ -8,7 +8,7 @@ printf "%-48s %-30s %-10s %s\n" "WORKTREE" "BRANCH" "STATUS" "LAST_COMMIT"
 while IFS= read -r worktree_line; do
   worktree_path="$(echo "$worktree_line" | awk '{print $1}')"
 
-  if [[ ! -d "$worktree_path/.git" && "$worktree_path" != "$REPOSITORY_ROOT" ]]; then
+  if [[ ! -d "$worktree_path/.git" && ! -f "$worktree_path/.git" && "$worktree_path" != "$REPOSITORY_ROOT" ]]; then
     continue
   fi
 

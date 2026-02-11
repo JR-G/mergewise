@@ -49,7 +49,7 @@ bun run ops:prompt -- <task-id>
 
 ## Rules
 
-- One task per branch.
-- One branch per worktree.
-- One agent per worktree.
-- No file edits outside task allowed paths.
+- Task-to-branch: one task per branch.
+- Branch-to-worktree: one branch per worktree.
+- Agent-to-worktree: one agent per worktree.
+- File boundaries: no edits outside task-allowed paths.

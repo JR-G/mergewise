@@ -2,7 +2,7 @@
 
 ## Branch
 
-`feat/<task-id>`
+`feat/<area>-<short-description>` or `fix/<area>-<short-description>`
 
 ## Goal
 
