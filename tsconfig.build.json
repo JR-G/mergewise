@@ -8,5 +8,6 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["index.ts"]
+  "include": ["index.ts", "apps/**/*.ts", "packages/**/*.ts"],
+  "exclude": ["dist", "node_modules", ".mergewise-runtime", "**/*.test.ts", "tests/**"]
 }

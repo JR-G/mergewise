@@ -1,0 +1,6 @@
+{
+  "action": "opened",
+  "repository": {
+    "full_name": "acme/widget"
+  }
+}

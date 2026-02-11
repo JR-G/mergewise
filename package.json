@@ -29,16 +29,25 @@
   ],
   "scripts": {
     "build": "bunx tsc -p tsconfig.build.json",
+    "dev:webhook": "bun run apps/webhook-api/src/main.ts",
+    "dev:worker": "bun run apps/worker/src/main.ts",
+    "wt:new": "bash scripts/worktree.sh new",
+    "wt:list": "bash scripts/worktree.sh list",
+    "wt:remove": "bash scripts/worktree.sh remove",
+    "wt:prune": "bash scripts/worktree.sh prune",
     "lint": "bunx eslint .",
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "test:coverage:check": "bash scripts/check-coverage.sh 80",
     "prepublishOnly": "bun run lint && bun run typecheck && bun run test"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "@typescript-eslint/eslint-plugin": "^8.54.0",
     "@typescript-eslint/parser": "^8.54.0",
-    "eslint": "^10.0.0",
+    "eslint": "^9.39.1",
+    "eslint-plugin-tsdoc": "^0.5.0",
     "lefthook": "^2.1.0",
     "typescript": "^5.9.3"
   }

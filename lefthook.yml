@@ -8,4 +8,4 @@ pre-push:
     build:
       run: bun run build
     test:
-      run: bun run test
+      run: bun test --coverage
