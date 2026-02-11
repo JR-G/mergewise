@@ -10,6 +10,7 @@ import {
   enqueueAnalyzePullRequestJob,
   readAllAnalyzePullRequestJobs,
 } from "./index";
+import type { OnSkippedLine } from "./index";
 
 function makeTempDir(): string {
   const dir = join(tmpdir(), `mergewise-job-store-test-${randomUUID()}`);
@@ -27,6 +28,14 @@ function makeJob(overrides: Partial<AnalyzePullRequestJob> = {}): AnalyzePullReq
     queued_at: new Date().toISOString(),
     ...overrides,
   };
+}
+
+function collectSkips(): { callback: OnSkippedLine; skips: Array<{ lineNumber: number; reason: string }> } {
+  const skips: Array<{ lineNumber: number; reason: string }> = [];
+  const callback: OnSkippedLine = (lineNumber, reason) => {
+    skips.push({ lineNumber, reason });
+  };
+  return { callback, skips };
 }
 
 describe("job-store", () => {
@@ -78,15 +87,25 @@ describe("job-store", () => {
   test("skips malformed JSON without throwing", () => {
     enqueueAnalyzePullRequestJob(makeJob(), filePath);
     writeFileSync(filePath, "not-json\n", "utf8");
-    const result = readAllAnalyzePullRequestJobs(filePath);
+
+    const { callback, skips } = collectSkips();
+    const result = readAllAnalyzePullRequestJobs(filePath, callback);
+
     expect(result).toEqual([]);
+    expect(skips).toHaveLength(1);
+    expect(skips[0]!.lineNumber).toBe(1);
   });
 
   test("skips valid JSON with wrong shape", () => {
     enqueueAnalyzePullRequestJob(makeJob(), filePath);
     writeFileSync(filePath, `${JSON.stringify({ random: "object" })}\n`, "utf8");
-    const result = readAllAnalyzePullRequestJobs(filePath);
+
+    const { callback, skips } = collectSkips();
+    const result = readAllAnalyzePullRequestJobs(filePath, callback);
+
     expect(result).toEqual([]);
+    expect(skips).toHaveLength(1);
+    expect(skips[0]!.reason).toBe("shape mismatch");
   });
 
   test("round-trips enqueue then read", () => {

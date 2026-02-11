@@ -12,6 +12,21 @@ import type { AnalyzePullRequestJob } from "@mergewise/shared-types";
 export const DEFAULT_JOB_FILE_PATH = ".mergewise-runtime/jobs.ndjson";
 
 /**
+ * Callback invoked when a queue line is skipped during reading.
+ *
+ * @param lineNumber - One-indexed line number in the queue file.
+ * @param reason - Human-readable reason the line was skipped.
+ */
+export type OnSkippedLine = (lineNumber: number, reason: string) => void;
+
+/**
+ * Default skip handler that logs to stderr.
+ */
+function defaultOnSkippedLine(lineNumber: number, reason: string): void {
+  console.error(`[job-store] skipping queue line=${lineNumber}: ${reason}`);
+}
+
+/**
  * Ensures the parent directory for a file path exists.
  *
  * @param filePath - Path to the target file.
@@ -62,14 +77,17 @@ export function enqueueAnalyzePullRequestJob(
  * Reads all currently queued jobs from the local NDJSON queue file.
  *
  * @remarks
- * Malformed JSON lines and shape-mismatched payloads are skipped with logging
- * so one bad entry does not prevent the rest of the queue from being read.
+ * Malformed JSON lines and shape-mismatched payloads are skipped via the
+ * `onSkippedLine` callback so one bad entry does not prevent the rest of the
+ * queue from being read.
  *
  * @param filePath - Optional file path override for tests/local customization.
+ * @param onSkippedLine - Optional callback for skipped lines. Defaults to stderr logging.
  * @returns Parsed analysis jobs in file order.
  */
 export function readAllAnalyzePullRequestJobs(
   filePath = DEFAULT_JOB_FILE_PATH,
+  onSkippedLine: OnSkippedLine = defaultOnSkippedLine,
 ): AnalyzePullRequestJob[] {
   if (!existsSync(filePath)) {
     return [];
@@ -87,18 +105,14 @@ export function readAllAnalyzePullRequestJobs(
     try {
       const parsed = JSON.parse(line) as unknown;
       if (!isAnalyzePullRequestJob(parsed)) {
-        console.error(
-          `[job-store] skipping invalid queue job line=${index + 1}: shape mismatch`,
-        );
+        onSkippedLine(index + 1, "shape mismatch");
         continue;
       }
 
       jobs.push(parsed);
     } catch (error) {
       const details = error instanceof Error ? error.message : String(error);
-      console.error(
-        `[job-store] skipping malformed queue line=${index + 1}: ${details}`,
-      );
+      onSkippedLine(index + 1, details);
     }
   }
 
