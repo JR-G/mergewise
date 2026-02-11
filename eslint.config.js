@@ -25,7 +25,7 @@ export default [
         "error",
         { "min": 2, "exceptions": ["_", "$"], "properties": "never" },
       ],
-      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-explicit-any": "error",
       "no-warning-comments": [
         "warn",
         { "terms": ["todo", "fixme", "xxx"], "location": "anywhere" },
@@ -42,7 +42,7 @@ export default [
         }
       ],
       "@typescript-eslint/no-unused-vars": [
-        "warn",
+        "error",
         { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" },
       ],
     },
