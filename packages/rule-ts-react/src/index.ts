@@ -40,12 +40,13 @@ export const tsReactRules: readonly StatelessRule[] = [unsafeAnyUsageRule];
  */
 function collectUnsafeAnyFindings(context: AnalysisContext): readonly Finding[] {
   const findings: Finding[] = [];
-  const lineScanState: LineScanState = { insideBlockComment: false };
 
   for (const fileDiff of context.diffs) {
     if (!TYPE_SCRIPT_REACT_FILE_PATTERN.test(fileDiff.filePath)) {
       continue;
     }
+
+    const lineScanState: LineScanState = { insideBlockComment: false };
 
     for (const hunk of fileDiff.hunks) {
       const startingLine = parseHunkStartingLine(hunk.header);

@@ -99,6 +99,23 @@ describe("rule-ts-react unsafe any usage", () => {
     expect(findings[0]!.recommendation).not.toContain("Possible manual starting point");
   });
 
+  test("scans each file independently when block comments span file boundaries", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/first.ts", [
+        makeDiffHunk("@@ -1,0 +1,1 @@", ["+const note = /* unclosed block comment"]),
+      ]),
+      makeFileDiff("src/second.ts", [
+        makeDiffHunk("@@ -1,0 +1,1 @@", ["+const payload: any = fetchData();"]),
+      ]),
+    ]);
+
+    const findings = await unsafeAnyUsageRule.analyse(context);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.filePath).toBe("src/second.ts");
+    expect(findings[0]!.line).toBe(1);
+  });
+
   test("exposes deterministic rule list for worker integration", () => {
     expect(tsReactRules).toHaveLength(1);
     expect(tsReactRules[0]).toBe(unsafeAnyUsageRule);
