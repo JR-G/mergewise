@@ -38,6 +38,7 @@
     "lint": "bunx eslint .",
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
+    "test:coverage": "bun test --coverage",
     "prepublishOnly": "bun run lint && bun run typecheck && bun run test"
   },
   "devDependencies": {
