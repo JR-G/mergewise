@@ -27,7 +27,16 @@ mergewise --version
 - `docs/USAGE.md`
 - `docs/ENGINEERING_STANDARDS.md`
 - `docs/WORKTREES.md`
+- `docs/AGENT_OPS.md`
 
 ## Contributor Docs
 
 - `AGENTS.md`
+
+## Ops Quick Start
+
+```bash
+bun run ops:start -- <task-id> <branch-name> <owner> <scope>
+bun run ops:prompt -- <task-id>
+bun run ops:status
+```
