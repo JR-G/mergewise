@@ -71,3 +71,6 @@ body:
         - label: "No unhandled I/O or external-call failures"
         - label: "No unbounded in-memory collections"
         - label: "TSDoc added for new exports"
+        - label: "I confirm all items above are satisfied"
+    validations:
+      required: true

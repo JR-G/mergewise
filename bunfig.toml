@@ -1,5 +1,5 @@
 [test]
 coverageReporter = ["text", "lcov"]
 coverageDir = "coverage"
-coverageThreshold = { line = 0.8, function = 0.8, statement = 0.8 }
+coverageThreshold = { lines = 0.8, functions = 0.8, statements = 0.8 }
 coverageSkipTestFiles = true

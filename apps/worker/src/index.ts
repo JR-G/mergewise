@@ -63,11 +63,15 @@ export function processAnalyzePullRequestJob(job: AnalyzePullRequestJob): void {
 
 /**
  * In-memory state for idempotency key tracking.
+ *
+ * @remarks
+ * Properties are `readonly` to prevent reference reassignment. The underlying
+ * collections are mutated in place by {@link trackProcessedKey}.
  */
 export interface ProcessedKeyState {
-  /** Set of currently tracked keys for O(1) lookup. */
+  /** Set of currently tracked keys for O(1) lookup. Mutated by trackProcessedKey. */
   readonly keys: Set<string>;
-  /** Insertion-ordered list for FIFO eviction. */
+  /** Insertion-ordered list for FIFO eviction. Mutated by trackProcessedKey. */
   readonly order: string[];
 }
 

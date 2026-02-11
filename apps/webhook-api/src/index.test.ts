@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   buildAnalyzePullRequestJob,
@@ -133,10 +133,10 @@ describe("SUPPORTED_PULL_REQUEST_ACTIONS", () => {
 describe("loadConfig", () => {
   const originalEnv = { ...process.env };
 
-  function resetEnv(): void {
+  afterEach(() => {
     process.env.WEBHOOK_PORT = originalEnv.WEBHOOK_PORT;
     process.env.GITHUB_WEBHOOK_SECRET = originalEnv.GITHUB_WEBHOOK_SECRET;
-  }
+  });
 
   test("returns default port when env is unset", () => {
     delete process.env.WEBHOOK_PORT;
@@ -144,7 +144,6 @@ describe("loadConfig", () => {
     const cfg = loadConfig();
     expect(cfg.port).toBe(8787);
     expect(cfg.webhookSecret).toBeUndefined();
-    resetEnv();
   });
 
   test("reads webhook secret from env", () => {
@@ -152,12 +151,10 @@ describe("loadConfig", () => {
     process.env.GITHUB_WEBHOOK_SECRET = "test-secret";
     const cfg = loadConfig();
     expect(cfg.webhookSecret).toBe("test-secret");
-    resetEnv();
   });
 
   test("throws for invalid port", () => {
     process.env.WEBHOOK_PORT = "not-a-number";
     expect(() => loadConfig()).toThrow("Invalid WEBHOOK_PORT value");
-    resetEnv();
   });
 });

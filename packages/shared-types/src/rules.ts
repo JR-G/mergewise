@@ -51,13 +51,30 @@ export interface AnalysisContext {
 }
 
 /**
+ * Known symbol kinds for the codebase index.
+ *
+ * @remarks
+ * The `string & {}` branch preserves autocomplete for known kinds while
+ * allowing language adapters to introduce additional kinds without a
+ * shared-types release.
+ */
+export type SymbolKind =
+  | "function"
+  | "class"
+  | "type"
+  | "interface"
+  | "variable"
+  | "constant"
+  | (string & {});
+
+/**
  * An entry in the codebase symbol index.
  */
 export interface SymbolEntry {
   /** Symbol name as it appears in source. */
   readonly name: string;
-  /** Symbol kind (e.g. `"function"`, `"class"`, `"type"`, `"variable"`). */
-  readonly kind: string;
+  /** Symbol kind. */
+  readonly kind: SymbolKind;
   /** File path relative to repository root. */
   readonly file: string;
   /** One-indexed line number of the symbol declaration. */

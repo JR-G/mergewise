@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   buildIdempotencyKey,
@@ -67,10 +67,10 @@ describe("trackProcessedKey", () => {
 describe("loadConfig", () => {
   const originalEnv = { ...process.env };
 
-  function resetEnv(): void {
+  afterEach(() => {
     process.env.WORKER_POLL_INTERVAL_MS = originalEnv.WORKER_POLL_INTERVAL_MS;
     process.env.WORKER_MAX_PROCESSED_KEYS = originalEnv.WORKER_MAX_PROCESSED_KEYS;
-  }
+  });
 
   test("returns defaults when env is unset", () => {
     delete process.env.WORKER_POLL_INTERVAL_MS;
@@ -78,25 +78,21 @@ describe("loadConfig", () => {
     const cfg = loadConfig();
     expect(cfg.pollIntervalMs).toBe(3000);
     expect(cfg.maxProcessedKeys).toBe(10000);
-    resetEnv();
   });
 
   test("throws for below-minimum poll interval", () => {
     process.env.WORKER_POLL_INTERVAL_MS = "100";
     expect(() => loadConfig()).toThrow("Invalid WORKER_POLL_INTERVAL_MS value");
-    resetEnv();
   });
 
   test("throws for below-minimum max keys", () => {
     delete process.env.WORKER_POLL_INTERVAL_MS;
     process.env.WORKER_MAX_PROCESSED_KEYS = "50";
     expect(() => loadConfig()).toThrow("Invalid WORKER_MAX_PROCESSED_KEYS value");
-    resetEnv();
   });
 
   test("throws for non-numeric values", () => {
     process.env.WORKER_POLL_INTERVAL_MS = "abc";
     expect(() => loadConfig()).toThrow("Invalid WORKER_POLL_INTERVAL_MS value");
-    resetEnv();
   });
 });
