@@ -21,6 +21,10 @@ export default [
     },
     rules: {
       "tsdoc/syntax": "error",
+      "id-length": [
+        "error",
+        { "min": 2, "exceptions": ["_", "$"], "properties": "never" },
+      ],
       "@typescript-eslint/no-explicit-any": "warn",
       "no-warning-comments": [
         "warn",

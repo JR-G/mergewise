@@ -14,6 +14,9 @@
 - Bound in-memory state used by daemons/workers.
 - Use workspace imports for cross-package references.
 - Add TSDoc for exported types/functions and behavior contracts.
+- Do not use inline code comments; document behavior with TSDoc.
+- Do not use single-letter or abbreviated variable names.
+- Prefer functional style where practical (pure functions, immutable data handling, and explicit transformations).
 
 ## PR Requirements
 

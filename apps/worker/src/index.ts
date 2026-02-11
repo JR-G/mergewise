@@ -72,6 +72,10 @@ const processedOrder: string[] = [];
 /**
  * Tracks a processed idempotency key while enforcing a fixed-size in-memory cap.
  *
+ * @remarks
+ * Oldest keys are evicted first once `maxProcessedKeys` is exceeded, allowing
+ * long-running worker processes to stay memory-bounded.
+ *
  * @param key - Idempotency key for a completed job.
  */
 function trackProcessedKey(key: string): void {

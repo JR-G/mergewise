@@ -61,6 +61,10 @@ export function enqueueAnalyzePullRequestJob(
 /**
  * Reads all currently queued jobs from the local NDJSON queue file.
  *
+ * @remarks
+ * Malformed JSON lines and shape-mismatched payloads are skipped with logging
+ * so one bad entry does not prevent the rest of the queue from being read.
+ *
  * @param filePath - Optional file path override for tests/local customization.
  * @returns Parsed analysis jobs in file order.
  */

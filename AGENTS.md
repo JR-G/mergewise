@@ -19,6 +19,11 @@ This file defines how coding agents should work in this repository.
 - Do not add unbounded in-memory collections for long-running processes.
 - Do not use deep relative imports for cross-package boundaries.
 - Add TSDoc comments for exported types/functions and non-obvious behavior.
+- Do not add inline code comments (`//` or block comments inside function bodies).
+- Use TSDoc blocks for documentation and behavior notes.
+- Do not use single-letter variable names.
+- Avoid abbreviated variable names; prefer clear full words.
+- Prefer functional programming style where practical (pure functions, immutability, explicit data flow).
 
 ## Repo Structure Expectations
 
