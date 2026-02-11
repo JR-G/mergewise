@@ -15,6 +15,10 @@ This file defines how coding agents should work in this repository.
 - Do not rename/move files unless required for the task.
 - Use Bun tooling only for development workflows in this repo.
 - Do not introduce npm/pnpm/yarn commands for local dev or CI flows.
+- Do not leave unhandled I/O or external-call failures in request handlers.
+- Do not add unbounded in-memory collections for long-running processes.
+- Do not use deep relative imports for cross-package boundaries.
+- Add TSDoc comments for exported types/functions and non-obvious behavior.
 
 ## Repo Structure Expectations
 
@@ -50,6 +54,11 @@ bun run build
 ```
 
 If any command fails, do not open the PR.
+
+Every PR must include:
+- Failure-mode handling for new I/O boundaries.
+- A bounded strategy for any new in-memory state.
+- Updated docs when API/contracts or behavior changes.
 
 ## CI and Automation
 
