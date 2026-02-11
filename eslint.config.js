@@ -31,7 +31,7 @@ export default [
         {
           "patterns": [
             {
-              "group": ["../../../packages/*", "../../packages/*", "../packages/*"],
+              "group": ["**/packages/*", "../**/packages/*"],
               "message": "Use workspace aliases (for example @mergewise/shared-types) for cross-package imports."
             }
           ]

@@ -48,6 +48,7 @@ function isAnalyzePullRequestJob(value: unknown): value is AnalyzePullRequestJob
  *
  * @param job - Analysis job payload to persist.
  * @param filePath - Optional file path override for tests/local customization.
+ * @throws May throw on file system errors (permissions, disk full, etc.).
  */
 export function enqueueAnalyzePullRequestJob(
   job: AnalyzePullRequestJob,

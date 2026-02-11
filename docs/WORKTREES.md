@@ -35,3 +35,4 @@ bun run wt:prune
 - Keep one branch per worktree.
 - Do not run multiple agents in the same worktree path.
 - Push each branch and open a PR independently.
+- Branch names containing `/` create nested directories (for example `feat/x` -> `../mergewise-worktrees/feat/x`).
