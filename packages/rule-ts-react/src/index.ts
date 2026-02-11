@@ -66,7 +66,6 @@ function collectUnsafeAnyFindings(context: AnalysisContext): readonly Finding[] 
                 currentLineNumber,
                 addedContent,
                 addedCodeOnlyContent,
-                hunk.header,
               ),
             );
           }
@@ -190,13 +189,13 @@ function skipStringLiteral(
 }
 
 /**
- * Builds the patch preview suggestion for explicit `any` replacements when safe.
+ * Builds a manual replacement starting point for explicit `any` usages.
  *
  * @param evidence - Original added source line.
  * @param sanitizedContent - Source line with string and comment segments removed.
- * @returns Patch preview line replacement or `null` when no safe patch is available.
+ * @returns Suggested manual replacement or `null` when no candidate is available.
  */
-function buildSuggestedReplacement(
+function buildManualReplacementCandidate(
   evidence: string,
   sanitizedContent: string,
 ): string | null {
@@ -223,6 +222,23 @@ function buildSuggestedReplacement(
 }
 
 /**
+ * Builds manual-only recommendation text for one `any` finding.
+ *
+ * @param suggestedReplacement - Optional manual replacement candidate.
+ * @returns Recommendation text with explicit non-automatic guidance.
+ */
+function buildRecommendation(suggestedReplacement: string | null): string {
+  const baseRecommendation =
+    "Explicit any is disallowed. Replace with a concrete type, unknown, or a constrained generic, then add the required narrowing. This is a manual change and no automatic patch is applied because unknown substitutions can require follow-up edits to keep compilation safe.";
+
+  if (!suggestedReplacement) {
+    return baseRecommendation;
+  }
+
+  return `${baseRecommendation} Possible manual starting point: \`${suggestedReplacement}\``;
+}
+
+/**
  * Builds one finding for explicit `any` usage in an added line.
  *
  * @param context - Rule execution context.
@@ -230,7 +246,6 @@ function buildSuggestedReplacement(
  * @param line - Line number in the added file version.
  * @param evidence - Original added source line.
  * @param sanitizedContent - Source line with string and comment segments removed.
- * @param hunkHeader - Unified diff hunk header.
  * @returns Structured finding payload.
  */
 function buildFinding(
@@ -239,10 +254,13 @@ function buildFinding(
   line: number,
   evidence: string,
   sanitizedContent: string,
-  hunkHeader: string,
 ): Finding {
   const findingIdentifier = `${RULE_IDENTIFIER}:${context.pullRequest.repo}:${context.pullRequest.prNumber}:${filePath}:${line}`;
-  const suggestedReplacement = buildSuggestedReplacement(evidence, sanitizedContent);
+  const suggestedReplacement = buildManualReplacementCandidate(
+    evidence,
+    sanitizedContent,
+  );
+
   return {
     findingId: findingIdentifier,
     installationId: context.pullRequest.installationId,
@@ -254,16 +272,7 @@ function buildFinding(
     filePath,
     line,
     evidence,
-    recommendation: "Replace explicit any with a concrete type, unknown, or a constrained generic to preserve type safety.",
-    ...(suggestedReplacement
-      ? {
-          patchPreview: {
-            removedLines: [evidence],
-            addedLines: [suggestedReplacement],
-            hunkHeader,
-          },
-        }
-      : {}),
+    recommendation: buildRecommendation(suggestedReplacement),
     confidence: 0.95,
     status: "posted",
   };

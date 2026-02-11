@@ -35,17 +35,9 @@ describe("rule-ts-react unsafe any usage", () => {
     expect(findings.every((finding) => finding.ruleId === "ts-react/no-unsafe-any")).toBe(true);
     expect(findings.every((finding) => finding.category === "safety")).toBe(true);
     expect(findings.every((finding) => finding.status === "posted")).toBe(true);
-    expect(findings.every((finding) => finding.patchPreview !== undefined)).toBe(true);
-    expect(findings[0]!.patchPreview).toEqual({
-      removedLines: ["const payload: any = fetchData();"],
-      addedLines: ["const payload: unknown = fetchData();"],
-      hunkHeader: "@@ -10,1 +10,4 @@",
-    });
-    expect(findings[1]!.patchPreview).toEqual({
-      removedLines: ["const result = payload as any;"],
-      addedLines: ["const result = payload as unknown;"],
-      hunkHeader: "@@ -10,1 +10,4 @@",
-    });
+    expect(findings.every((finding) => finding.patchPreview === undefined)).toBe(true);
+    expect(findings[0]!.recommendation).toContain("manual change");
+    expect(findings[0]!.recommendation).toContain("Possible manual starting point");
   });
 
   test("ignores non-TypeScript files and safe type usage", async () => {
@@ -87,6 +79,24 @@ describe("rule-ts-react unsafe any usage", () => {
     const findings = await unsafeAnyUsageRule.analyse(context);
 
     expect(findings).toEqual([]);
+  });
+
+  test("uses manual-only recommendation when a replacement candidate is ambiguous", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/example.ts", [
+        makeDiffHunk("@@ -1,0 +1,2 @@", [
+          "+const payload: any = fetchData(\"source\");",
+          "+const otherValue = payload;",
+        ]),
+      ]),
+    ]);
+
+    const findings = await unsafeAnyUsageRule.analyse(context);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.patchPreview).toBeUndefined();
+    expect(findings[0]!.recommendation).toContain("manual change");
+    expect(findings[0]!.recommendation).not.toContain("Possible manual starting point");
   });
 
   test("exposes deterministic rule list for worker integration", () => {
