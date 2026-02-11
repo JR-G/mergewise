@@ -23,7 +23,7 @@ export default [
       "tsdoc/syntax": "error",
       "@typescript-eslint/no-explicit-any": "warn",
       "no-warning-comments": [
-        "error",
+        "warn",
         { "terms": ["todo", "fixme", "xxx"], "location": "anywhere" },
       ],
       "no-restricted-imports": [

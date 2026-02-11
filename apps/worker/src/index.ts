@@ -91,7 +91,14 @@ console.log(
 );
 
 setInterval(() => {
-  const jobs = readAllAnalyzePullRequestJobs();
+  let jobs: AnalyzePullRequestJob[];
+  try {
+    jobs = readAllAnalyzePullRequestJobs();
+  } catch (error) {
+    const details = error instanceof Error ? error.stack ?? error.message : String(error);
+    console.error(`[worker] failed to read queued jobs: ${details}`);
+    return;
+  }
 
   for (const job of jobs) {
     const key = buildIdempotencyKey(job);

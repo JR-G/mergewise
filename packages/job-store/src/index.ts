@@ -21,6 +21,29 @@ function ensureParentDirectory(filePath: string): void {
 }
 
 /**
+ * Determines whether a parsed value matches the expected job payload shape.
+ *
+ * @param value - Parsed JSON value from the local queue file.
+ * @returns `true` when the value satisfies required job fields.
+ */
+function isAnalyzePullRequestJob(value: unknown): value is AnalyzePullRequestJob {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<AnalyzePullRequestJob>;
+  return (
+    typeof candidate.job_id === "string" &&
+    (typeof candidate.installation_id === "number" ||
+      candidate.installation_id === null) &&
+    typeof candidate.repo_full_name === "string" &&
+    typeof candidate.pr_number === "number" &&
+    typeof candidate.head_sha === "string" &&
+    typeof candidate.queued_at === "string"
+  );
+}
+
+/**
  * Appends a job as one NDJSON line to the local queue file.
  *
  * @param job - Analysis job payload to persist.
@@ -57,7 +80,15 @@ export function readAllAnalyzePullRequestJobs(
 
   for (const [index, line] of lines.entries()) {
     try {
-      jobs.push(JSON.parse(line) as AnalyzePullRequestJob);
+      const parsed = JSON.parse(line) as unknown;
+      if (!isAnalyzePullRequestJob(parsed)) {
+        console.error(
+          `[job-store] skipping invalid queue job line=${index + 1}: shape mismatch`,
+        );
+        continue;
+      }
+
+      jobs.push(parsed);
     } catch (error) {
       const details = error instanceof Error ? error.message : String(error);
       console.error(
