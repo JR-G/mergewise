@@ -21,6 +21,32 @@ Use `ops/` with worktrees to run multiple agents safely in parallel.
    - `bun run ops:status`
 6. Open PR, review, merge, and move task to `Done`.
 
+## Fast Path
+
+Start everything in one command:
+
+```bash
+bun run ops:start -- <task-id> <branch-name> <owner> <scope>
+```
+
+Example:
+
+```bash
+bun run ops:start -- github-client feat/agent-github-client alice packages/github-client
+```
+
+This command:
+
+- Creates `ops/tasks/<task-id>.md` from template when missing.
+- Adds the task row to `ops/board.md` under `In Progress`.
+- Creates the branch worktree using `scripts/worktree.sh`.
+
+Then generate a ready-to-paste agent prompt:
+
+```bash
+bun run ops:prompt -- <task-id>
+```
+
 ## Rules
 
 - One task per branch.

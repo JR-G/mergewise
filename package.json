@@ -37,6 +37,8 @@
     "wt:prune": "bash scripts/worktree.sh prune",
     "ops:new": "bash scripts/ops-new.sh",
     "ops:status": "bash scripts/ops-status.sh",
+    "ops:start": "bun run scripts/ops.ts start",
+    "ops:prompt": "bun run scripts/ops.ts prompt",
     "lint": "bunx eslint .",
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",

@@ -32,3 +32,11 @@ mergewise --version
 ## Contributor Docs
 
 - `AGENTS.md`
+
+## Ops Quick Start
+
+```bash
+bun run ops:start -- <task-id> <branch-name> <owner> <scope>
+bun run ops:prompt -- <task-id>
+bun run ops:status
+```
