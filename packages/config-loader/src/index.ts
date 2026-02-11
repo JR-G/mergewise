@@ -11,7 +11,7 @@ export const DEFAULT_CONFIG_FILE_NAME = ".mergewise.yml";
 /**
  * Runtime gating settings applied during finding filtering.
  */
-export interface MergewiseGatingConfig {
+export interface MergewiseGatingConfigV1 {
   /**
    * Minimum confidence score required for a finding to pass gating.
    */
@@ -25,7 +25,7 @@ export interface MergewiseGatingConfig {
 /**
  * Mergewise rule selection settings.
  */
-export interface MergewiseRulesConfig {
+export interface MergewiseRulesConfigV1 {
   /**
    * Rule identifiers explicitly enabled for analysis.
    */
@@ -39,29 +39,72 @@ export interface MergewiseRulesConfig {
 /**
  * Normalized Mergewise configuration.
  */
-export interface MergewiseConfig {
+export interface MergewiseConfigV1 {
   /**
    * Gating-related thresholds and caps.
    */
-  gating: MergewiseGatingConfig;
+  gating: MergewiseGatingConfigV1;
   /**
    * Rule selection lists.
    */
-  rules: MergewiseRulesConfig;
+  rules: MergewiseRulesConfigV1;
 }
 
 /**
  * Optional loader arguments for resolving config location.
  */
-export interface LoadMergewiseConfigOptions {
+export interface LoadMergewiseConfigOptionsV1 {
   /**
    * Base directory where `.mergewise.yml` is resolved.
    */
-  cwd?: string;
+  workingDirectory?: string;
   /**
    * Override for config filename.
    */
   fileName?: string;
+}
+
+/**
+ * Backward-compatible alias for the v1 gating config shape.
+ */
+export type MergewiseGatingConfig = MergewiseGatingConfigV1;
+
+/**
+ * Backward-compatible alias for the v1 rule selection config shape.
+ */
+export type MergewiseRulesConfig = MergewiseRulesConfigV1;
+
+/**
+ * Backward-compatible alias for the v1 normalized config shape.
+ */
+export type MergewiseConfig = MergewiseConfigV1;
+
+/**
+ * Backward-compatible alias for the v1 loader options shape.
+ */
+export type LoadMergewiseConfigOptions = LoadMergewiseConfigOptionsV1;
+
+/**
+ * Error raised when reading the config file fails.
+ */
+export class MergewiseConfigReadError extends Error {
+  /**
+   * Absolute path to the config file.
+   */
+  filePath: string;
+
+  /**
+   * Creates a read error with location context.
+   *
+   * @param filePath - Absolute path to config file.
+   * @param details - Read failure details.
+   * @param cause - Optional underlying error.
+   */
+  constructor(filePath: string, details: string, cause?: unknown) {
+    super(`Unable to read Mergewise config in ${filePath}: ${details}`, { cause });
+    this.name = "MergewiseConfigReadError";
+    this.filePath = filePath;
+  }
 }
 
 /**
@@ -235,7 +278,15 @@ function applyRules(
 }
 
 function parseRawConfig(filePath: string): unknown {
-  const rawYaml = readFileSync(filePath, "utf8");
+  let rawYaml = "";
+  try {
+    rawYaml = readFileSync(filePath, "utf8");
+  } catch (caughtError) {
+    const details =
+      caughtError instanceof Error ? caughtError.message : String(caughtError);
+    throw new MergewiseConfigReadError(filePath, details, caughtError);
+  }
+
   const yamlDocument = parseDocument(rawYaml);
 
   if (yamlDocument.errors.length > 0) {
@@ -273,9 +324,9 @@ function normalizeConfig(rawValue: unknown, filePath: string): MergewiseConfig {
 export function loadMergewiseConfig(
   options: LoadMergewiseConfigOptions = {},
 ): MergewiseConfig {
-  const cwd = options.cwd ?? process.cwd();
+  const workingDirectory = options.workingDirectory ?? process.cwd();
   const fileName = options.fileName ?? DEFAULT_CONFIG_FILE_NAME;
-  const filePath = resolve(cwd, fileName);
+  const filePath = resolve(workingDirectory, fileName);
 
   if (!existsSync(filePath)) {
     return cloneDefaults();
