@@ -35,6 +35,8 @@
     "wt:list": "bash scripts/worktree.sh list",
     "wt:remove": "bash scripts/worktree.sh remove",
     "wt:prune": "bash scripts/worktree.sh prune",
+    "ops:new": "bash scripts/ops-new.sh",
+    "ops:status": "bash scripts/ops-status.sh",
     "lint": "bunx eslint .",
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
