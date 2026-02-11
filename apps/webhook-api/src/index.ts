@@ -1,11 +1,11 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
-import { enqueueAnalyzePullRequestJob } from "../../../packages/job-store/src";
+import { enqueueAnalyzePullRequestJob } from "@mergewise/job-store";
 import type {
   AnalyzePullRequestJob,
   GitHubPullRequestAction,
   GitHubPullRequestWebhookEvent,
-} from "../../../packages/shared-types/src";
+} from "@mergewise/shared-types";
 
 /**
  * Supported GitHub pull request actions that should queue analysis work.
@@ -36,7 +36,7 @@ function loadConfig(): WebhookApiConfig {
   const portRaw = process.env.WEBHOOK_PORT ?? "8787";
   const port = Number.parseInt(portRaw, 10);
 
-  if (Number.isNaN(port) || port <= 0) {
+  if (Number.isNaN(port) || port <= 0 || port > 65535) {
     throw new Error(`Invalid WEBHOOK_PORT value: ${portRaw}`);
   }
 
@@ -47,8 +47,8 @@ function loadConfig(): WebhookApiConfig {
 /**
  * Calculates GitHub HMAC SHA-256 signature for a raw request body.
  *
- * @param payload Raw webhook request body.
- * @param secret Shared webhook secret.
+ * @param payload - Raw webhook request body.
+ * @param secret - Shared webhook secret.
  * @returns GitHub-formatted signature value (`sha256=<hex>`).
  */
 function computeGitHubSignature(payload: string, secret: string): string {
@@ -59,9 +59,9 @@ function computeGitHubSignature(payload: string, secret: string): string {
 /**
  * Validates the GitHub webhook signature if a secret is configured.
  *
- * @param payload Raw webhook payload.
- * @param signatureHeader `x-hub-signature-256` header from GitHub.
- * @param secret Optional secret; when unset, verification is skipped.
+ * @param payload - Raw webhook payload.
+ * @param signatureHeader - `x-hub-signature-256` header from GitHub.
+ * @param secret - Optional secret; when unset, verification is skipped.
  * @returns `true` if signature is valid or verification is disabled.
  */
 function isWebhookSignatureValid(
@@ -91,7 +91,7 @@ function isWebhookSignatureValid(
 /**
  * Narrowly validates that a payload looks like the pull request webhook shape.
  *
- * @param payload Parsed JSON payload.
+ * @param payload - Parsed JSON payload.
  * @returns `true` when required fields are present.
  */
 function isPullRequestWebhookEvent(
@@ -113,7 +113,7 @@ function isPullRequestWebhookEvent(
 /**
  * Converts a pull request webhook event into a queue job payload.
  *
- * @param payload Parsed and validated pull request webhook event.
+ * @param payload - Parsed and validated pull request webhook event.
  * @returns Local queue job payload.
  */
 function buildAnalyzePullRequestJob(
@@ -136,10 +136,14 @@ Bun.serve({
   /**
    * Handles incoming GitHub webhook HTTP requests.
    *
-   * @param request Incoming HTTP request.
+   * @param request - Incoming HTTP request.
    * @returns HTTP response with intake status.
    */
   async fetch(request: Request): Promise<Response> {
+    if (request.method === "GET" && new URL(request.url).pathname === "/health") {
+      return Response.json({ status: "ok" });
+    }
+
     if (request.method !== "POST") {
       return new Response("Method Not Allowed", { status: 405 });
     }
@@ -175,7 +179,18 @@ Bun.serve({
     }
 
     const job = buildAnalyzePullRequestJob(payload);
-    enqueueAnalyzePullRequestJob(job);
+    try {
+      enqueueAnalyzePullRequestJob(job);
+    } catch (error) {
+      const details = error instanceof Error ? error.stack ?? error.message : String(error);
+      console.error(
+        `[webhook-api] failed to enqueue job=${job.job_id} repo=${job.repo_full_name} pr=${job.pr_number}: ${details}`,
+      );
+      return Response.json(
+        { status: "error", message: "Failed to queue analysis job" },
+        { status: 503 },
+      );
+    }
 
     console.log(
       `[webhook-api] queued job=${job.job_id} repo=${job.repo_full_name} pr=${job.pr_number} sha=${job.head_sha}`,

@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-import type { AnalyzePullRequestJob } from "../../shared-types/src";
+import type { AnalyzePullRequestJob } from "@mergewise/shared-types";
 
 /**
  * Logical queue file location used by the local development skeleton.
@@ -14,7 +14,7 @@ export const DEFAULT_JOB_FILE_PATH = ".mergewise-runtime/jobs.ndjson";
 /**
  * Ensures the parent directory for a file path exists.
  *
- * @param filePath Path to the target file.
+ * @param filePath - Path to the target file.
  */
 function ensureParentDirectory(filePath: string): void {
   mkdirSync(dirname(filePath), { recursive: true });
@@ -23,8 +23,8 @@ function ensureParentDirectory(filePath: string): void {
 /**
  * Appends a job as one NDJSON line to the local queue file.
  *
- * @param job Analysis job payload to persist.
- * @param filePath Optional file path override for tests/local customization.
+ * @param job - Analysis job payload to persist.
+ * @param filePath - Optional file path override for tests/local customization.
  */
 export function enqueueAnalyzePullRequestJob(
   job: AnalyzePullRequestJob,
@@ -37,7 +37,7 @@ export function enqueueAnalyzePullRequestJob(
 /**
  * Reads all currently queued jobs from the local NDJSON queue file.
  *
- * @param filePath Optional file path override for tests/local customization.
+ * @param filePath - Optional file path override for tests/local customization.
  * @returns Parsed analysis jobs in file order.
  */
 export function readAllAnalyzePullRequestJobs(
@@ -52,7 +52,19 @@ export function readAllAnalyzePullRequestJobs(
     return [];
   }
 
-  return raw
-    .split("\n")
-    .map((line) => JSON.parse(line) as AnalyzePullRequestJob);
+  const jobs: AnalyzePullRequestJob[] = [];
+  const lines = raw.split("\n");
+
+  for (const [index, line] of lines.entries()) {
+    try {
+      jobs.push(JSON.parse(line) as AnalyzePullRequestJob);
+    } catch (error) {
+      const details = error instanceof Error ? error.message : String(error);
+      console.error(
+        `[job-store] skipping malformed queue line=${index + 1}: ${details}`,
+      );
+    }
+  }
+
+  return jobs;
 }

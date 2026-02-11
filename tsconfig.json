@@ -13,6 +13,11 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@mergewise/job-store": ["packages/job-store/src/index.ts"],
+      "@mergewise/shared-types": ["packages/shared-types/src/index.ts"]
+    },
 
     // Best practices
     "strict": true,
@@ -25,5 +30,6 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  "exclude": ["dist", "node_modules", ".mergewise-runtime"]
 }
