@@ -26,6 +26,7 @@ mergewise --version
 
 - `docs/USAGE.md`
 - `docs/ENGINEERING_STANDARDS.md`
+- `docs/WORKTREES.md`
 
 ## Contributor Docs
 
