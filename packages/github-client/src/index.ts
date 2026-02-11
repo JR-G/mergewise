@@ -34,6 +34,12 @@ export interface GitHubApiOptions {
    * @defaultValue `"mergewise-github-client"`
    */
   userAgent?: string;
+  /**
+   * Request timeout in milliseconds for GitHub API calls.
+   *
+   * @defaultValue `10000`
+   */
+  requestTimeoutMs?: number;
 }
 
 /**
@@ -254,6 +260,7 @@ export async function exchangeInstallationAccessToken(
   options: GitHubApiOptions = {},
 ): Promise<GitHubInstallationAccessToken> {
   const apiBaseUrl = options.apiBaseUrl ?? "https://api.github.com";
+  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
   const endpointUrl = `${trimTrailingSlash(apiBaseUrl)}/app/installations/${installationId}/access_tokens`;
   const response = await fetch(endpointUrl, {
     method: "POST",
@@ -261,6 +268,7 @@ export async function exchangeInstallationAccessToken(
       authorization: `Bearer ${appJwt}`,
       userAgent: options.userAgent,
     }),
+    signal: AbortSignal.timeout(requestTimeoutMs),
   });
 
   const parsedResponse = await parseResponse<GitHubInstallationAccessToken>(
@@ -283,6 +291,7 @@ export async function fetchPullRequestFiles(
 ): Promise<GitHubPullRequestFile[]> {
   const perPage = options.perPage ?? 100;
   const maxPages = options.maxPages ?? 20;
+  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
   const apiBaseUrl = trimTrailingSlash(
     options.apiBaseUrl ?? "https://api.github.com",
   );
@@ -300,6 +309,7 @@ export async function fetchPullRequestFiles(
         authorization: `Bearer ${options.installationAccessToken}`,
         userAgent: options.userAgent,
       }),
+      signal: AbortSignal.timeout(requestTimeoutMs),
     });
     const pageFiles = await parseResponse<GitHubPullRequestFile[]>(
       response,
@@ -327,6 +337,7 @@ export async function fetchPullRequestFiles(
 export async function postPullRequestSummaryComment(
   options: PostPullRequestSummaryCommentOptions,
 ): Promise<GitHubIssueComment> {
+  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
   const apiBaseUrl = trimTrailingSlash(
     options.apiBaseUrl ?? "https://api.github.com",
   );
@@ -342,6 +353,7 @@ export async function postPullRequestSummaryComment(
       contentType: "application/json",
     }),
     body: JSON.stringify({ body: options.body }),
+    signal: AbortSignal.timeout(requestTimeoutMs),
   });
   const createdComment = await parseResponse<GitHubIssueComment>(
     response,
@@ -378,6 +390,18 @@ function toBase64Url(value: string): string {
 
 function trimTrailingSlash(value: string): string {
   return value.endsWith("/") ? value.slice(0, -1) : value;
+}
+
+function resolveRequestTimeoutMs(value: number | undefined): number {
+  if (value === undefined) {
+    return 10_000;
+  }
+
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`Invalid requestTimeoutMs value: ${String(value)}`);
+  }
+
+  return Math.floor(value);
 }
 
 async function parseResponse<ResponseValue>(

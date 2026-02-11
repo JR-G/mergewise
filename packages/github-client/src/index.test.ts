@@ -99,6 +99,7 @@ describe("github-client", () => {
       "https://api.github.com/app/installations/44/access_tokens",
     );
     expect(calls[0]!.init?.method).toBe("POST");
+    expect(calls[0]!.init?.signal).toBeDefined();
   });
 
   test("fetchPullRequestFiles paginates and returns combined files", async () => {
@@ -179,9 +180,24 @@ describe("github-client", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.init?.method).toBe("POST");
     expect(calls[0]!.init?.body).toBe(JSON.stringify({ body: "summary" }));
+    expect(calls[0]!.init?.signal).toBeDefined();
     expect(String(calls[0]!.input)).toBe(
       "https://api.github.com/repos/acme/widget/issues/3/comments",
     );
+  });
+
+  test("throws when requestTimeoutMs is invalid", async () => {
+    let thrownError: unknown;
+    try {
+      await exchangeInstallationAccessToken("jwt-value", 44, {
+        requestTimeoutMs: 0,
+      });
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(Error);
+    expect((thrownError as Error).message).toContain("requestTimeoutMs");
   });
 
   test("throws GitHubApiError on non-success status", async () => {
