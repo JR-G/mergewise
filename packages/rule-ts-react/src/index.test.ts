@@ -35,6 +35,17 @@ describe("rule-ts-react unsafe any usage", () => {
     expect(findings.every((finding) => finding.ruleId === "ts-react/no-unsafe-any")).toBe(true);
     expect(findings.every((finding) => finding.category === "safety")).toBe(true);
     expect(findings.every((finding) => finding.status === "posted")).toBe(true);
+    expect(findings.every((finding) => finding.patchPreview !== undefined)).toBe(true);
+    expect(findings[0]!.patchPreview).toEqual({
+      removedLines: ["const payload: any = fetchData();"],
+      addedLines: ["const payload: unknown = fetchData();"],
+      hunkHeader: "@@ -10,1 +10,4 @@",
+    });
+    expect(findings[1]!.patchPreview).toEqual({
+      removedLines: ["const result = payload as any;"],
+      addedLines: ["const result = payload as unknown;"],
+      hunkHeader: "@@ -10,1 +10,4 @@",
+    });
   });
 
   test("ignores non-TypeScript files and safe type usage", async () => {

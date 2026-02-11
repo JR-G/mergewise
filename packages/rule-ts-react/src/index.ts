@@ -46,7 +46,15 @@ function collectUnsafeAnyFindings(context: AnalysisContext): readonly Finding[] 
         if (line.startsWith("+") && !line.startsWith("+++")) {
           const addedContent = line.slice(1);
           if (UNSAFE_ANY_PATTERN.test(addedContent)) {
-            findings.push(buildFinding(context, fileDiff.filePath, currentLineNumber, addedContent));
+            findings.push(
+              buildFinding(
+                context,
+                fileDiff.filePath,
+                currentLineNumber,
+                addedContent,
+                hunk.header,
+              ),
+            );
           }
           currentLineNumber += 1;
           continue;
@@ -82,8 +90,10 @@ function buildFinding(
   filePath: string,
   line: number,
   evidence: string,
+  hunkHeader: string,
 ): Finding {
   const findingIdentifier = `${RULE_IDENTIFIER}:${context.pullRequest.repo}:${context.pullRequest.prNumber}:${filePath}:${line}`;
+  const suggestedReplacement = evidence.replace(/\bany\b/g, "unknown");
   return {
     findingId: findingIdentifier,
     installationId: context.pullRequest.installationId,
@@ -96,6 +106,11 @@ function buildFinding(
     line,
     evidence,
     recommendation: "Replace explicit any with a concrete type, unknown, or a constrained generic to preserve type safety.",
+    patchPreview: {
+      removedLines: [evidence],
+      addedLines: [suggestedReplacement],
+      hunkHeader,
+    },
     confidence: 0.95,
     status: "posted",
   };
