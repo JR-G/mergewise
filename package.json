@@ -39,6 +39,7 @@
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
+    "test:coverage:check": "bash scripts/check-coverage.sh 80",
     "prepublishOnly": "bun run lint && bun run typecheck && bun run test"
   },
   "devDependencies": {
