@@ -62,6 +62,19 @@ describe("trackProcessedKey", () => {
     trackProcessedKey("z", state, 5);
     expect(state.order).toEqual(["x", "y", "z"]);
   });
+
+  test("ignores duplicate keys and keeps order/key set consistent", () => {
+    const state = createProcessedKeyState();
+    trackProcessedKey("a", state, 2);
+    trackProcessedKey("a", state, 2);
+    trackProcessedKey("b", state, 2);
+    trackProcessedKey("c", state, 2);
+
+    expect(state.order).toEqual(["b", "c"]);
+    expect(state.keys.has("a")).toBe(false);
+    expect(state.keys.has("b")).toBe(true);
+    expect(state.keys.has("c")).toBe(true);
+  });
 });
 
 describe("loadConfig", () => {

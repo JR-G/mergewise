@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 
@@ -106,6 +106,31 @@ describe("job-store", () => {
     expect(result).toEqual([]);
     expect(skips).toHaveLength(1);
     expect(skips[0]!.reason).toBe("shape mismatch");
+  });
+
+  test("returns valid jobs when malformed and invalid lines are mixed in", () => {
+    const firstJob = makeJob({ job_id: "first" });
+    const secondJob = makeJob({ job_id: "second" });
+    const mixedRaw = [
+      JSON.stringify(firstJob),
+      "not-json",
+      JSON.stringify({ random: "object" }),
+      "   ",
+      JSON.stringify(secondJob),
+      "",
+    ].join("\n");
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, mixedRaw, "utf8");
+
+    const { callback, skips } = collectSkips();
+    const jobs = readAllAnalyzePullRequestJobs(filePath, callback);
+
+    expect(jobs).toHaveLength(2);
+    expect(jobs[0]!.job_id).toBe("first");
+    expect(jobs[1]!.job_id).toBe("second");
+    expect(skips).toHaveLength(2);
+    expect(skips[0]!.lineNumber).toBe(2);
+    expect(skips[1]!.lineNumber).toBe(3);
   });
 
   test("round-trips enqueue then read", () => {

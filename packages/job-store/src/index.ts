@@ -61,6 +61,11 @@ function isAnalyzePullRequestJob(value: unknown): value is AnalyzePullRequestJob
 /**
  * Appends a job as one NDJSON line to the local queue file.
  *
+ * @remarks
+ * This local file-backed queue is intended for development only. It does not
+ * provide multi-writer safety guarantees and should be replaced with a queue
+ * backend such as Redis or SQS for concurrent production workloads.
+ *
  * @param job - Analysis job payload to persist.
  * @param filePath - Optional file path override for tests/local customization.
  * @throws May throw on file system errors (permissions, disk full, etc.).
@@ -80,6 +85,7 @@ export function enqueueAnalyzePullRequestJob(
  * Malformed JSON lines and shape-mismatched payloads are skipped via the
  * `onSkippedLine` callback so one bad entry does not prevent the rest of the
  * queue from being read.
+ * Empty lines are ignored without callback noise.
  *
  * @param filePath - Optional file path override for tests/local customization.
  * @param onSkippedLine - Optional callback for skipped lines. Defaults to stderr logging.
@@ -102,6 +108,10 @@ export function readAllAnalyzePullRequestJobs(
   const lines = raw.split("\n");
 
   for (const [index, line] of lines.entries()) {
+    if (!line.trim()) {
+      continue;
+    }
+
     try {
       const parsed = JSON.parse(line) as unknown;
       if (!isAnalyzePullRequestJob(parsed)) {

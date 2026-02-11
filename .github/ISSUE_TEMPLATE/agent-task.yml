@@ -72,5 +72,6 @@ body:
         - label: "No unbounded in-memory collections"
         - label: "TSDoc added for new exports"
         - label: "I confirm all items above are satisfied"
+          required: true
     validations:
       required: true

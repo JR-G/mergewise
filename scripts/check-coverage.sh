@@ -4,6 +4,16 @@ set -euo pipefail
 THRESHOLD="${1:-80}"
 LCOV_FILE="${2:-coverage/lcov.info}"
 
+if ! [[ "$THRESHOLD" =~ ^[0-9]+$ ]]; then
+  echo "error: threshold must be a whole number between 0 and 100 (got: $THRESHOLD)"
+  exit 1
+fi
+
+if [ "$THRESHOLD" -lt 0 ] || [ "$THRESHOLD" -gt 100 ]; then
+  echo "error: threshold must be between 0 and 100 (got: $THRESHOLD)"
+  exit 1
+fi
+
 if [ ! -f "$LCOV_FILE" ]; then
   echo "error: lcov file not found at $LCOV_FILE"
   echo "run 'bun test --coverage' first"
@@ -40,6 +50,7 @@ fi
 echo "line coverage:     ${line_pct}% (${lines_hit}/${lines_found})"
 echo "function coverage: ${func_pct}% (${functions_hit}/${functions_found})"
 echo "threshold:         ${THRESHOLD}%"
+echo "metrics:           lines/functions"
 
 failed=0
 

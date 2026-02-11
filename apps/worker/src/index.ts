@@ -98,6 +98,10 @@ export function trackProcessedKey(
   state: ProcessedKeyState,
   maxKeys: number,
 ): void {
+  if (state.keys.has(key)) {
+    return;
+  }
+
   state.keys.add(key);
   state.order.push(key);
 
