@@ -50,18 +50,24 @@ bun run ops:prompt -- <task-id>
 Session-based branch naming:
 
 ```bash
-bun run ops:start-session -- <session-id> <task-id> <owner> <scope> [branch-kind]
+bun run ops:start-session -- <session-id> <task-id> [owner] [scope] [branch-kind]
 ```
 
 Example:
 
 ```bash
-bun run ops:start-session -- s01 github-client alice packages/github-client
+bun run ops:start-session -- s01 github-client
 ```
 
 Creates branch:
 
 `feat/s01-github-client`
+
+Default inference behavior:
+
+- Owner inferred from `ops/ownership.yml` entry for the inferred scope
+- Scope inferred from task id and `ops/ownership.yml` (fallback `packages/<task-id>`)
+- Branch kind defaults to `feat` (optional `fix`)
 
 Session teardown after merges:
 

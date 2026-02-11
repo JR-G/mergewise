@@ -2,6 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { parseDocument } from "yaml";
 
 interface StartCommandOptions {
   taskIdentifier: string;
@@ -19,6 +20,12 @@ const repositoryRoot = resolve(dirname(scriptPath), "..");
 const boardFilePath = resolve(repositoryRoot, "ops/board.md");
 const tasksDirectoryPath = resolve(repositoryRoot, "ops/tasks");
 const taskTemplatePath = resolve(tasksDirectoryPath, "TEMPLATE.md");
+const ownershipFilePath = resolve(repositoryRoot, "ops/ownership.yml");
+
+interface OwnershipEntry {
+  ownerName: string;
+  scopeName: string;
+}
 
 /**
  * Exits the process with a formatted error message.
@@ -50,12 +57,13 @@ function formatError(caughtError: unknown): string {
 function usage(): void {
   console.log(`Usage:
   bun run ops:start -- <task-id> <branch-name> <owner> <scope>
-  bun run ops:start-session -- <session-id> <task-id> <owner> <scope> [branch-kind]
+  bun run ops:start-session -- <session-id> <task-id> [owner] [scope] [branch-kind]
   bun run ops:prompt -- <task-id>
 
 Examples:
   bun run ops:start -- github-client feat/agent-github-client alice packages/github-client
-  bun run ops:start-session -- s01 github-client alice packages/github-client
+  bun run ops:start-session -- s01 github-client
+  bun run ops:start-session -- s01 github-client agent-1 packages/github-client fix
   bun run ops:prompt -- github-client`);
 }
 
@@ -69,6 +77,151 @@ function validateSegment(value: string, name: string): void {
   if (!/^[a-z0-9][a-z0-9-]*$/.test(value)) {
     fail(`${name} must match ^[a-z0-9][a-z0-9-]*$`);
   }
+}
+
+/**
+ * Returns true when a value is a supported branch kind.
+ *
+ * @param value - Candidate value.
+ * @returns Whether the value is `feat` or `fix`.
+ */
+function isBranchKind(value: string): boolean {
+  return value === "feat" || value === "fix";
+}
+
+/**
+ * Checks whether a value is a plain object.
+ *
+ * @param value - Candidate unknown value.
+ * @returns Type guard for plain objects.
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Loads ownership entries from `ops/ownership.yml`.
+ *
+ * @returns Ownership mapping entries.
+ */
+function loadOwnershipEntries(): OwnershipEntry[] {
+  if (!existsSync(ownershipFilePath)) {
+    return [];
+  }
+
+  try {
+    const ownershipFileBody = readFileSync(ownershipFilePath, "utf8");
+    const ownershipDocument = parseDocument(ownershipFileBody);
+    if (ownershipDocument.errors.length > 0) {
+      fail(`loadOwnershipEntries failed: invalid YAML in ${ownershipFilePath}`);
+    }
+
+    const parsedOwnership = ownershipDocument.toJSON();
+    if (!isPlainObject(parsedOwnership)) {
+      return [];
+    }
+
+    const ownersValue = parsedOwnership.owners;
+    if (!isPlainObject(ownersValue)) {
+      return [];
+    }
+
+    const ownershipEntries: OwnershipEntry[] = [];
+    for (const [scopeName, ownerValue] of Object.entries(ownersValue)) {
+      if (typeof ownerValue !== "string" || !ownerValue.trim()) {
+        continue;
+      }
+
+      ownershipEntries.push({
+        ownerName: ownerValue,
+        scopeName,
+      });
+    }
+
+    return ownershipEntries;
+  } catch (caughtError) {
+    fail(`loadOwnershipEntries failed: ${formatError(caughtError)}`);
+  }
+}
+
+/**
+ * Infers the most relevant scope path for a task identifier.
+ *
+ * @param taskIdentifier - Task identifier.
+ * @param ownershipEntries - Ownership entries loaded from YAML.
+ * @returns Inferred scope path.
+ */
+function inferScopeName(
+  taskIdentifier: string,
+  ownershipEntries: readonly OwnershipEntry[],
+): string {
+  const directPackageScope = `packages/${taskIdentifier}`;
+  const directAppScope = `apps/${taskIdentifier}`;
+
+  for (const ownershipEntry of ownershipEntries) {
+    if (ownershipEntry.scopeName === directPackageScope) {
+      return ownershipEntry.scopeName;
+    }
+  }
+
+  for (const ownershipEntry of ownershipEntries) {
+    if (ownershipEntry.scopeName === directAppScope) {
+      return ownershipEntry.scopeName;
+    }
+  }
+
+  for (const ownershipEntry of ownershipEntries) {
+    if (ownershipEntry.scopeName.endsWith(`/${taskIdentifier}`)) {
+      return ownershipEntry.scopeName;
+    }
+  }
+
+  for (const ownershipEntry of ownershipEntries) {
+    if (ownershipEntry.scopeName.includes(taskIdentifier)) {
+      return ownershipEntry.scopeName;
+    }
+  }
+
+  return directPackageScope;
+}
+
+/**
+ * Resolves session-start defaults for owner and scope from CLI args and ownership map.
+ *
+ * @param taskIdentifier - Task identifier used for inference.
+ * @param optionalArguments - Optional positional args after task identifier.
+ * @returns Resolved owner, scope, and branch kind.
+ */
+function resolveSessionStartOptions(
+  taskIdentifier: string,
+  optionalArguments: readonly string[],
+): { ownerName: string; scopeName: string; branchKind: string } {
+  const branchKind = optionalArguments.length > 0 &&
+    isBranchKind(optionalArguments[optionalArguments.length - 1]!)
+    ? optionalArguments[optionalArguments.length - 1]!
+    : "feat";
+
+  const positionalArgumentsWithoutBranchKind =
+    optionalArguments.length > 0 &&
+      isBranchKind(optionalArguments[optionalArguments.length - 1]!)
+      ? optionalArguments.slice(0, -1)
+      : optionalArguments;
+
+  if (positionalArgumentsWithoutBranchKind.length > 2) {
+    fail("ops:start-session accepts at most two optional positional args: [owner] [scope]");
+  }
+
+  const ownershipEntries = loadOwnershipEntries();
+  const inferredScopeName = inferScopeName(taskIdentifier, ownershipEntries);
+  const ownershipEntryForScope = ownershipEntries.find((ownershipEntry) =>
+    ownershipEntry.scopeName === inferredScopeName
+  );
+  const inferredOwnerName = ownershipEntryForScope?.ownerName ?? "agent-unassigned";
+
+  const ownerName = positionalArgumentsWithoutBranchKind[0] ?? inferredOwnerName;
+  const scopeName = positionalArgumentsWithoutBranchKind[1] ?? inferredScopeName;
+
+  return { ownerName, scopeName, branchKind };
 }
 
 /**
@@ -300,14 +453,16 @@ function startTask(argumentsList: string[]): void {
  * @param argumentsList - Positional CLI args passed after `start-session`.
  */
 function startSessionTask(argumentsList: string[]): void {
-  const [sessionIdentifier, taskIdentifier, ownerName, scopeName, branchKindRaw] =
-    argumentsList;
-  if (!sessionIdentifier || !taskIdentifier || !ownerName || !scopeName) {
+  const [sessionIdentifier, taskIdentifier, ...optionalArguments] = argumentsList;
+  if (!sessionIdentifier || !taskIdentifier) {
     usage();
     fail("missing required arguments for ops:start-session");
   }
 
-  const branchKind = branchKindRaw ?? "feat";
+  const { ownerName, scopeName, branchKind } = resolveSessionStartOptions(
+    taskIdentifier,
+    optionalArguments,
+  );
   const branchName = buildSessionBranchName(
     sessionIdentifier,
     taskIdentifier,
