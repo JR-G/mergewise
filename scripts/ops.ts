@@ -50,11 +50,47 @@ function formatError(caughtError: unknown): string {
 function usage(): void {
   console.log(`Usage:
   bun run ops:start -- <task-id> <branch-name> <owner> <scope>
+  bun run ops:start-session -- <session-id> <task-id> <owner> <scope> [branch-kind]
   bun run ops:prompt -- <task-id>
 
 Examples:
   bun run ops:start -- github-client feat/agent-github-client alice packages/github-client
+  bun run ops:start-session -- s01 github-client alice packages/github-client
   bun run ops:prompt -- github-client`);
+}
+
+/**
+ * Validates a branch-name segment for session and task identifiers.
+ *
+ * @param value - Candidate identifier value.
+ * @param name - Human-readable field name.
+ */
+function validateSegment(value: string, name: string): void {
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(value)) {
+    fail(`${name} must match ^[a-z0-9][a-z0-9-]*$`);
+  }
+}
+
+/**
+ * Builds a conventional branch name from session and task identifiers.
+ *
+ * @param sessionIdentifier - Session identifier, for example `s01`.
+ * @param taskIdentifier - Task identifier, for example `github-client`.
+ * @param branchKind - Branch prefix kind, either feat or fix.
+ * @returns Conventional branch name.
+ */
+function buildSessionBranchName(
+  sessionIdentifier: string,
+  taskIdentifier: string,
+  branchKind: string,
+): string {
+  validateSegment(sessionIdentifier, "session-id");
+  validateSegment(taskIdentifier, "task-id");
+  if (branchKind !== "feat" && branchKind !== "fix") {
+    fail("branch-kind must be feat or fix");
+  }
+
+  return `${branchKind}/${sessionIdentifier}-${taskIdentifier}`;
 }
 
 /**
@@ -259,6 +295,29 @@ function startTask(argumentsList: string[]): void {
 }
 
 /**
+ * Starts one task with session-based branch naming.
+ *
+ * @param argumentsList - Positional CLI args passed after `start-session`.
+ */
+function startSessionTask(argumentsList: string[]): void {
+  const [sessionIdentifier, taskIdentifier, ownerName, scopeName, branchKindRaw] =
+    argumentsList;
+  if (!sessionIdentifier || !taskIdentifier || !ownerName || !scopeName) {
+    usage();
+    fail("missing required arguments for ops:start-session");
+  }
+
+  const branchKind = branchKindRaw ?? "feat";
+  const branchName = buildSessionBranchName(
+    sessionIdentifier,
+    taskIdentifier,
+    branchKind,
+  );
+
+  startTask([taskIdentifier, branchName, ownerName, scopeName]);
+}
+
+/**
  * Entrypoint for the ops CLI subcommands.
  */
 function main(): void {
@@ -286,6 +345,11 @@ function main(): void {
     } catch (caughtError) {
       fail(`prompt command failed for ${taskIdentifier}: ${formatError(caughtError)}`);
     }
+    return;
+  }
+
+  if (commandName === "start-session") {
+    startSessionTask(argumentsList);
     return;
   }
 

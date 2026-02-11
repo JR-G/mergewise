@@ -47,6 +47,28 @@ Then generate a ready-to-paste agent prompt:
 bun run ops:prompt -- <task-id>
 ```
 
+Session-based branch naming:
+
+```bash
+bun run ops:start-session -- <session-id> <task-id> <owner> <scope> [branch-kind]
+```
+
+Example:
+
+```bash
+bun run ops:start-session -- s01 github-client alice packages/github-client
+```
+
+Creates branch:
+
+`feat/s01-github-client`
+
+Session teardown after merges:
+
+```bash
+bun run wt:cleanup:session s01
+```
+
 ## Rules
 
 - Task-to-branch: one task per branch.

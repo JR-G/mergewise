@@ -40,3 +40,11 @@ bun run ops:start -- <task-id> <branch-name> <owner> <scope>
 bun run ops:prompt -- <task-id>
 bun run ops:status
 ```
+
+Session-based quick start and teardown:
+
+```bash
+bun run ops:start-session -- <session-id> <task-id> <owner> <scope>
+bun run ops:prompt -- <task-id>
+bun run wt:cleanup:session <session-id>
+```

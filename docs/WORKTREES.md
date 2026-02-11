@@ -12,6 +12,26 @@ This creates a sibling directory:
 
 `../mergewise-worktrees/feat/rulepack-ts-react`
 
+## Create a Session-Named Worktree
+
+```bash
+bun run wt:new:session s01 github-client
+```
+
+Default branch format:
+
+`feat/s01-github-client`
+
+Optional branch kind:
+
+```bash
+bun run wt:new:session s01 github-client fix
+```
+
+Creates:
+
+`fix/s01-github-client`
+
 ## List Worktrees
 
 ```bash
@@ -23,6 +43,17 @@ bun run wt:list
 ```bash
 bun run wt:remove feat/rulepack-ts-react
 ```
+
+## Cleanup One Session
+
+```bash
+bun run wt:cleanup:session s01
+```
+
+This removes local merged branches and worktrees for:
+
+- `feat/s01-*`
+- `fix/s01-*`
 
 ## Prune Stale Metadata
 
