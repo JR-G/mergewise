@@ -1,0 +1,10 @@
+owners:
+  apps/webhook-api: platform
+  apps/worker: platform
+  packages/github-client: integrations
+  packages/config-loader: platform
+  packages/rule-ts-react: rules
+  packages/job-store: platform
+  packages/shared-types: platform
+  tests/integration: qa
+  docs: docs

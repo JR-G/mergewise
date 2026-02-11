@@ -17,6 +17,7 @@
     "baseUrl": ".",
     "paths": {
       "@mergewise/github-client": ["packages/github-client/src/index.ts"],
+      "@mergewise/config-loader": ["packages/config-loader/src/index.ts"],
       "@mergewise/job-store": ["packages/job-store/src/index.ts"],
       "@mergewise/rule-engine": ["packages/rule-engine/src/index.ts"],
       "@mergewise/shared-types": ["packages/shared-types/src/index.ts"]
