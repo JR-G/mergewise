@@ -28,6 +28,8 @@ mergewise --version
 - `docs/ENGINEERING_STANDARDS.md`
 - `docs/WORKTREES.md`
 - `docs/AGENT_OPS.md`
+- `docs/ORCHESTRATION_PLAYBOOK.md`
+- `docs/ORCHESTRATOR_KICKOFF_TEMPLATE.md`
 
 ## Contributor Docs
 
