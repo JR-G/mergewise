@@ -1,0 +1,73 @@
+name: Agent Task
+description: Scoped work unit for agent-parallel development.
+title: "[agent] "
+labels: ["agent-task"]
+body:
+  - type: dropdown
+    id: target-package
+    attributes:
+      label: Target Package
+      description: Primary package or app this task modifies.
+      options:
+        - packages/shared-types
+        - packages/job-store
+        - packages/rule-engine
+        - apps/webhook-api
+        - apps/worker
+        - tests/integration
+        - docs
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What needs to be done and why.
+      placeholder: Describe the task, expected behaviour, and any constraints.
+    validations:
+      required: true
+
+  - type: textarea
+    id: files-to-modify
+    attributes:
+      label: Files to Modify
+      description: List of files this task is expected to create or change.
+      placeholder: |
+        - packages/rule-engine/src/runner.ts (new)
+        - packages/rule-engine/src/index.ts (update exports)
+    validations:
+      required: true
+
+  - type: textarea
+    id: required-tests
+    attributes:
+      label: Required Tests
+      description: Tests that must be added or updated for this task.
+      placeholder: |
+        - packages/rule-engine/src/runner.test.ts
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Other issues or PRs that must land before this task.
+      placeholder: |
+        - #12 (shared-types finding contracts)
+
+  - type: checkboxes
+    id: quality-gate
+    attributes:
+      label: Quality Gate Checklist
+      description: Confirm before closing.
+      options:
+        - label: "`bun run lint` passes"
+        - label: "`bun run typecheck` passes"
+        - label: "`bun run test` passes"
+        - label: "`bun run build` passes"
+        - label: "No unhandled I/O or external-call failures"
+        - label: "No unbounded in-memory collections"
+        - label: "TSDoc added for new exports"
