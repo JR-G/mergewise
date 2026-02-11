@@ -29,6 +29,8 @@
   ],
   "scripts": {
     "build": "bunx tsc -p tsconfig.build.json",
+    "dev:webhook": "bun run apps/webhook-api/src/index.ts",
+    "dev:worker": "bun run apps/worker/src/index.ts",
     "lint": "bunx eslint .",
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
