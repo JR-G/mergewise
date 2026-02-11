@@ -7,7 +7,7 @@ import type { AnalyzePullRequestJob } from "@mergewise/shared-types";
 /**
  * Runtime configuration for the worker process.
  */
-interface WorkerConfig {
+export interface WorkerConfig {
   /**
    * Poll interval in milliseconds for local queue file checks.
    */
@@ -23,7 +23,7 @@ interface WorkerConfig {
  *
  * @returns Validated worker configuration.
  */
-function loadConfig(): WorkerConfig {
+export function loadConfig(): WorkerConfig {
   const pollRaw = process.env.WORKER_POLL_INTERVAL_MS ?? "3000";
   const pollIntervalMs = Number.parseInt(pollRaw, 10);
   const maxKeysRaw = process.env.WORKER_MAX_PROCESSED_KEYS ?? "10000";
@@ -46,7 +46,7 @@ function loadConfig(): WorkerConfig {
  * @param job - Pull request analysis job payload.
  * @returns Stable idempotency key scoped to repository PR head SHA.
  */
-function buildIdempotencyKey(job: AnalyzePullRequestJob): string {
+export function buildIdempotencyKey(job: AnalyzePullRequestJob): string {
   return `${job.repo_full_name}#${job.pr_number}@${job.head_sha}`;
 }
 
@@ -58,59 +58,83 @@ function buildIdempotencyKey(job: AnalyzePullRequestJob): string {
  *
  * @param job - Job payload to process.
  */
-function processAnalyzePullRequestJob(job: AnalyzePullRequestJob): void {
+export function processAnalyzePullRequestJob(job: AnalyzePullRequestJob): void {
   const key = buildIdempotencyKey(job);
   console.log(
     `[worker] processing job=${job.job_id} key=${key} installation=${job.installation_id ?? "none"}`,
   );
 }
 
-const config = loadConfig();
-const processedKeys = new Set<string>();
-const processedOrder: string[] = [];
+/**
+ * In-memory state for idempotency key tracking.
+ */
+export interface ProcessedKeyState {
+  /** Set of currently tracked keys for O(1) lookup. */
+  readonly keys: Set<string>;
+  /** Insertion-ordered list for FIFO eviction. */
+  readonly order: string[];
+}
+
+/**
+ * Creates a fresh empty processed key tracking state.
+ */
+export function createProcessedKeyState(): ProcessedKeyState {
+  return { keys: new Set(), order: [] };
+}
 
 /**
  * Tracks a processed idempotency key while enforcing a fixed-size in-memory cap.
  *
  * @remarks
- * Oldest keys are evicted first once `maxProcessedKeys` is exceeded, allowing
+ * Oldest keys are evicted first once `maxKeys` is exceeded, allowing
  * long-running worker processes to stay memory-bounded.
  *
  * @param key - Idempotency key for a completed job.
+ * @param state - Mutable tracking state.
+ * @param maxKeys - Maximum number of keys to retain.
  */
-function trackProcessedKey(key: string): void {
-  processedKeys.add(key);
-  processedOrder.push(key);
+export function trackProcessedKey(
+  key: string,
+  state: ProcessedKeyState,
+  maxKeys: number,
+): void {
+  state.keys.add(key);
+  state.order.push(key);
 
-  while (processedOrder.length > config.maxProcessedKeys) {
-    const evicted = processedOrder.shift();
+  while (state.order.length > maxKeys) {
+    const evicted = state.order.shift();
     if (evicted) {
-      processedKeys.delete(evicted);
+      state.keys.delete(evicted);
     }
   }
 }
 
-console.log(
-  `[worker] started (poll=${config.pollIntervalMs}ms, max_keys=${config.maxProcessedKeys}, source=${DEFAULT_JOB_FILE_PATH})`,
-);
+if (import.meta.main) {
+  const config = loadConfig();
+  const state = createProcessedKeyState();
 
-setInterval(() => {
-  let jobs: AnalyzePullRequestJob[];
-  try {
-    jobs = readAllAnalyzePullRequestJobs();
-  } catch (error) {
-    const details = error instanceof Error ? error.stack ?? error.message : String(error);
-    console.error(`[worker] failed to read queued jobs: ${details}`);
-    return;
-  }
+  console.log(
+    `[worker] started (poll=${config.pollIntervalMs}ms, max_keys=${config.maxProcessedKeys}, source=${DEFAULT_JOB_FILE_PATH})`,
+  );
 
-  for (const job of jobs) {
-    const key = buildIdempotencyKey(job);
-    if (processedKeys.has(key)) {
-      continue;
+  setInterval(() => {
+    let jobs: AnalyzePullRequestJob[];
+    try {
+      jobs = readAllAnalyzePullRequestJobs();
+    } catch (error) {
+      const details = error instanceof Error ? error.stack ?? error.message : String(error);
+      console.error(`[worker] failed to read queued jobs: ${details}`);
+      return;
     }
 
-    processAnalyzePullRequestJob(job);
-    trackProcessedKey(key);
-  }
-}, config.pollIntervalMs);
+    for (const job of jobs) {
+      const key = buildIdempotencyKey(job);
+      if (state.keys.has(key)) {
+        continue;
+      }
+
+      processAnalyzePullRequestJob(job);
+      trackProcessedKey(key, state, config.maxProcessedKeys);
+    }
+  }, config.pollIntervalMs);
+}

@@ -10,13 +10,13 @@ import type {
 /**
  * Supported GitHub pull request actions that should queue analysis work.
  */
-const SUPPORTED_PULL_REQUEST_ACTIONS: ReadonlySet<GitHubPullRequestAction> =
+export const SUPPORTED_PULL_REQUEST_ACTIONS: ReadonlySet<GitHubPullRequestAction> =
   new Set(["opened", "reopened", "synchronize"]);
 
 /**
  * Runtime configuration for the webhook API service.
  */
-interface WebhookApiConfig {
+export interface WebhookApiConfig {
   /**
    * HTTP port for Bun server binding.
    */
@@ -32,7 +32,7 @@ interface WebhookApiConfig {
  *
  * @returns Validated runtime config with defaults applied.
  */
-function loadConfig(): WebhookApiConfig {
+export function loadConfig(): WebhookApiConfig {
   const portRaw = process.env.WEBHOOK_PORT ?? "8787";
   const port = Number.parseInt(portRaw, 10);
 
@@ -51,7 +51,7 @@ function loadConfig(): WebhookApiConfig {
  * @param secret - Shared webhook secret.
  * @returns GitHub-formatted signature value (`sha256=<hex>`).
  */
-function computeGitHubSignature(payload: string, secret: string): string {
+export function computeGitHubSignature(payload: string, secret: string): string {
   const digest = createHmac("sha256", secret).update(payload).digest("hex");
   return `sha256=${digest}`;
 }
@@ -64,7 +64,7 @@ function computeGitHubSignature(payload: string, secret: string): string {
  * @param secret - Optional secret; when unset, verification is skipped.
  * @returns `true` if signature is valid or verification is disabled.
  */
-function isWebhookSignatureValid(
+export function isWebhookSignatureValid(
   payload: string,
   signatureHeader: string | null,
   secret?: string,
@@ -94,7 +94,7 @@ function isWebhookSignatureValid(
  * @param payload - Parsed JSON payload.
  * @returns `true` when required fields are present.
  */
-function isPullRequestWebhookEvent(
+export function isPullRequestWebhookEvent(
   payload: unknown,
 ): payload is GitHubPullRequestWebhookEvent {
   if (!payload || typeof payload !== "object") {
@@ -116,7 +116,7 @@ function isPullRequestWebhookEvent(
  * @param payload - Parsed and validated pull request webhook event.
  * @returns Local queue job payload.
  */
-function buildAnalyzePullRequestJob(
+export function buildAnalyzePullRequestJob(
   payload: GitHubPullRequestWebhookEvent,
 ): AnalyzePullRequestJob {
   return {
@@ -129,82 +129,84 @@ function buildAnalyzePullRequestJob(
   };
 }
 
-const config = loadConfig();
+if (import.meta.main) {
+  const config = loadConfig();
 
-Bun.serve({
-  port: config.port,
-  /**
-   * Handles incoming GitHub webhook HTTP requests.
-   *
-   * @param request - Incoming HTTP request.
-   * @returns HTTP response with intake status.
-   */
-  async fetch(request: Request): Promise<Response> {
-    if (request.method === "GET" && new URL(request.url).pathname === "/health") {
-      return Response.json({ status: "ok" });
-    }
+  Bun.serve({
+    port: config.port,
+    /**
+     * Handles incoming GitHub webhook HTTP requests.
+     *
+     * @param request - Incoming HTTP request.
+     * @returns HTTP response with intake status.
+     */
+    async fetch(request: Request): Promise<Response> {
+      if (request.method === "GET" && new URL(request.url).pathname === "/health") {
+        return Response.json({ status: "ok" });
+      }
 
-    if (request.method !== "POST") {
-      return new Response("Method Not Allowed", { status: 405 });
-    }
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", { status: 405 });
+      }
 
-    const eventName = request.headers.get("x-github-event");
-    if (eventName !== "pull_request") {
-      return new Response("Ignored event", { status: 202 });
-    }
+      const eventName = request.headers.get("x-github-event");
+      if (eventName !== "pull_request") {
+        return new Response("Ignored event", { status: 202 });
+      }
 
-    const rawBody = await request.text();
-    const signatureHeader = request.headers.get("x-hub-signature-256");
-    if (!isWebhookSignatureValid(rawBody, signatureHeader, config.webhookSecret)) {
-      return new Response("Invalid signature", { status: 401 });
-    }
+      const rawBody = await request.text();
+      const signatureHeader = request.headers.get("x-hub-signature-256");
+      if (!isWebhookSignatureValid(rawBody, signatureHeader, config.webhookSecret)) {
+        return new Response("Invalid signature", { status: 401 });
+      }
 
-    let payload: unknown;
-    try {
-      payload = JSON.parse(rawBody);
-    } catch {
-      return new Response("Invalid JSON payload", { status: 400 });
-    }
+      let payload: unknown;
+      try {
+        payload = JSON.parse(rawBody);
+      } catch {
+        return new Response("Invalid JSON payload", { status: 400 });
+      }
 
-    if (!isPullRequestWebhookEvent(payload)) {
-      return new Response("Unsupported pull_request payload", { status: 400 });
-    }
+      if (!isPullRequestWebhookEvent(payload)) {
+        return new Response("Unsupported pull_request payload", { status: 400 });
+      }
 
-    if (
-      !SUPPORTED_PULL_REQUEST_ACTIONS.has(
-        payload.action as GitHubPullRequestAction,
-      )
-    ) {
-      return new Response("Ignored pull_request action", { status: 202 });
-    }
+      if (
+        !SUPPORTED_PULL_REQUEST_ACTIONS.has(
+          payload.action as GitHubPullRequestAction,
+        )
+      ) {
+        return new Response("Ignored pull_request action", { status: 202 });
+      }
 
-    const job = buildAnalyzePullRequestJob(payload);
-    try {
-      enqueueAnalyzePullRequestJob(job);
-    } catch (error) {
-      const details = error instanceof Error ? error.stack ?? error.message : String(error);
-      console.error(
-        `[webhook-api] failed to enqueue job=${job.job_id} repo=${job.repo_full_name} pr=${job.pr_number}: ${details}`,
+      const job = buildAnalyzePullRequestJob(payload);
+      try {
+        enqueueAnalyzePullRequestJob(job);
+      } catch (error) {
+        const details = error instanceof Error ? error.stack ?? error.message : String(error);
+        console.error(
+          `[webhook-api] failed to enqueue job=${job.job_id} repo=${job.repo_full_name} pr=${job.pr_number}: ${details}`,
+        );
+        return Response.json(
+          { status: "error", message: "Failed to queue analysis job" },
+          { status: 503 },
+        );
+      }
+
+      console.log(
+        `[webhook-api] queued job=${job.job_id} repo=${job.repo_full_name} pr=${job.pr_number} sha=${job.head_sha}`,
       );
-      return Response.json(
-        { status: "error", message: "Failed to queue analysis job" },
-        { status: 503 },
-      );
-    }
 
-    console.log(
-      `[webhook-api] queued job=${job.job_id} repo=${job.repo_full_name} pr=${job.pr_number} sha=${job.head_sha}`,
-    );
+      return Response.json({
+        status: "queued",
+        job_id: job.job_id,
+        repo: job.repo_full_name,
+        pr_number: job.pr_number,
+      });
+    },
+  });
 
-    return Response.json({
-      status: "queued",
-      job_id: job.job_id,
-      repo: job.repo_full_name,
-      pr_number: job.pr_number,
-    });
-  },
-});
-
-console.log(
-  `[webhook-api] listening on :${config.port} (signature verification: ${config.webhookSecret ? "enabled" : "disabled"})`,
-);
+  console.log(
+    `[webhook-api] listening on :${config.port} (signature verification: ${config.webhookSecret ? "enabled" : "disabled"})`,
+  );
+}
