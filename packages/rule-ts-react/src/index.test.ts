@@ -70,6 +70,25 @@ describe("rule-ts-react unsafe any usage", () => {
     expect(findings).toEqual([]);
   });
 
+  test("ignores any-like text inside strings and comments in TypeScript files", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/example.ts", [
+        makeDiffHunk("@@ -1,0 +1,6 @@", [
+          "+const label = \"as any\";",
+          "+const detail = 'Array<any>';",
+          "+const note = `Promise<any>`;",
+          "+// any used only in comment",
+          "+const value = fetchData(); /* any in trailing comment */",
+          "+const nextValue = value;",
+        ]),
+      ]),
+    ]);
+
+    const findings = await unsafeAnyUsageRule.analyse(context);
+
+    expect(findings).toEqual([]);
+  });
+
   test("exposes deterministic rule list for worker integration", () => {
     expect(tsReactRules).toHaveLength(1);
     expect(tsReactRules[0]).toBe(unsafeAnyUsageRule);

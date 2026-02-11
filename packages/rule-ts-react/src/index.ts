@@ -4,6 +4,11 @@ const RULE_IDENTIFIER = "ts-react/no-unsafe-any";
 const TYPE_SCRIPT_REACT_FILE_PATTERN = /\.(ts|tsx)$/i;
 const HUNK_HEADER_PATTERN = /^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/;
 const UNSAFE_ANY_PATTERN = /(?:\bas\s+any\b|:\s*any\b|<\s*any\s*>|\bany\s*\[\s*\]|\bArray\s*<\s*any\s*>|\bReadonlyArray\s*<\s*any\s*>|\bPromise\s*<\s*any\s*>)/;
+const NON_CODE_MARKER_PATTERN = /(?:'|"|`|\/\/|\/\*)/;
+
+type LineScanState = {
+  insideBlockComment: boolean;
+};
 
 /**
  * Stateless rule that flags explicit `any` usage in changed TypeScript and React files.
@@ -27,8 +32,15 @@ export const unsafeAnyUsageRule: StatelessRule = {
  */
 export const tsReactRules: readonly StatelessRule[] = [unsafeAnyUsageRule];
 
+/**
+ * Collects findings from added TypeScript and TSX lines that include explicit `any` type usage.
+ *
+ * @param context - Rule execution context with changed file hunks.
+ * @returns Findings for lines containing explicit `any` type usage.
+ */
 function collectUnsafeAnyFindings(context: AnalysisContext): readonly Finding[] {
   const findings: Finding[] = [];
+  const lineScanState: LineScanState = { insideBlockComment: false };
 
   for (const fileDiff of context.diffs) {
     if (!TYPE_SCRIPT_REACT_FILE_PATTERN.test(fileDiff.filePath)) {
@@ -45,13 +57,15 @@ function collectUnsafeAnyFindings(context: AnalysisContext): readonly Finding[] 
       for (const line of hunk.lines) {
         if (line.startsWith("+") && !line.startsWith("+++")) {
           const addedContent = line.slice(1);
-          if (UNSAFE_ANY_PATTERN.test(addedContent)) {
+          const addedCodeOnlyContent = stripNonCodeContent(addedContent, lineScanState);
+          if (UNSAFE_ANY_PATTERN.test(addedCodeOnlyContent)) {
             findings.push(
               buildFinding(
                 context,
                 fileDiff.filePath,
                 currentLineNumber,
                 addedContent,
+                addedCodeOnlyContent,
                 hunk.header,
               ),
             );
@@ -70,6 +84,12 @@ function collectUnsafeAnyFindings(context: AnalysisContext): readonly Finding[] 
   return findings;
 }
 
+/**
+ * Parses the starting target line number from a unified diff hunk header.
+ *
+ * @param header - Unified diff hunk header.
+ * @returns Added-side starting line number or `null` when parsing fails.
+ */
 function parseHunkStartingLine(header: string): number | null {
   const headerMatch = HUNK_HEADER_PATTERN.exec(header);
   if (!headerMatch) {
@@ -85,15 +105,144 @@ function parseHunkStartingLine(header: string): number | null {
   return Number.isNaN(parsedValue) ? null : parsedValue;
 }
 
+/**
+ * Removes string literal and comment text from one added source line.
+ *
+ * @param sourceLine - Added source line without leading diff marker.
+ * @param lineScanState - Mutable scanner state for block comment continuity.
+ * @returns Source content with non-code segments stripped.
+ */
+function stripNonCodeContent(sourceLine: string, lineScanState: LineScanState): string {
+  let cursorIndex = 0;
+  let sanitizedContent = "";
+
+  while (cursorIndex < sourceLine.length) {
+    const currentCharacter = sourceLine[cursorIndex];
+    const nextCharacter = sourceLine[cursorIndex + 1];
+
+    if (lineScanState.insideBlockComment) {
+      if (currentCharacter === "*" && nextCharacter === "/") {
+        lineScanState.insideBlockComment = false;
+        cursorIndex += 2;
+        continue;
+      }
+
+      cursorIndex += 1;
+      continue;
+    }
+
+    if (currentCharacter === "/" && nextCharacter === "*") {
+      lineScanState.insideBlockComment = true;
+      cursorIndex += 2;
+      continue;
+    }
+
+    if (currentCharacter === "/" && nextCharacter === "/") {
+      break;
+    }
+
+    if (
+      currentCharacter === "\"" ||
+      currentCharacter === "'" ||
+      currentCharacter === "`"
+    ) {
+      cursorIndex = skipStringLiteral(sourceLine, cursorIndex, currentCharacter);
+      continue;
+    }
+
+    sanitizedContent += currentCharacter;
+    cursorIndex += 1;
+  }
+
+  return sanitizedContent;
+}
+
+/**
+ * Advances the cursor past one quoted string literal, handling escape sequences.
+ *
+ * @param sourceLine - Added source line without leading diff marker.
+ * @param startIndex - Index of the opening quote character.
+ * @param quoteCharacter - Quote delimiter used by the literal.
+ * @returns Next index after the closing quote or end-of-line.
+ */
+function skipStringLiteral(
+  sourceLine: string,
+  startIndex: number,
+  quoteCharacter: string,
+): number {
+  let cursorIndex = startIndex + 1;
+
+  while (cursorIndex < sourceLine.length) {
+    const currentCharacter = sourceLine[cursorIndex];
+    if (currentCharacter === "\\") {
+      cursorIndex += 2;
+      continue;
+    }
+
+    if (currentCharacter === quoteCharacter) {
+      return cursorIndex + 1;
+    }
+
+    cursorIndex += 1;
+  }
+
+  return cursorIndex;
+}
+
+/**
+ * Builds the patch preview suggestion for explicit `any` replacements when safe.
+ *
+ * @param evidence - Original added source line.
+ * @param sanitizedContent - Source line with string and comment segments removed.
+ * @returns Patch preview line replacement or `null` when no safe patch is available.
+ */
+function buildSuggestedReplacement(
+  evidence: string,
+  sanitizedContent: string,
+): string | null {
+  if (NON_CODE_MARKER_PATTERN.test(evidence) && sanitizedContent !== evidence) {
+    return null;
+  }
+
+  let replacementCandidate = evidence;
+  replacementCandidate = replacementCandidate.replace(/\bas\s+any\b/g, "as unknown");
+  replacementCandidate = replacementCandidate.replace(/:\s*any\b/g, ": unknown");
+  replacementCandidate = replacementCandidate.replace(/<\s*any\s*>/g, "<unknown>");
+  replacementCandidate = replacementCandidate.replace(/\bany\s*\[\s*\]/g, "unknown[]");
+  replacementCandidate = replacementCandidate.replace(/\bArray\s*<\s*any\s*>/g, "Array<unknown>");
+  replacementCandidate = replacementCandidate.replace(
+    /\bReadonlyArray\s*<\s*any\s*>/g,
+    "ReadonlyArray<unknown>",
+  );
+  replacementCandidate = replacementCandidate.replace(
+    /\bPromise\s*<\s*any\s*>/g,
+    "Promise<unknown>",
+  );
+
+  return replacementCandidate === evidence ? null : replacementCandidate;
+}
+
+/**
+ * Builds one finding for explicit `any` usage in an added line.
+ *
+ * @param context - Rule execution context.
+ * @param filePath - Path of the changed file.
+ * @param line - Line number in the added file version.
+ * @param evidence - Original added source line.
+ * @param sanitizedContent - Source line with string and comment segments removed.
+ * @param hunkHeader - Unified diff hunk header.
+ * @returns Structured finding payload.
+ */
 function buildFinding(
   context: AnalysisContext,
   filePath: string,
   line: number,
   evidence: string,
+  sanitizedContent: string,
   hunkHeader: string,
 ): Finding {
   const findingIdentifier = `${RULE_IDENTIFIER}:${context.pullRequest.repo}:${context.pullRequest.prNumber}:${filePath}:${line}`;
-  const suggestedReplacement = evidence.replace(/\bany\b/g, "unknown");
+  const suggestedReplacement = buildSuggestedReplacement(evidence, sanitizedContent);
   return {
     findingId: findingIdentifier,
     installationId: context.pullRequest.installationId,
@@ -106,11 +255,15 @@ function buildFinding(
     line,
     evidence,
     recommendation: "Replace explicit any with a concrete type, unknown, or a constrained generic to preserve type safety.",
-    patchPreview: {
-      removedLines: [evidence],
-      addedLines: [suggestedReplacement],
-      hunkHeader,
-    },
+    ...(suggestedReplacement
+      ? {
+          patchPreview: {
+            removedLines: [evidence],
+            addedLines: [suggestedReplacement],
+            hunkHeader,
+          },
+        }
+      : {}),
     confidence: 0.95,
     status: "posted",
   };
