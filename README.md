@@ -28,6 +28,8 @@ mergewise --version
 - `docs/ENGINEERING_STANDARDS.md`
 - `docs/WORKTREES.md`
 - `docs/AGENT_OPS.md`
+- `docs/ORCHESTRATION_PLAYBOOK.md`
+- `docs/ORCHESTRATOR_KICKOFF_TEMPLATE.md`
 
 ## Contributor Docs
 
@@ -39,4 +41,12 @@ mergewise --version
 bun run ops:start -- <task-id> <branch-name> <owner> <scope>
 bun run ops:prompt -- <task-id>
 bun run ops:status
+```
+
+Session-based quick start and teardown:
+
+```bash
+bun run ops:start-session -- <session-id> <task-id>
+bun run ops:prompt -- <task-id>
+bun run wt:cleanup:session <session-id>
 ```

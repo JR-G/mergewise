@@ -8,18 +8,36 @@ usage() {
   cat <<'EOF'
 Usage:
   scripts/worktree.sh new <branch>
+  scripts/worktree.sh new-session <session-id> <task-name> [branch-kind]
   scripts/worktree.sh list
   scripts/worktree.sh remove <branch>
+  scripts/worktree.sh cleanup-session <session-id>
   scripts/worktree.sh prune
 
 Notes:
   - Worktrees are created under ../mergewise-worktrees by default.
   - Override location with WORKTREE_ROOT=/custom/path.
+  - branch-kind defaults to feat and can be feat or fix.
 EOF
 }
 
 ensure_worktree_root() {
   mkdir -p "$WORKTREE_ROOT"
+}
+
+validate_name_segment() {
+  local value="$1"
+  local value_name="$2"
+
+  if [[ -z "$value" ]]; then
+    echo "error: $value_name must not be empty"
+    exit 1
+  fi
+
+  if [[ ! "$value" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+    echo "error: $value_name must match ^[a-z0-9][a-z0-9-]*$"
+    exit 1
+  fi
 }
 
 worktree_path_for_branch() {
@@ -48,6 +66,23 @@ cmd_new() {
   echo "Created worktree: $wt_path"
 }
 
+cmd_new_session() {
+  local session_id="${1:-}"
+  local task_name="${2:-}"
+  local branch_kind="${3:-feat}"
+
+  validate_name_segment "$session_id" "session-id"
+  validate_name_segment "$task_name" "task-name"
+
+  if [[ "$branch_kind" != "feat" && "$branch_kind" != "fix" ]]; then
+    echo "error: branch-kind must be feat or fix"
+    exit 1
+  fi
+
+  local branch_name="${branch_kind}/${session_id}-${task_name}"
+  cmd_new "$branch_name"
+}
+
 cmd_list() {
   git -C "$REPO_ROOT" worktree list
 }
@@ -71,14 +106,52 @@ cmd_prune() {
   echo "Pruned stale worktree metadata."
 }
 
+cmd_cleanup_session() {
+  local session_id="${1:-}"
+  validate_name_segment "$session_id" "session-id"
+
+  local branch_patterns=(
+    "feat/${session_id}-"
+    "fix/${session_id}-"
+  )
+  local removed_count=0
+  local skipped_count=0
+
+  for branch_pattern in "${branch_patterns[@]}"; do
+    while IFS= read -r branch_name; do
+      [[ -z "$branch_name" ]] && continue
+
+      local worktree_path
+      worktree_path="$(worktree_path_for_branch "$branch_name")"
+      if [[ -d "$worktree_path" || -f "$worktree_path/.git" || -d "$worktree_path/.git" ]]; then
+        git -C "$REPO_ROOT" worktree remove "$worktree_path" || true
+      fi
+
+      if git -C "$REPO_ROOT" merge-base --is-ancestor "$branch_name" "main"; then
+        git -C "$REPO_ROOT" branch -D "$branch_name"
+        removed_count=$((removed_count + 1))
+      else
+        echo "Skipped unmerged branch: $branch_name"
+        skipped_count=$((skipped_count + 1))
+      fi
+    done < <(git -C "$REPO_ROOT" branch --format='%(refname:short)' | grep "^${branch_pattern}" || true)
+  done
+
+  echo "Session cleanup complete."
+  echo "Removed merged branches: $removed_count"
+  echo "Skipped unmerged branches: $skipped_count"
+}
+
 main() {
   local cmd="${1:-}"
   shift || true
 
   case "$cmd" in
     new) cmd_new "$@" ;;
+    new-session) cmd_new_session "$@" ;;
     list) cmd_list ;;
     remove) cmd_remove "$@" ;;
+    cleanup-session) cmd_cleanup_session "$@" ;;
     prune) cmd_prune ;;
     *) usage; exit 1 ;;
   esac
