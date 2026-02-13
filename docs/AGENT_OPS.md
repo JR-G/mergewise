@@ -85,6 +85,7 @@ bun run wt:cleanup:session s01
 Open PR from task identifier:
 
 ```bash
+bun run ops:review-ready -- <task-id>
 bun run ops:open-pr -- <task-id>
 ```
 
@@ -95,3 +96,4 @@ bun run ops:open-pr -- <task-id>
 - Agent-to-worktree: one agent per worktree.
 - File boundaries: no edits outside task-allowed paths.
 - Completion requires a posted PR URL.
+- `ops:open-pr` runs review-ready checks before creating the PR.

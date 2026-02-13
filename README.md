@@ -60,5 +60,6 @@ bun run ops:agent -- <session-id> <task-id>
 Open a PR for a task using branch mapping from the runtime board:
 
 ```bash
+bun run ops:review-ready -- <task-id>
 bun run ops:open-pr -- <task-id>
 ```

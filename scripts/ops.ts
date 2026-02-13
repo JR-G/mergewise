@@ -30,6 +30,13 @@ interface OwnershipEntry {
   scopeName: string;
 }
 
+interface TaskBoardEntry {
+  taskIdentifier: string;
+  branchName: string;
+  ownerName: string;
+  scopeName: string;
+}
+
 /**
  * Exits the process with a formatted error message.
  *
@@ -63,6 +70,7 @@ function usage(): void {
   bun run ops:start-session -- <session-id> <task-id> [owner] [scope] [branch-kind]
   bun run ops:agent -- <session-id> <task-id> [owner] [scope] [branch-kind]
   bun run ops:prompt -- <task-id>
+  bun run ops:review-ready -- <task-id>
   bun run ops:open-pr -- <task-id>
 
 Examples:
@@ -71,6 +79,7 @@ Examples:
   bun run ops:agent -- s01 github-client
   bun run ops:start-session -- s01 github-client agent-1 packages/github-client fix
   bun run ops:prompt -- github-client
+  bun run ops:review-ready -- github-client
   bun run ops:open-pr -- github-client`);
 }
 
@@ -420,6 +429,202 @@ function loadTaskFile(taskIdentifier: string): string {
 }
 
 /**
+ * Parses task rows from the local runtime board.
+ *
+ * @returns Parsed task rows.
+ */
+function loadTaskBoardEntries(): TaskBoardEntry[] {
+  ensureBoardFile();
+  const boardContents = readFileSync(boardFilePath, "utf8");
+  const tableLinePattern = /^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$/;
+  const boardEntries: TaskBoardEntry[] = [];
+
+  for (const boardLine of boardContents.split("\n")) {
+    const parsedLine = boardLine.match(tableLinePattern);
+    if (!parsedLine) {
+      continue;
+    }
+
+    const taskIdentifier = (parsedLine[1] ?? "").trim();
+    const branchName = (parsedLine[2] ?? "").trim();
+    const ownerName = (parsedLine[3] ?? "").trim();
+    const scopeName = (parsedLine[4] ?? "").trim();
+    if (taskIdentifier === "Task ID" || taskIdentifier === "---") {
+      continue;
+    }
+
+    if (!taskIdentifier || !branchName || !scopeName) {
+      continue;
+    }
+
+    boardEntries.push({
+      taskIdentifier,
+      branchName,
+      ownerName,
+      scopeName,
+    });
+  }
+
+  return boardEntries;
+}
+
+/**
+ * Resolves one task row from the local runtime board.
+ *
+ * @param taskIdentifier - Unique task identifier.
+ * @returns Task row details.
+ */
+function resolveTaskBoardEntry(taskIdentifier: string): TaskBoardEntry {
+  try {
+    const matchedEntries = loadTaskBoardEntries().filter((boardEntry) =>
+      boardEntry.taskIdentifier === taskIdentifier
+    );
+
+    if (matchedEntries.length === 0) {
+      fail(
+        `resolveTaskBoardEntry(${taskIdentifier}) failed: no board row found in ${boardFilePath}`,
+      );
+    }
+
+    if (matchedEntries.length > 1) {
+      const matchedBranchNames = matchedEntries.map((boardEntry) => boardEntry.branchName);
+      fail(
+        `resolveTaskBoardEntry(${taskIdentifier}) failed: multiple board rows found (${matchedBranchNames.join(", ")})`,
+      );
+    }
+
+    const [resolvedBoardEntry] = matchedEntries;
+    if (!resolvedBoardEntry) {
+      fail(`resolveTaskBoardEntry(${taskIdentifier}) failed: unresolved board entry`);
+    }
+
+    return resolvedBoardEntry;
+  } catch (caughtError) {
+    fail(`resolveTaskBoardEntry(${taskIdentifier}) failed: ${formatError(caughtError)}`);
+  }
+}
+
+/**
+ * Returns changed file paths between `main` and the provided branch.
+ *
+ * @param branchName - Branch name to compare.
+ * @returns Relative changed file paths.
+ */
+function listChangedPathsAgainstMain(branchName: string): string[] {
+  try {
+    const diffOutput = execFileSync(
+      "git",
+      ["diff", "--name-only", `main...${branchName}`],
+      {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+      },
+    );
+
+    return diffOutput
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  } catch (caughtError) {
+    fail(`listChangedPathsAgainstMain(${branchName}) failed: ${formatError(caughtError)}`);
+  }
+}
+
+/**
+ * Validates branch naming alignment with task identifier.
+ *
+ * @param boardEntry - Task row details.
+ */
+function assertTaskBranchAlignment(boardEntry: TaskBoardEntry): void {
+  const normalizedBranchName = boardEntry.branchName.toLowerCase();
+  const normalizedTaskIdentifier = boardEntry.taskIdentifier.toLowerCase();
+  if (!normalizedBranchName.includes(normalizedTaskIdentifier)) {
+    fail(
+      `task-branch mismatch: task=${boardEntry.taskIdentifier} is mapped to branch=${boardEntry.branchName}`,
+    );
+  }
+}
+
+/**
+ * Checks whether a changed path is inside the scoped path boundary.
+ *
+ * @param changedPath - Changed file path.
+ * @param scopeName - Scoped root path from the board row.
+ * @returns Whether the path is inside scope.
+ */
+function isPathWithinScope(changedPath: string, scopeName: string): boolean {
+  return changedPath === scopeName || changedPath.startsWith(`${scopeName}/`);
+}
+
+/**
+ * Validates that all changed files stay inside the task scope.
+ *
+ * @param boardEntry - Task row details.
+ * @param changedPaths - Changed file paths.
+ */
+function assertScopeBoundaries(
+  boardEntry: TaskBoardEntry,
+  changedPaths: readonly string[],
+): void {
+  if (changedPaths.length === 0) {
+    fail(
+      `scope check failed for ${boardEntry.taskIdentifier}: no changed files found on ${boardEntry.branchName}`,
+    );
+  }
+
+  const outOfScopePaths = changedPaths.filter((changedPath) =>
+    !isPathWithinScope(changedPath, boardEntry.scopeName)
+  );
+  if (outOfScopePaths.length > 0) {
+    fail(
+      `scope check failed for ${boardEntry.taskIdentifier}: changed files outside scope ${boardEntry.scopeName}: ${outOfScopePaths.join(", ")}`,
+    );
+  }
+}
+
+/**
+ * Executes mandatory quality gates inside the task branch worktree.
+ *
+ * @param boardEntry - Task row details.
+ */
+function runQualityGates(boardEntry: TaskBoardEntry): void {
+  const worktreePath = resolveWorktreePath(boardEntry.branchName);
+  if (!existsSync(worktreePath)) {
+    fail(`runQualityGates failed: missing worktree path ${worktreePath}`);
+  }
+
+  try {
+    execFileSync("bun", ["run", "lint"], { cwd: worktreePath, stdio: "inherit" });
+    execFileSync("bun", ["run", "typecheck"], { cwd: worktreePath, stdio: "inherit" });
+    execFileSync("bun", ["run", "test"], { cwd: worktreePath, stdio: "inherit" });
+    execFileSync("bun", ["run", "build"], { cwd: worktreePath, stdio: "inherit" });
+  } catch (caughtError) {
+    fail(
+      `runQualityGates(${boardEntry.taskIdentifier}) failed in ${worktreePath}: ${formatError(caughtError)}`,
+    );
+  }
+}
+
+/**
+ * Runs required readiness checks before a task may open a pull request.
+ *
+ * @param taskIdentifier - Unique task identifier.
+ */
+function reviewTaskReadiness(taskIdentifier: string): void {
+  loadTaskFile(taskIdentifier);
+  const boardEntry = resolveTaskBoardEntry(taskIdentifier);
+  assertTaskBranchAlignment(boardEntry);
+
+  const changedPaths = listChangedPathsAgainstMain(boardEntry.branchName);
+  assertScopeBoundaries(boardEntry, changedPaths);
+  runQualityGates(boardEntry);
+
+  console.log(
+    `review-ready passed for task=${boardEntry.taskIdentifier} branch=${boardEntry.branchName} scope=${boardEntry.scopeName}`,
+  );
+}
+
+/**
  * Prints a preformatted agent prompt for a task file.
  *
  * @param taskIdentifier - Unique task identifier.
@@ -459,49 +664,7 @@ function printPrompt(taskIdentifier: string): void {
  * @returns Branch name mapped to the task.
  */
 function resolveBranchNameForTask(taskIdentifier: string): string {
-  try {
-    ensureBoardFile();
-    const boardContents = readFileSync(boardFilePath, "utf8");
-    const tableLinePattern = /^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$/;
-    const matchedBranches = new Set<string>();
-
-    for (const boardLine of boardContents.split("\n")) {
-      const parsedLine = boardLine.match(tableLinePattern);
-      if (!parsedLine) {
-        continue;
-      }
-
-      const parsedTaskIdentifier = (parsedLine[1] ?? "").trim();
-      const parsedBranchName = (parsedLine[2] ?? "").trim();
-      if (parsedTaskIdentifier === "Task ID" || parsedTaskIdentifier === "---") {
-        continue;
-      }
-
-      if (parsedTaskIdentifier === taskIdentifier && parsedBranchName.length > 0) {
-        matchedBranches.add(parsedBranchName);
-      }
-    }
-
-    const resolvedBranches = [...matchedBranches];
-    if (resolvedBranches.length === 0) {
-      fail(`resolveBranchNameForTask(${taskIdentifier}) failed: no branch found in ${boardFilePath}`);
-    }
-
-    if (resolvedBranches.length > 1) {
-      fail(
-        `resolveBranchNameForTask(${taskIdentifier}) failed: multiple branches found (${resolvedBranches.join(", ")})`,
-      );
-    }
-
-    const [resolvedBranchName] = resolvedBranches;
-    if (!resolvedBranchName) {
-      fail(`resolveBranchNameForTask(${taskIdentifier}) failed: unresolved branch value`);
-    }
-
-    return resolvedBranchName;
-  } catch (caughtError) {
-    fail(`resolveBranchNameForTask(${taskIdentifier}) failed: ${formatError(caughtError)}`);
-  }
+  return resolveTaskBoardEntry(taskIdentifier).branchName;
 }
 
 /**
@@ -510,6 +673,7 @@ function resolveBranchNameForTask(taskIdentifier: string): string {
  * @param taskIdentifier - Unique task identifier.
  */
 function openPullRequestForTask(taskIdentifier: string): void {
+  reviewTaskReadiness(taskIdentifier);
   const branchName = resolveBranchNameForTask(taskIdentifier);
 
   try {
@@ -661,6 +825,17 @@ function main(): void {
     }
 
     openPullRequestForTask(taskIdentifier);
+    return;
+  }
+
+  if (commandName === "review-ready") {
+    const [taskIdentifier] = argumentsList;
+    if (!taskIdentifier) {
+      usage();
+      fail("missing task-id for ops:review-ready");
+    }
+
+    reviewTaskReadiness(taskIdentifier);
     return;
   }
 
