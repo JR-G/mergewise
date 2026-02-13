@@ -76,6 +76,7 @@ function usage(): void {
   bun run ops:start-batch -- <session-id> <task-id> [task-id...]
   bun run ops:agent -- <session-id> <task-id> [owner] [scope] [branch-kind]
   bun run ops:prompt -- <task-id>
+  bun run ops:finish -- <task-id>
   bun run ops:review-ready -- <task-id>
   bun run ops:open-pr -- <task-id>
 
@@ -86,6 +87,7 @@ Examples:
   bun run ops:agent -- s01 github-client
   bun run ops:start-session -- s01 github-client agent-1 packages/github-client fix
   bun run ops:prompt -- github-client
+  bun run ops:finish -- github-client
   bun run ops:review-ready -- github-client
   bun run ops:open-pr -- github-client`);
 }
@@ -794,7 +796,7 @@ function printPrompt(taskIdentifier: string): void {
     console.log("- No inline comments.");
     console.log("- No single-letter or abbreviated variable names.");
     console.log("- Task is complete only after: quality gates pass, branch is pushed, and PR URL is posted.");
-    console.log("- Open PR with: bun run ops:open-pr -- <task-id>");
+    console.log("- Finalize with one command: bun run ops:finish -- <task-id>");
     console.log("- Return PR URL in your completion message. Do not merge.");
   } catch (caughtError) {
     fail(`printPrompt(${taskIdentifier}) failed: ${formatError(caughtError)}`);
@@ -964,6 +966,15 @@ function openPullRequestForTask(taskIdentifier: string): void {
   } catch (caughtError) {
     fail(`openPullRequestForTask(${taskIdentifier}) failed: ${formatError(caughtError)}`);
   }
+}
+
+/**
+ * Runs the full completion flow for one task.
+ *
+ * @param taskIdentifier - Unique task identifier.
+ */
+function finishTask(taskIdentifier: string): void {
+  openPullRequestForTask(taskIdentifier);
 }
 
 /**
@@ -1167,6 +1178,17 @@ function main(): void {
     }
 
     openPullRequestForTask(taskIdentifier);
+    return;
+  }
+
+  if (commandName === "finish") {
+    const [taskIdentifier] = argumentsList;
+    if (!taskIdentifier) {
+      usage();
+      fail("missing task-id for ops:finish");
+    }
+
+    finishTask(taskIdentifier);
     return;
   }
 

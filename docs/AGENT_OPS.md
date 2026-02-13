@@ -105,6 +105,12 @@ bun run wt:cleanup:session s01
 Open PR from task identifier:
 
 ```bash
+bun run ops:finish -- <task-id>
+```
+
+Or step-by-step:
+
+```bash
 bun run ops:review-ready -- <task-id>
 bun run ops:open-pr -- <task-id>
 ```
@@ -114,6 +120,7 @@ bun run ops:open-pr -- <task-id>
 - Fails when the task branch has zero commits ahead of `main`.
 - Fails when the task worktree has uncommitted changes.
 - Pushes the task branch to `origin` before creating or updating the PR.
+- `ops:finish` runs the full completion flow via `ops:open-pr`.
 
 ## Rules
 
@@ -122,6 +129,7 @@ bun run ops:open-pr -- <task-id>
 - Agent-to-worktree: one agent per worktree.
 - File boundaries: no edits outside task-allowed paths.
 - Completion requires a posted PR URL.
+- `ops:finish` is the canonical single-command completion step for agents.
 - `ops:open-pr` runs review-ready checks before creating the PR.
 - `ops:review-ready` runs `quality:gates`, lint, typecheck, test, and build in the task worktree.
 - `ops:open-pr` auto-generates a compliant PR body and updates an existing PR for the branch when one already exists.
