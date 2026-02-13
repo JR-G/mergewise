@@ -16,7 +16,7 @@ Use `ops/` with worktrees to run multiple agents safely in parallel.
 1. Create a task file from `ops/tasks/TEMPLATE.md`.
 2. Add the task to `.mergewise-runtime/ops/board.md`.
 3. Spawn worktree:
-   - `bun run ops:new <task-id> <branch-name>`
+   - `bun run ops:start -- <task-id> <branch-name> <owner> <scope>`
 4. Give the assigned agent the task file and branch.
 5. Track active work with:
    - `bun run ops:status`
@@ -63,6 +63,26 @@ bun run ops:start-session -- s01 github-client
 Creates branch:
 
 `feat/s01-github-client`
+
+Batch session setup for tech leads:
+
+```bash
+bun run ops:start-batch -- <session-id> <task-id> [task-id...]
+```
+
+Example:
+
+```bash
+bun run ops:start-batch -- s03 mw-003 mw-004 mw-006
+```
+
+This command:
+
+- Creates task files when missing.
+- Ensures one `In Progress` board row per task id (no duplicates).
+- Creates one worktree per task branch.
+- Assigns deterministic owners (`agent-1`, `agent-2`, ...).
+- Prints copy-paste commands for each agent terminal and tech lead PR flow.
 
 One-command agent launcher (start + prompt + shell in worktree):
 

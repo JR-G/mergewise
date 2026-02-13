@@ -47,6 +47,7 @@ mergewise --version
 
 ```bash
 bun run ops:start -- <task-id> <branch-name> <owner> <scope>
+bun run ops:start-batch -- <session-id> <task-id> [task-id...]
 bun run ops:prompt -- <task-id>
 bun run ops:status
 ```

@@ -73,6 +73,7 @@ function usage(): void {
   console.log(`Usage:
   bun run ops:start -- <task-id> <branch-name> <owner> <scope>
   bun run ops:start-session -- <session-id> <task-id> [owner] [scope] [branch-kind]
+  bun run ops:start-batch -- <session-id> <task-id> [task-id...]
   bun run ops:agent -- <session-id> <task-id> [owner] [scope] [branch-kind]
   bun run ops:prompt -- <task-id>
   bun run ops:review-ready -- <task-id>
@@ -81,6 +82,7 @@ function usage(): void {
 Examples:
   bun run ops:start -- github-client feat/agent-github-client alice packages/github-client
   bun run ops:start-session -- s01 github-client
+  bun run ops:start-batch -- s01 mw-003 mw-004 mw-006
   bun run ops:agent -- s01 github-client
   bun run ops:start-session -- s01 github-client agent-1 packages/github-client fix
   bun run ops:prompt -- github-client
@@ -335,10 +337,14 @@ function addBoardRowToInProgress(options: StartCommandOptions): void {
   try {
     ensureBoardFile();
 
-    const boardContents = readFileSync(boardFilePath, "utf8");
+    const boardContents = removeBoardRowsForTask(
+      readFileSync(boardFilePath, "utf8"),
+      options.taskIdentifier,
+    );
     const rowText = `| ${options.taskIdentifier} | ${options.branchName} | ${options.ownerName} | ${options.scopeName} |`;
 
     if (boardContents.includes(rowText)) {
+      writeFileSync(boardFilePath, boardContents, "utf8");
       return;
     }
 
@@ -361,6 +367,35 @@ function addBoardRowToInProgress(options: StartCommandOptions): void {
       `addBoardRowToInProgress(${options.taskIdentifier}) failed: ${formatError(caughtError)}`,
     );
   }
+}
+
+/**
+ * Removes all board rows for a specific task identifier.
+ *
+ * @param boardContents - Current board markdown body.
+ * @param taskIdentifier - Task identifier to remove.
+ * @returns Board markdown body without matching task rows.
+ */
+function removeBoardRowsForTask(boardContents: string, taskIdentifier: string): string {
+  const tableLinePattern = /^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$/;
+  const filteredLines: string[] = [];
+
+  for (const boardLine of boardContents.split("\n")) {
+    const parsedLine = boardLine.match(tableLinePattern);
+    if (!parsedLine) {
+      filteredLines.push(boardLine);
+      continue;
+    }
+
+    const parsedTaskIdentifier = (parsedLine[1] ?? "").trim();
+    if (parsedTaskIdentifier === taskIdentifier) {
+      continue;
+    }
+
+    filteredLines.push(boardLine);
+  }
+
+  return filteredLines.join("\n");
 }
 
 /**
@@ -878,6 +913,67 @@ function startTask(argumentsList: string[]): void {
 }
 
 /**
+ * Starts multiple session tasks and worktrees with deterministic agent ownership.
+ *
+ * @param argumentsList - Positional CLI args passed after `start-batch`.
+ */
+function startBatchSession(argumentsList: string[]): void {
+  const [sessionIdentifier, ...taskIdentifiers] = argumentsList;
+  if (!sessionIdentifier || taskIdentifiers.length === 0) {
+    usage();
+    fail("missing required arguments for ops:start-batch");
+  }
+
+  validateSegment(sessionIdentifier, "session-id");
+  const ownershipEntries = loadOwnershipEntries();
+  const createdOptions: StartCommandOptions[] = [];
+
+  for (const [taskIndex, taskIdentifier] of taskIdentifiers.entries()) {
+    validateSegment(taskIdentifier, "task-id");
+
+    const ownerName = `agent-${taskIndex + 1}`;
+    const scopeName = inferScopeName(taskIdentifier, ownershipEntries);
+    const branchName = buildSessionBranchName(
+      sessionIdentifier,
+      taskIdentifier,
+      "feat",
+    );
+
+    const options: StartCommandOptions = {
+      taskIdentifier,
+      branchName,
+      ownerName,
+      scopeName,
+    };
+
+    ensureTaskFile(options);
+    addBoardRowToInProgress(options);
+    createWorktree(branchName);
+    createdOptions.push(options);
+  }
+
+  console.log("\nBatch started.");
+  console.log(`Session: ${sessionIdentifier}`);
+  console.log(`Tasks: ${createdOptions.length}`);
+  console.log("\nAgent Terminal Commands:");
+  for (const createdOption of createdOptions) {
+    const worktreePath = resolveWorktreePath(createdOption.branchName);
+    console.log(
+      `- ${createdOption.ownerName}: cd ${worktreePath} && bun run ops:prompt -- ${createdOption.taskIdentifier}`,
+    );
+  }
+
+  console.log("\nTech Lead Commands:");
+  console.log("- bun run ops:status");
+  for (const createdOption of createdOptions) {
+    console.log(
+      `- bun run ops:review-ready -- ${createdOption.taskIdentifier} && bun run ops:open-pr -- ${createdOption.taskIdentifier}`,
+    );
+  }
+  console.log(`- bun run wt:cleanup:session ${sessionIdentifier}`);
+}
+
+/**
  * Starts one task with session-based branch naming.
  *
  * @param argumentsList - Positional CLI args passed after `start-session`.
@@ -962,6 +1058,11 @@ function main(): void {
 
   if (commandName === "start-session") {
     startSessionTask(argumentsList);
+    return;
+  }
+
+  if (commandName === "start-batch") {
+    startBatchSession(argumentsList);
     return;
   }
 

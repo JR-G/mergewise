@@ -42,6 +42,7 @@
     "ops:status": "bash scripts/ops-status.sh",
     "ops:start": "bun run scripts/ops.ts start",
     "ops:start-session": "bun run scripts/ops.ts start-session",
+    "ops:start-batch": "bun run scripts/ops.ts start-batch",
     "ops:agent": "bun run scripts/ops.ts agent",
     "ops:prompt": "bun run scripts/ops.ts prompt",
     "ops:review-ready": "bun run scripts/ops.ts review-ready",
