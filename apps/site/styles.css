@@ -1,0 +1,167 @@
+:root {
+  --bg: #080b10;
+  --panel: rgba(14, 22, 31, 0.72);
+  --text: #f3f6fb;
+  --muted: #b4bfcd;
+  --accent: #56e2c2;
+  --accent-strong: #2dd4bf;
+  --line: rgba(136, 162, 193, 0.24);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: "Space Grotesk", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 10% 10%, #163145 0%, rgba(22, 49, 69, 0) 42%),
+    radial-gradient(circle at 90% 20%, #16392f 0%, rgba(22, 57, 47, 0) 46%),
+    linear-gradient(165deg, #05070a 0%, #0a1017 52%, #080b10 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: -30%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 20% 25%, rgba(86, 226, 194, 0.14), transparent 40%),
+    radial-gradient(circle at 75% 35%, rgba(74, 164, 255, 0.16), transparent 42%),
+    radial-gradient(circle at 45% 78%, rgba(38, 122, 214, 0.14), transparent 44%);
+  filter: blur(46px);
+  transform: translate3d(0, 0, 0) scale(1.05);
+  animation: gradientShift 18s ease-in-out infinite alternate;
+}
+
+.background-glow {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 20% 80%, rgba(86, 226, 194, 0.09), transparent 45%),
+    radial-gradient(circle at 80% 75%, rgba(110, 158, 242, 0.12), transparent 42%);
+  animation: drift 9s ease-in-out infinite alternate;
+}
+
+.page {
+  position: relative;
+  z-index: 2;
+  width: min(980px, calc(100% - 2.2rem));
+  margin: 2.2rem auto 2.6rem;
+}
+
+.hero {
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: clamp(1.3rem, 4vw, 2.4rem);
+  background: linear-gradient(140deg, rgba(14, 22, 31, 0.96), rgba(14, 22, 31, 0.68));
+  box-shadow: 0 18px 55px rgba(2, 5, 8, 0.48);
+}
+
+.kicker {
+  margin: 0 0 0.7rem;
+  color: var(--accent);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.83rem;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+h1 {
+  margin: 0;
+  line-height: 1.08;
+  font-size: clamp(1.9rem, 7vw, 3.8rem);
+}
+
+h1 span {
+  color: var(--accent);
+}
+
+.lead {
+  margin: 1rem 0 0;
+  max-width: 65ch;
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: clamp(0.98rem, 2.7vw, 1.14rem);
+}
+
+.hero-actions {
+  margin-top: 1.4rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0 1.1rem;
+  border-radius: 999px;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.button-primary {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+  color: #06221f;
+}
+
+.status-pill {
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+@keyframes drift {
+  from {
+    transform: translateY(0);
+    opacity: 0.85;
+  }
+  to {
+    transform: translateY(-14px);
+    opacity: 1;
+  }
+}
+
+@keyframes gradientShift {
+  0% {
+    transform: translate3d(-5%, -3%, 0) scale(1.03);
+  }
+  50% {
+    transform: translate3d(4%, 4%, 0) scale(1.09);
+  }
+  100% {
+    transform: translate3d(-2%, 6%, 0) scale(1.06);
+  }
+}
+
+@media (max-width: 760px) {
+  .page {
+    width: min(980px, calc(100% - 1.2rem));
+    margin-top: 1rem;
+  }
+}
