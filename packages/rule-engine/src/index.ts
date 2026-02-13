@@ -107,6 +107,8 @@ export async function executeRules(
 ): Promise<RuleExecutionResult> {
   const findings: Finding[] = [];
   const failedRuleIds: string[] = [];
+  const onRuleExecutionError =
+    options.onRuleExecutionError ?? defaultOnRuleExecutionError;
 
   for (const rule of options.rules) {
     try {
@@ -118,7 +120,7 @@ export async function executeRules(
       findings.push(...ruleFindings);
     } catch (error) {
       failedRuleIds.push(rule.metadata.ruleId);
-      options.onRuleExecutionError?.(rule, error);
+      onRuleExecutionError(rule, error);
     }
   }
 
@@ -136,6 +138,11 @@ export async function executeRules(
     summary,
     failedRuleIds,
   };
+}
+
+function defaultOnRuleExecutionError(rule: Rule, error: unknown): void {
+  const detail = error instanceof Error ? error.stack ?? error.message : String(error);
+  console.error(`[rule-engine] rule failed: ${rule.metadata.ruleId}: ${detail}`);
 }
 
 async function executeSingleRule(
