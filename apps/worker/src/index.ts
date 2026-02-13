@@ -1,10 +1,12 @@
 import {
+  postPullRequestSummaryComment,
   createGitHubAppJwt,
   exchangeInstallationAccessToken,
   fetchPullRequestFiles,
   GitHubApiError,
   type FetchPullRequestFilesOptions,
   type GitHubPullRequestFile,
+  type PostPullRequestSummaryCommentOptions,
 } from "@mergewise/github-client";
 import type { RuleExecutionResult } from "@mergewise/rule-engine";
 import { executeRules } from "@mergewise/rule-engine";
@@ -14,6 +16,7 @@ import type {
   AnalyzePullRequestJob,
   DiffHunk,
   FileDiff,
+  Finding,
   FindingCategory,
   Rule,
 } from "@mergewise/shared-types";
@@ -50,6 +53,14 @@ export interface WorkerConfig {
    * Delay between pull request file fetch retries in milliseconds.
    */
   githubRetryDelayMs: number;
+  /**
+   * Minimum confidence required for findings to be posted to GitHub.
+   */
+  confidenceThreshold: number;
+  /**
+   * Maximum number of findings posted per pull request.
+   */
+  maxComments: number;
 }
 
 /**
@@ -134,6 +145,98 @@ export interface AnalyzePullRequestJobSummary {
    * UTC timestamp when processing completed.
    */
   readonly processedAt: string;
+  /**
+   * Number of PR comments posted for findings.
+   */
+  readonly postedCommentCount?: number;
+  /**
+   * Number of findings skipped for confidence threshold.
+   */
+  readonly skippedByConfidence?: number;
+  /**
+   * Number of findings skipped due to deduplication.
+   */
+  readonly skippedByDeduplication?: number;
+  /**
+   * Number of findings skipped due to maximum comment cap.
+   */
+  readonly skippedByCap?: number;
+  /**
+   * Structured check output payload for PR status reporting.
+   */
+  readonly checkOutput?: WorkerCheckOutput;
+}
+
+/**
+ * Delivery options for finding-to-GitHub posting.
+ */
+export interface WorkerFindingDeliveryOptions {
+  /**
+   * Minimum confidence required for inclusion.
+   */
+  readonly confidenceThreshold: number;
+  /**
+   * Maximum number of findings posted as comments.
+   */
+  readonly maxComments: number;
+}
+
+/**
+ * Structured check output shape compatible with GitHub checks APIs.
+ */
+export interface WorkerCheckOutput {
+  /**
+   * Short check output title.
+   */
+  readonly title: string;
+  /**
+   * One-paragraph summary for the check run.
+   */
+  readonly summary: string;
+  /**
+   * Optional markdown details body.
+   */
+  readonly text: string;
+}
+
+/**
+ * Prepared finding comment payload with stable dedupe key.
+ */
+export interface PreparedFindingComment {
+  /**
+   * Stable dedupe key for this finding.
+   */
+  readonly dedupeKey: string;
+  /**
+   * Source finding.
+   */
+  readonly finding: Finding;
+  /**
+   * Markdown body posted to GitHub.
+   */
+  readonly body: string;
+}
+
+/**
+ * Deterministic finding selection and formatting result.
+ */
+export interface PreparedFindingDelivery {
+  /**
+   * Findings selected for GitHub PR comments.
+   */
+  readonly comments: readonly PreparedFindingComment[];
+  /**
+   * Findings rejected for low confidence.
+   */
+  readonly skippedByConfidence: number;
+  /**
+   * Findings removed due to dedupe key collision.
+   */
+  readonly skippedByDeduplication: number;
+  /**
+   * Findings rejected due to maximum comment cap.
+   */
+  readonly skippedByCap: number;
 }
 
 /**
@@ -214,6 +317,20 @@ export interface WorkerProcessingDependencies {
    * Time source override for deterministic testing.
    */
   readonly now?: () => Date;
+  /**
+   * Whether to post findings to GitHub after rule execution.
+   */
+  readonly deliveryMode?: "none" | "github";
+  /**
+   * Delivery thresholds for confidence gating and posting cap.
+   */
+  readonly findingDeliveryOptions?: WorkerFindingDeliveryOptions;
+  /**
+   * Comment-post function override.
+   */
+  readonly postPullRequestSummaryCommentFn?: (
+    options: PostPullRequestSummaryCommentOptions,
+  ) => Promise<{ id: number; html_url: string; body: string }>;
 }
 
 /**
@@ -258,6 +375,11 @@ export function loadConfig(): WorkerConfig {
   const githubFetchRetries = Number.parseInt(retriesRaw, 10);
   const retryDelayRaw = process.env.WORKER_GITHUB_RETRY_DELAY_MS ?? "250";
   const githubRetryDelayMs = Number.parseInt(retryDelayRaw, 10);
+  const confidenceThresholdRaw =
+    process.env.WORKER_FINDING_CONFIDENCE_THRESHOLD ?? "0.78";
+  const confidenceThreshold = Number.parseFloat(confidenceThresholdRaw);
+  const maxCommentsRaw = process.env.WORKER_FINDING_MAX_COMMENTS ?? "20";
+  const maxComments = Number.parseInt(maxCommentsRaw, 10);
 
   if (Number.isNaN(pollIntervalMs) || pollIntervalMs < 250) {
     throw new Error(`Invalid WORKER_POLL_INTERVAL_MS value: ${pollRaw}`);
@@ -287,6 +409,20 @@ export function loadConfig(): WorkerConfig {
     throw new Error(`Invalid WORKER_GITHUB_RETRY_DELAY_MS value: ${retryDelayRaw}`);
   }
 
+  if (
+    Number.isNaN(confidenceThreshold) ||
+    confidenceThreshold < 0 ||
+    confidenceThreshold > 1
+  ) {
+    throw new Error(
+      `Invalid WORKER_FINDING_CONFIDENCE_THRESHOLD value: ${confidenceThresholdRaw}`,
+    );
+  }
+
+  if (Number.isNaN(maxComments) || maxComments < 1) {
+    throw new Error(`Invalid WORKER_FINDING_MAX_COMMENTS value: ${maxCommentsRaw}`);
+  }
+
   return {
     pollIntervalMs,
     maxProcessedKeys,
@@ -295,7 +431,152 @@ export function loadConfig(): WorkerConfig {
     githubRequestTimeoutMs,
     githubFetchRetries,
     githubRetryDelayMs,
+    confidenceThreshold,
+    maxComments,
   };
+}
+
+/**
+ * Builds a stable dedupe key for finding delivery.
+ *
+ * @param finding - Finding to derive key from.
+ * @returns Stable per-finding delivery key.
+ */
+export function buildFindingDedupeKey(finding: Finding): string {
+  const normalizedFindingId = finding.findingId.trim();
+  if (normalizedFindingId) {
+    return `${finding.repo}#${finding.prNumber}:${normalizedFindingId}`;
+  }
+
+  return `${finding.repo}#${finding.prNumber}:${finding.ruleId}:${finding.filePath}:${finding.line}`;
+}
+
+/**
+ * Prepares deterministic, bounded PR comment payloads from rule findings.
+ *
+ * @param findings - Findings emitted by rule execution.
+ * @param options - Confidence threshold and posting cap.
+ * @returns Prepared comments and skip counters.
+ */
+export function prepareFindingDelivery(
+  findings: readonly Finding[],
+  options: WorkerFindingDeliveryOptions,
+): PreparedFindingDelivery {
+  const skippedByConfidenceCandidates = findings.filter(
+    (finding) => finding.confidence < options.confidenceThreshold,
+  );
+  const confidencePassing = findings.filter(
+    (finding) => finding.confidence >= options.confidenceThreshold,
+  );
+  const sortedFindings = [...confidencePassing].sort((left, right) => {
+    if (right.confidence !== left.confidence) {
+      return right.confidence - left.confidence;
+    }
+
+    const leftKey = buildFindingDedupeKey(left);
+    const rightKey = buildFindingDedupeKey(right);
+    return leftKey.localeCompare(rightKey);
+  });
+
+  const seenKeys = new Set<string>();
+  const deduplicatedFindings: Finding[] = [];
+  let skippedByDeduplication = 0;
+  for (const finding of sortedFindings) {
+    const dedupeKey = buildFindingDedupeKey(finding);
+    if (seenKeys.has(dedupeKey)) {
+      skippedByDeduplication += 1;
+      continue;
+    }
+
+    seenKeys.add(dedupeKey);
+    deduplicatedFindings.push(finding);
+  }
+
+  const selectedFindings = deduplicatedFindings.slice(0, options.maxComments);
+  const skippedByCap = Math.max(deduplicatedFindings.length - selectedFindings.length, 0);
+  const comments = selectedFindings.map((finding) => {
+    const dedupeKey = buildFindingDedupeKey(finding);
+    return {
+      dedupeKey,
+      finding,
+      body: buildStructuredFindingComment(finding, dedupeKey),
+    };
+  });
+
+  return {
+    comments,
+    skippedByConfidence: skippedByConfidenceCandidates.length,
+    skippedByDeduplication,
+    skippedByCap,
+  };
+}
+
+/**
+ * Builds structured check output from delivery and execution summaries.
+ *
+ * @param executionResult - Rule execution result.
+ * @param delivery - Prepared delivery output.
+ * @returns Structured check output payload.
+ */
+export function buildWorkerCheckOutput(
+  executionResult: RuleExecutionResult,
+  delivery: PreparedFindingDelivery,
+): WorkerCheckOutput {
+  const postedCount = delivery.comments.length;
+  const totalFindings = executionResult.summary.totalFindings;
+  return {
+    title: `Mergewise Findings (${postedCount} posted of ${totalFindings})`,
+    summary:
+      `Rules=${executionResult.summary.successfulRules}/${executionResult.summary.totalRules}` +
+      ` findings=${totalFindings} posted=${postedCount}`,
+    text:
+      `skipped_by_confidence=${delivery.skippedByConfidence}\n` +
+      `skipped_by_deduplication=${delivery.skippedByDeduplication}\n` +
+      `skipped_by_cap=${delivery.skippedByCap}`,
+  };
+}
+
+/**
+ * Posts prepared finding comments to a pull request.
+ *
+ * @param options - Repository coordinates, token, and prepared comments.
+ * @param dependencies - API posting dependency override.
+ * @returns Number of posted comments.
+ */
+export async function postPreparedFindingComments(
+  options: {
+    readonly owner: string;
+    readonly repository: string;
+    readonly pullRequestNumber: number;
+    readonly installationAccessToken: string;
+    readonly githubFetchOptions: WorkerGitHubFetchOptions;
+    readonly comments: readonly PreparedFindingComment[];
+  },
+  dependencies: {
+    readonly postPullRequestSummaryCommentFn?: (
+      options: PostPullRequestSummaryCommentOptions,
+    ) => Promise<{ id: number; html_url: string; body: string }>;
+  } = {},
+): Promise<number> {
+  const postPullRequestSummaryCommentFn =
+    dependencies.postPullRequestSummaryCommentFn ?? postPullRequestSummaryComment;
+
+  let postedCount = 0;
+  for (const preparedComment of options.comments) {
+    await postPullRequestSummaryCommentFn({
+      owner: options.owner,
+      repository: options.repository,
+      pullRequestNumber: options.pullRequestNumber,
+      installationAccessToken: options.installationAccessToken,
+      body: preparedComment.body,
+      apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
+      userAgent: options.githubFetchOptions.githubUserAgent,
+      requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
+    });
+    postedCount += 1;
+  }
+
+  return postedCount;
 }
 
 /**
@@ -419,12 +700,16 @@ export async function processAnalyzePullRequestJob(
   const rules = dependencies.rules ?? tsReactRules;
   const executeRulesFn = dependencies.executeRulesFn ?? executeRules;
   const githubFetchOptions = dependencies.githubFetchOptions ?? resolveGitHubFetchOptions();
+  const findingDeliveryOptions = dependencies.findingDeliveryOptions ?? {
+    confidenceThreshold: 0.78,
+    maxComments: 20,
+  };
 
   infoLogger(
     `[worker] processing job=${job.job_id} key=${key} installation=${job.installation_id ?? "none"} rules=${rules.length}`,
   );
 
-  const analysisContext = await buildAnalysisContextFromGitHub(
+  const githubAnalysisContext = await buildAnalysisContextFromGitHub(
     job,
     githubFetchOptions,
     {
@@ -438,7 +723,7 @@ export async function processAnalyzePullRequestJob(
   );
 
   const executionResult = await executeRulesFn({
-    context: analysisContext,
+    context: githubAnalysisContext.analysisContext,
     rules,
     onRuleExecutionError: (rule, error) => {
       const detail = error instanceof Error ? error.stack ?? error.message : String(error);
@@ -447,6 +732,26 @@ export async function processAnalyzePullRequestJob(
       );
     },
   });
+
+  const delivery = prepareFindingDelivery(executionResult.findings, findingDeliveryOptions);
+  const checkOutput = buildWorkerCheckOutput(executionResult, delivery);
+
+  let postedCommentCount = 0;
+  if (dependencies.deliveryMode === "github" && delivery.comments.length > 0) {
+    postedCommentCount = await postPreparedFindingComments(
+      {
+        owner: githubAnalysisContext.owner,
+        repository: githubAnalysisContext.repository,
+        pullRequestNumber: job.pr_number,
+        installationAccessToken: githubAnalysisContext.installationAccessToken,
+        githubFetchOptions,
+        comments: delivery.comments,
+      },
+      {
+        postPullRequestSummaryCommentFn: dependencies.postPullRequestSummaryCommentFn,
+      },
+    );
+  }
 
   const summary = buildJobSummary(
     job,
@@ -457,8 +762,18 @@ export async function processAnalyzePullRequestJob(
   infoLogger(
     `[worker] summary job=${summary.jobId} findings=${summary.totalFindings} rules_ok=${summary.successfulRules}/${summary.totalRules}`,
   );
+  infoLogger(
+    `[worker] check_output job=${summary.jobId} payload=${JSON.stringify(checkOutput)}`,
+  );
 
-  return summary;
+  return {
+    ...summary,
+    postedCommentCount,
+    skippedByConfidence: delivery.skippedByConfidence,
+    skippedByDeduplication: delivery.skippedByDeduplication,
+    skippedByCap: delivery.skippedByCap,
+    checkOutput,
+  };
 }
 
 /**
@@ -565,7 +880,12 @@ async function buildAnalysisContextFromGitHub(
     readonly logInfo?: (message: string) => void;
     readonly logError?: (message: string) => void;
   },
-): Promise<AnalysisContext> {
+): Promise<{
+  readonly analysisContext: AnalysisContext;
+  readonly owner: string;
+  readonly repository: string;
+  readonly installationAccessToken: string;
+}> {
   if (job.installation_id === null) {
     throw new Error(
       `[worker] missing installation_id for ${job.repo_full_name}#${job.pr_number}`,
@@ -618,7 +938,52 @@ async function buildAnalysisContextFromGitHub(
   );
 
   const mappedDiffs = mapGitHubPullRequestFilesToDiffs(fetchedFiles);
-  return buildAnalysisContext(job, mappedDiffs);
+  return {
+    analysisContext: buildAnalysisContext(job, mappedDiffs),
+    owner: repositoryCoordinates.owner,
+    repository: repositoryCoordinates.repository,
+    installationAccessToken: installationAccessToken.token,
+  };
+}
+
+function buildStructuredFindingComment(finding: Finding, dedupeKey: string): string {
+  const structuredPayload = JSON.stringify(
+    {
+      dedupeKey,
+      findingId: finding.findingId,
+      ruleId: finding.ruleId,
+      category: finding.category,
+      filePath: finding.filePath,
+      line: finding.line,
+      confidence: finding.confidence,
+    },
+    null,
+    2,
+  );
+
+  return [
+    "## Mergewise Finding",
+    "",
+    `- Rule: \`${finding.ruleId}\``,
+    `- Category: \`${finding.category}\``,
+    `- Location: \`${finding.filePath}:${finding.line}\``,
+    `- Confidence: \`${finding.confidence.toFixed(2)}\``,
+    "",
+    "**Evidence**",
+    finding.evidence,
+    "",
+    "**Recommendation**",
+    finding.recommendation,
+    "",
+    "<details>",
+    "<summary>Structured Payload</summary>",
+    "",
+    "```json",
+    structuredPayload,
+    "```",
+    "",
+    "</details>",
+  ].join("\n");
 }
 
 function resolveGitHubFetchOptions(): WorkerGitHubFetchOptions {
