@@ -111,8 +111,17 @@ describe("webhook-to-worker pipeline", () => {
         }),
       });
     } finally {
-      process.env.GITHUB_APP_ID = previousAppId;
-      process.env.GITHUB_APP_PRIVATE_KEY = previousPrivateKey;
+      if (previousAppId === undefined) {
+        delete process.env.GITHUB_APP_ID;
+      } else {
+        process.env.GITHUB_APP_ID = previousAppId;
+      }
+
+      if (previousPrivateKey === undefined) {
+        delete process.env.GITHUB_APP_PRIVATE_KEY;
+      } else {
+        process.env.GITHUB_APP_PRIVATE_KEY = previousPrivateKey;
+      }
     }
 
     expect(summary).not.toBeNull();

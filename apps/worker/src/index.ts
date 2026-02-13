@@ -645,7 +645,10 @@ function isRetryablePullRequestFileFetchError(error: unknown): boolean {
     return error.status === 429 || error.status >= 500;
   }
 
-  if (error instanceof DOMException && error.name === "TimeoutError") {
+  if (
+    error instanceof DOMException &&
+    (error.name === "TimeoutError" || error.name === "AbortError")
+  ) {
     return true;
   }
 
