@@ -50,7 +50,7 @@ Bun.serve({
 
     if (eventName !== "pull_request") {
       return createWebhookJsonResponse(
-        { status: "ignored", request_id: requestId, reason: "event_not_supported" },
+        { status: "ignored", request_id: requestId, reason: "event_ignored" },
         202,
         requestId,
       );
@@ -118,7 +118,7 @@ Bun.serve({
       )
     ) {
       return createWebhookJsonResponse(
-        { status: "ignored", request_id: requestId, reason: "action_not_supported" },
+        { status: "ignored", request_id: requestId, reason: "pull_request_action_ignored" },
         202,
         requestId,
       );
