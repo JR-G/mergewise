@@ -59,5 +59,8 @@ async function pollAndProcessJobs(): Promise<void> {
 }
 
 setInterval(() => {
-  void pollAndProcessJobs();
+  pollAndProcessJobs().catch((error: unknown) => {
+    const details = error instanceof Error ? error.stack ?? error.message : String(error);
+    console.error(`[worker] poll cycle failed unexpectedly: ${details}`);
+  });
 }, config.pollIntervalMs);

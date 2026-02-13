@@ -10,19 +10,17 @@ import {
   readAllAnalyzePullRequestJobs,
 } from "@mergewise/job-store";
 import type { GitHubPullRequestWebhookEvent } from "@mergewise/shared-types";
-
 import {
   buildAnalyzePullRequestJob,
   computeGitHubSignature,
   isPullRequestWebhookEvent,
   isWebhookSignatureValid,
   SUPPORTED_PULL_REQUEST_ACTIONS,
-} from "../../apps/webhook-api/src/index";
-
+} from "@mergewise/webhook-api";
 import {
   buildIdempotencyKey,
   processAnalyzePullRequestJob,
-} from "../../apps/worker/src/index";
+} from "@mergewise/worker";
 
 import validOpened from "./fixtures/valid-pr-opened.json";
 import validSynchronize from "./fixtures/valid-pr-synchronize.json";

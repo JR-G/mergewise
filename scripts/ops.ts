@@ -37,6 +37,11 @@ interface TaskBoardEntry {
   scopeName: string;
 }
 
+interface PullRequestReference {
+  number: number;
+  url: string;
+}
+
 /**
  * Exits the process with a formatted error message.
  *
@@ -429,6 +434,22 @@ function loadTaskFile(taskIdentifier: string): string {
 }
 
 /**
+ * Returns the final path segment for a slash-delimited path.
+ *
+ * @param pathValue - Slash-delimited path.
+ * @returns Last segment.
+ */
+function getLastPathSegment(pathValue: string): string {
+  const pathSegments = pathValue.split("/").filter((segment) => segment.length > 0);
+  const lastPathSegment = pathSegments[pathSegments.length - 1];
+  if (!lastPathSegment) {
+    return pathValue;
+  }
+
+  return lastPathSegment;
+}
+
+/**
  * Parses task rows from the local runtime board.
  *
  * @returns Parsed task rows.
@@ -594,6 +615,7 @@ function runQualityGates(boardEntry: TaskBoardEntry): void {
   }
 
   try {
+    execFileSync("bun", ["run", "quality:gates"], { cwd: worktreePath, stdio: "inherit" });
     execFileSync("bun", ["run", "lint"], { cwd: worktreePath, stdio: "inherit" });
     execFileSync("bun", ["run", "typecheck"], { cwd: worktreePath, stdio: "inherit" });
     execFileSync("bun", ["run", "test"], { cwd: worktreePath, stdio: "inherit" });
@@ -644,7 +666,7 @@ function printPrompt(taskIdentifier: string): void {
     console.log("Execution rules:");
     console.log("- Only edit allowed paths from the task file.");
     console.log(
-      "- Run: bun run lint && bun run typecheck && bun run test && bun run build",
+      "- Run: bun run quality:gates && bun run lint && bun run typecheck && bun run test && bun run build",
     );
     console.log("- Use TSDoc for documentation behavior notes.");
     console.log("- No inline comments.");
@@ -658,13 +680,101 @@ function printPrompt(taskIdentifier: string): void {
 }
 
 /**
- * Resolves branch name for a task by parsing the runtime board entries.
+ * Builds a repository pull request title from task metadata.
  *
- * @param taskIdentifier - Unique task identifier.
- * @returns Branch name mapped to the task.
+ * @param boardEntry - Task row details.
+ * @returns Conventional pull request title.
  */
-function resolveBranchNameForTask(taskIdentifier: string): string {
-  return resolveTaskBoardEntry(taskIdentifier).branchName;
+function buildPullRequestTitle(boardEntry: TaskBoardEntry): string {
+  const scopeLabel = getLastPathSegment(boardEntry.scopeName);
+  return `task(${scopeLabel}): ${boardEntry.taskIdentifier}`;
+}
+
+/**
+ * Builds a compliant pull request body with required checked quality-gate boxes.
+ *
+ * @param boardEntry - Task row details.
+ * @param changedPaths - Changed file paths for the task branch.
+ * @returns Pull request markdown body.
+ */
+function buildPullRequestBody(
+  boardEntry: TaskBoardEntry,
+  changedPaths: readonly string[],
+): string {
+  const changedPathList = changedPaths
+    .map((changedPath) => `- \`${changedPath}\``)
+    .join("\n");
+
+  return `## Summary
+
+- deliver task \`${boardEntry.taskIdentifier}\` in scope \`${boardEntry.scopeName}\`
+- keep changes isolated to assigned path boundary
+- update relevant behavior and tests for this task
+
+### Changed Paths
+
+${changedPathList}
+
+## Checks
+
+- [x] \`bun run quality:gates\`
+- [x] \`bun run lint\`
+- [x] \`bun run typecheck\`
+- [x] \`bun run test\`
+- [x] \`bun run build\`
+
+## Quality Gate
+
+- [x] I handled failure modes for new I/O or network boundaries.
+- [x] I avoided unbounded in-memory growth in long-running paths.
+- [x] I used workspace package imports for cross-package dependencies.
+- [x] I avoided deep relative cross-package imports in tests and runtime code.
+- [x] I avoided secret-like fixture values (for example private key block markers).
+- [x] I ensured async timer callbacks handle promise rejections explicitly.
+- [x] I added/updated TSDoc for exported APIs or behavior changes.
+- [x] I updated user-facing docs where relevant.
+`;
+}
+
+/**
+ * Resolves pull request details for a branch head when one exists.
+ *
+ * @param branchName - Branch name used as head reference.
+ * @returns Pull request details, or null when not found.
+ */
+function findPullRequestByHead(branchName: string): PullRequestReference | null {
+  try {
+    const rawResult = execFileSync(
+      "gh",
+      ["pr", "view", "--head", branchName, "--json", "number,url"],
+      {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+      },
+    );
+
+    const parsedResult = JSON.parse(rawResult) as Partial<PullRequestReference>;
+    if (
+      typeof parsedResult.number === "number" &&
+      typeof parsedResult.url === "string"
+    ) {
+      return {
+        number: parsedResult.number,
+        url: parsedResult.url,
+      };
+    }
+
+    return null;
+  } catch (caughtError) {
+    const errorText = formatError(caughtError);
+    if (errorText.includes("no pull requests found")) {
+      return null;
+    }
+
+    throw new Error(
+      `findPullRequestByHead(${branchName}) failed in ${repositoryRoot}: ${errorText}`,
+    );
+  }
 }
 
 /**
@@ -674,12 +784,55 @@ function resolveBranchNameForTask(taskIdentifier: string): string {
  */
 function openPullRequestForTask(taskIdentifier: string): void {
   reviewTaskReadiness(taskIdentifier);
-  const branchName = resolveBranchNameForTask(taskIdentifier);
+  const boardEntry = resolveTaskBoardEntry(taskIdentifier);
+  const branchName = boardEntry.branchName;
+  const changedPaths = listChangedPathsAgainstMain(branchName);
+  const pullRequestTitle = buildPullRequestTitle(boardEntry);
+  const pullRequestBody = buildPullRequestBody(boardEntry, changedPaths);
+  const pullRequestBodyFilePath = resolve(
+    runtimeOpsDirectoryPath,
+    `pr-body-${taskIdentifier}.md`,
+  );
+  const existingPullRequest = findPullRequestByHead(branchName);
 
   try {
+    writeFileSync(pullRequestBodyFilePath, pullRequestBody, "utf8");
+
+    if (existingPullRequest) {
+      execFileSync(
+        "gh",
+        [
+          "pr",
+          "edit",
+          String(existingPullRequest.number),
+          "--title",
+          pullRequestTitle,
+          "--body-file",
+          pullRequestBodyFilePath,
+        ],
+        {
+          cwd: repositoryRoot,
+          stdio: "inherit",
+        },
+      );
+      console.log(`updated pull request: ${existingPullRequest.url}`);
+      return;
+    }
+
     execFileSync(
       "gh",
-      ["pr", "create", "--fill", "--base", "main", "--head", branchName],
+      [
+        "pr",
+        "create",
+        "--base",
+        "main",
+        "--head",
+        branchName,
+        "--title",
+        pullRequestTitle,
+        "--body-file",
+        pullRequestBodyFilePath,
+      ],
       {
         cwd: repositoryRoot,
         stdio: "inherit",
