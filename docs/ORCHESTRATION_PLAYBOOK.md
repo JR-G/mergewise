@@ -7,7 +7,7 @@ Run multi-agent delivery in a repeatable way where one `Agent Tech Lead` plans a
 ## Inputs
 
 - Strategy statement for the current session
-- Backlog source: `ops/backlog.md`
+- Backlog source: `.mergewise-runtime/backlog.md` (local only)
 - Session identifier (example: `s02`)
 - Parallelism cap (default: `3`)
 
@@ -54,7 +54,7 @@ Every planning run must output:
 
 ## Setup Flow
 
-1. Agent Tech Lead filters `ops/backlog.md` to `todo` items only.
+1. Agent Tech Lead filters `.mergewise-runtime/backlog.md` to `todo` items only.
 2. Agent Tech Lead generates task plan from strategy and top backlog items.
 3. Start one task per command:
    - `bun run ops:start-session -- <session-id> <task-id>`
@@ -67,7 +67,7 @@ Every planning run must output:
 1. Validate each PR against coding and scope rules.
 2. Merge in declared dependency order.
 3. Confirm `main` green after final merge.
-4. Mark completed backlog items as `done` in `ops/backlog.md`.
+4. Mark completed backlog items as `done` in `.mergewise-runtime/backlog.md`.
 
 ## Teardown Flow
 

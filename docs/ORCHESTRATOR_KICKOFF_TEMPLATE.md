@@ -9,7 +9,7 @@ Strategy:
 <paste strategy and outcome>
 
 Backlog source:
-- ops/backlog.md
+- .mergewise-runtime/backlog.md
 - Use only items with status `todo`
 
 Constraints:
