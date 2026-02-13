@@ -1,4 +1,12 @@
-import type { AnalyzePullRequestJob } from "@mergewise/shared-types";
+import type { RuleExecutionResult } from "@mergewise/rule-engine";
+import { executeRules } from "@mergewise/rule-engine";
+import { tsReactRules } from "@mergewise/rule-ts-react";
+import type {
+  AnalysisContext,
+  AnalyzePullRequestJob,
+  FindingCategory,
+  Rule,
+} from "@mergewise/shared-types";
 
 /**
  * Runtime configuration for the worker process.
@@ -47,18 +55,130 @@ export function buildIdempotencyKey(job: AnalyzePullRequestJob): string {
 }
 
 /**
- * Processes a queued analysis job.
+ * Summary payload emitted after one job finishes rule execution.
  *
- * This is a skeleton implementation that currently logs work intake.
- * Future steps will fetch PR diffs, run rulepacks, and post review output.
+ * @remarks
+ * This summary is intentionally small and deterministic so it can be logged,
+ * tested, and passed to the next delivery step that posts PR summaries.
+ */
+export interface AnalyzePullRequestJobSummary {
+  /**
+   * Job identifier.
+   */
+  readonly jobId: string;
+  /**
+   * Stable worker idempotency key.
+   */
+  readonly idempotencyKey: string;
+  /**
+   * Repository full name in `owner/name` format.
+   */
+  readonly repository: string;
+  /**
+   * Pull request number.
+   */
+  readonly pullRequestNumber: number;
+  /**
+   * Pull request head commit SHA.
+   */
+  readonly headSha: string;
+  /**
+   * Number of findings emitted by successful rules.
+   */
+  readonly totalFindings: number;
+  /**
+   * Finding counts grouped by category.
+   */
+  readonly findingsByCategory: Readonly<Record<FindingCategory, number>>;
+  /**
+   * Number of rules requested by the worker.
+   */
+  readonly totalRules: number;
+  /**
+   * Number of rules that completed without throwing.
+   */
+  readonly successfulRules: number;
+  /**
+   * Number of rules that threw and were skipped.
+   */
+  readonly failedRules: number;
+  /**
+   * Rule identifiers that failed.
+   */
+  readonly failedRuleIds: readonly string[];
+  /**
+   * UTC timestamp when processing completed.
+   */
+  readonly processedAt: string;
+}
+
+/**
+ * Dependency overrides for job processing.
+ */
+export interface WorkerProcessingDependencies {
+  /**
+   * Rules to execute for pull request analysis.
+   */
+  readonly rules?: readonly Rule[];
+  /**
+   * Rule execution function override for testing.
+   */
+  readonly executeRulesFn?: (
+    options: {
+      readonly context: AnalysisContext;
+      readonly rules: readonly Rule[];
+      readonly onRuleExecutionError?: (rule: Rule, error: unknown) => void;
+    },
+  ) => Promise<RuleExecutionResult>;
+  /**
+   * Info logger for operational events.
+   */
+  readonly logInfo?: (message: string) => void;
+  /**
+   * Error logger for rule failures.
+   */
+  readonly logError?: (message: string) => void;
+}
+
+/**
+ * Processes a queued analysis job through rule execution and summary generation.
  *
  * @param job - Job payload to process.
+ * @param dependencies - Optional dependency overrides.
+ * @returns Deterministic processing summary for this job.
  */
-export function processAnalyzePullRequestJob(job: AnalyzePullRequestJob): void {
+export async function processAnalyzePullRequestJob(
+  job: AnalyzePullRequestJob,
+  dependencies: WorkerProcessingDependencies = {},
+): Promise<AnalyzePullRequestJobSummary> {
   const key = buildIdempotencyKey(job);
-  console.log(
-    `[worker] processing job=${job.job_id} key=${key} installation=${job.installation_id ?? "none"}`,
+  const infoLogger = dependencies.logInfo ?? console.log;
+  const errorLogger = dependencies.logError ?? console.error;
+  const rules = dependencies.rules ?? tsReactRules;
+  const executeRulesFn = dependencies.executeRulesFn ?? executeRules;
+  const analysisContext = buildAnalysisContext(job);
+
+  infoLogger(
+    `[worker] processing job=${job.job_id} key=${key} installation=${job.installation_id ?? "none"} rules=${rules.length}`,
   );
+
+  const executionResult = await executeRulesFn({
+    context: analysisContext,
+    rules,
+    onRuleExecutionError: (rule, error) => {
+      const detail = error instanceof Error ? error.stack ?? error.message : String(error);
+      errorLogger(
+        `[worker] rule failure job=${job.job_id} rule=${rule.metadata.ruleId}: ${detail}`,
+      );
+    },
+  });
+
+  const summary = buildJobSummary(job, key, executionResult);
+  infoLogger(
+    `[worker] summary job=${summary.jobId} findings=${summary.totalFindings} rules_ok=${summary.successfulRules}/${summary.totalRules}`,
+  );
+
+  return summary;
 }
 
 /**
@@ -111,4 +231,51 @@ export function trackProcessedKey(
       state.keys.delete(evicted);
     }
   }
+}
+
+/**
+ * Builds rule-engine analysis context from a queued webhook job.
+ *
+ * @param job - Job payload.
+ * @returns Rule-engine analysis context.
+ */
+export function buildAnalysisContext(job: AnalyzePullRequestJob): AnalysisContext {
+  return {
+    diffs: [],
+    pullRequest: {
+      repo: job.repo_full_name,
+      prNumber: job.pr_number,
+      headSha: job.head_sha,
+      installationId: job.installation_id,
+    },
+  };
+}
+
+/**
+ * Converts rule-engine execution output into a worker job summary.
+ *
+ * @param job - Original queued job.
+ * @param idempotencyKey - Stable job key.
+ * @param executionResult - Rule-engine execution output.
+ * @returns Worker summary payload.
+ */
+export function buildJobSummary(
+  job: AnalyzePullRequestJob,
+  idempotencyKey: string,
+  executionResult: RuleExecutionResult,
+): AnalyzePullRequestJobSummary {
+  return {
+    jobId: job.job_id,
+    idempotencyKey,
+    repository: job.repo_full_name,
+    pullRequestNumber: job.pr_number,
+    headSha: job.head_sha,
+    totalFindings: executionResult.summary.totalFindings,
+    findingsByCategory: executionResult.summary.findingsByCategory,
+    totalRules: executionResult.summary.totalRules,
+    successfulRules: executionResult.summary.successfulRules,
+    failedRules: executionResult.summary.failedRules,
+    failedRuleIds: executionResult.failedRuleIds,
+    processedAt: new Date().toISOString(),
+  };
 }

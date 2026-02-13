@@ -19,7 +19,7 @@ console.log(
   `[worker] started (poll=${config.pollIntervalMs}ms, max_keys=${config.maxProcessedKeys}, source=${DEFAULT_JOB_FILE_PATH})`,
 );
 
-setInterval(() => {
+async function pollAndProcessJobs(): Promise<void> {
   let jobs: AnalyzePullRequestJob[];
   try {
     jobs = readAllAnalyzePullRequestJobs();
@@ -35,7 +35,16 @@ setInterval(() => {
       continue;
     }
 
-    processAnalyzePullRequestJob(job);
-    trackProcessedKey(key, state, config.maxProcessedKeys);
+    try {
+      await processAnalyzePullRequestJob(job);
+      trackProcessedKey(key, state, config.maxProcessedKeys);
+    } catch (error) {
+      const details = error instanceof Error ? error.stack ?? error.message : String(error);
+      console.error(`[worker] failed to process job=${job.job_id}: ${details}`);
+    }
   }
+}
+
+setInterval(() => {
+  void pollAndProcessJobs();
 }, config.pollIntervalMs);
