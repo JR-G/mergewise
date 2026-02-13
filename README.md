@@ -4,6 +4,14 @@ Mergewise is a code review product for pull requests.
 
 Development policy: Bun-only for local development and CI. npm is used only for package publishing/distribution.
 
+## Local Pipeline
+
+Current local development flow:
+
+1. `apps/webhook-api` validates pull request webhooks and enqueues jobs via `packages/job-store`.
+2. `apps/worker` polls queued jobs, deduplicates by idempotency key, and invokes `packages/rule-engine`.
+3. `packages/rule-engine` executes registered rules and returns a deterministic per-job summary payload.
+
 ## npm package
 
 Package: `mergewise`  
