@@ -196,16 +196,13 @@ function resolveSessionStartOptions(
   taskIdentifier: string,
   optionalArguments: readonly string[],
 ): { ownerName: string; scopeName: string; branchKind: string } {
-  const branchKind = optionalArguments.length > 0 &&
-    isBranchKind(optionalArguments[optionalArguments.length - 1]!)
-    ? optionalArguments[optionalArguments.length - 1]!
-    : "feat";
+  const lastArgument = optionalArguments.at(-1);
+  const lastArgumentIsBranchKind = lastArgument !== undefined && isBranchKind(lastArgument);
 
-  const positionalArgumentsWithoutBranchKind =
-    optionalArguments.length > 0 &&
-      isBranchKind(optionalArguments[optionalArguments.length - 1]!)
-      ? optionalArguments.slice(0, -1)
-      : optionalArguments;
+  const branchKind = lastArgumentIsBranchKind ? lastArgument : "feat";
+  const positionalArgumentsWithoutBranchKind = lastArgumentIsBranchKind
+    ? optionalArguments.slice(0, -1)
+    : optionalArguments;
 
   if (positionalArgumentsWithoutBranchKind.length > 2) {
     fail("ops:start-session accepts at most two optional positional args: [owner] [scope]");
