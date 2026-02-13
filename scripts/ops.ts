@@ -73,17 +73,21 @@ function usage(): void {
   console.log(`Usage:
   bun run ops:start -- <task-id> <branch-name> <owner> <scope>
   bun run ops:start-session -- <session-id> <task-id> [owner] [scope] [branch-kind]
+  bun run ops:start-batch -- <session-id> <task-id> [task-id...]
   bun run ops:agent -- <session-id> <task-id> [owner] [scope] [branch-kind]
   bun run ops:prompt -- <task-id>
+  bun run ops:finish -- <task-id>
   bun run ops:review-ready -- <task-id>
   bun run ops:open-pr -- <task-id>
 
 Examples:
   bun run ops:start -- github-client feat/agent-github-client alice packages/github-client
   bun run ops:start-session -- s01 github-client
+  bun run ops:start-batch -- s01 mw-003 mw-004 mw-006
   bun run ops:agent -- s01 github-client
   bun run ops:start-session -- s01 github-client agent-1 packages/github-client fix
   bun run ops:prompt -- github-client
+  bun run ops:finish -- github-client
   bun run ops:review-ready -- github-client
   bun run ops:open-pr -- github-client`);
 }
@@ -335,10 +339,14 @@ function addBoardRowToInProgress(options: StartCommandOptions): void {
   try {
     ensureBoardFile();
 
-    const boardContents = readFileSync(boardFilePath, "utf8");
+    const boardContents = removeBoardRowsForTask(
+      readFileSync(boardFilePath, "utf8"),
+      options.taskIdentifier,
+    );
     const rowText = `| ${options.taskIdentifier} | ${options.branchName} | ${options.ownerName} | ${options.scopeName} |`;
 
     if (boardContents.includes(rowText)) {
+      writeFileSync(boardFilePath, boardContents, "utf8");
       return;
     }
 
@@ -361,6 +369,35 @@ function addBoardRowToInProgress(options: StartCommandOptions): void {
       `addBoardRowToInProgress(${options.taskIdentifier}) failed: ${formatError(caughtError)}`,
     );
   }
+}
+
+/**
+ * Removes all board rows for a specific task identifier.
+ *
+ * @param boardContents - Current board markdown body.
+ * @param taskIdentifier - Task identifier to remove.
+ * @returns Board markdown body without matching task rows.
+ */
+function removeBoardRowsForTask(boardContents: string, taskIdentifier: string): string {
+  const tableLinePattern = /^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$/;
+  const filteredLines: string[] = [];
+
+  for (const boardLine of boardContents.split("\n")) {
+    const parsedLine = boardLine.match(tableLinePattern);
+    if (!parsedLine) {
+      filteredLines.push(boardLine);
+      continue;
+    }
+
+    const parsedTaskIdentifier = (parsedLine[1] ?? "").trim();
+    if (parsedTaskIdentifier === taskIdentifier) {
+      continue;
+    }
+
+    filteredLines.push(boardLine);
+  }
+
+  return filteredLines.join("\n");
 }
 
 /**
@@ -552,6 +589,70 @@ function listChangedPathsAgainstMain(branchName: string): string[] {
 }
 
 /**
+ * Returns true when a branch has at least one commit ahead of main.
+ *
+ * @param branchName - Branch name to compare.
+ * @returns Whether the branch is ahead of main.
+ */
+function hasCommitsAheadOfMain(branchName: string): boolean {
+  try {
+    const revisionCountOutput = execFileSync(
+      "git",
+      ["rev-list", "--count", `main..${branchName}`],
+      {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+      },
+    ).trim();
+
+    const revisionCount = Number.parseInt(revisionCountOutput, 10);
+    return Number.isFinite(revisionCount) && revisionCount > 0;
+  } catch (caughtError) {
+    fail(`hasCommitsAheadOfMain(${branchName}) failed: ${formatError(caughtError)}`);
+  }
+}
+
+/**
+ * Fails when a task branch has zero commits ahead of main.
+ *
+ * @param boardEntry - Task row details.
+ */
+function assertBranchHasCommittedChanges(boardEntry: TaskBoardEntry): void {
+  if (!hasCommitsAheadOfMain(boardEntry.branchName)) {
+    fail(
+      `review-ready failed for ${boardEntry.taskIdentifier}: branch ${boardEntry.branchName} has no commits ahead of main`,
+    );
+  }
+}
+
+/**
+ * Fails when the task worktree has uncommitted changes.
+ *
+ * @param boardEntry - Task row details.
+ */
+function assertWorktreeClean(boardEntry: TaskBoardEntry): void {
+  const worktreePath = resolveWorktreePath(boardEntry.branchName);
+  if (!existsSync(worktreePath)) {
+    fail(`assertWorktreeClean failed: missing worktree path ${worktreePath}`);
+  }
+
+  try {
+    const porcelainStatus = execFileSync("git", ["status", "--porcelain"], {
+      cwd: worktreePath,
+      encoding: "utf8",
+    }).trim();
+
+    if (porcelainStatus.length > 0) {
+      fail(
+        `review-ready failed for ${boardEntry.taskIdentifier}: uncommitted changes exist in ${worktreePath}`,
+      );
+    }
+  } catch (caughtError) {
+    fail(`assertWorktreeClean(${boardEntry.taskIdentifier}) failed: ${formatError(caughtError)}`);
+  }
+}
+
+/**
  * Validates branch naming alignment with task identifier.
  *
  * @param boardEntry - Task row details.
@@ -636,6 +737,8 @@ function reviewTaskReadiness(taskIdentifier: string): void {
   loadTaskFile(taskIdentifier);
   const boardEntry = resolveTaskBoardEntry(taskIdentifier);
   assertTaskBranchAlignment(boardEntry);
+  assertBranchHasCommittedChanges(boardEntry);
+  assertWorktreeClean(boardEntry);
 
   const changedPaths = listChangedPathsAgainstMain(boardEntry.branchName);
   assertScopeBoundaries(boardEntry, changedPaths);
@@ -644,6 +747,27 @@ function reviewTaskReadiness(taskIdentifier: string): void {
   console.log(
     `review-ready passed for task=${boardEntry.taskIdentifier} branch=${boardEntry.branchName} scope=${boardEntry.scopeName}`,
   );
+}
+
+/**
+ * Pushes the task branch to origin and sets upstream when needed.
+ *
+ * @param boardEntry - Task row details.
+ */
+function pushTaskBranch(boardEntry: TaskBoardEntry): void {
+  const worktreePath = resolveWorktreePath(boardEntry.branchName);
+  if (!existsSync(worktreePath)) {
+    fail(`pushTaskBranch failed: missing worktree path ${worktreePath}`);
+  }
+
+  try {
+    execFileSync("git", ["push", "-u", "origin", boardEntry.branchName], {
+      cwd: worktreePath,
+      stdio: "inherit",
+    });
+  } catch (caughtError) {
+    fail(`pushTaskBranch(${boardEntry.taskIdentifier}) failed: ${formatError(caughtError)}`);
+  }
 }
 
 /**
@@ -672,7 +796,7 @@ function printPrompt(taskIdentifier: string): void {
     console.log("- No inline comments.");
     console.log("- No single-letter or abbreviated variable names.");
     console.log("- Task is complete only after: quality gates pass, branch is pushed, and PR URL is posted.");
-    console.log("- Open PR with: bun run ops:open-pr -- <task-id>");
+    console.log("- Finalize with one command: bun run ops:finish -- <task-id>");
     console.log("- Return PR URL in your completion message. Do not merge.");
   } catch (caughtError) {
     fail(`printPrompt(${taskIdentifier}) failed: ${formatError(caughtError)}`);
@@ -796,6 +920,7 @@ function openPullRequestForTask(taskIdentifier: string): void {
   const existingPullRequest = findPullRequestByHead(branchName);
 
   try {
+    pushTaskBranch(boardEntry);
     writeFileSync(pullRequestBodyFilePath, pullRequestBody, "utf8");
 
     if (existingPullRequest) {
@@ -844,6 +969,15 @@ function openPullRequestForTask(taskIdentifier: string): void {
 }
 
 /**
+ * Runs the full completion flow for one task.
+ *
+ * @param taskIdentifier - Unique task identifier.
+ */
+function finishTask(taskIdentifier: string): void {
+  openPullRequestForTask(taskIdentifier);
+}
+
+/**
  * Starts one task by preparing task file, board state, and worktree.
  *
  * @param argumentsList - Positional CLI args passed after `start`.
@@ -875,6 +1009,67 @@ function startTask(argumentsList: string[]): void {
   console.log(`1) Fill in task details in ${taskFilePath}`);
   console.log(`2) Run: bun run ops:prompt -- ${options.taskIdentifier}`);
   console.log("3) Paste prompt to assigned agent");
+}
+
+/**
+ * Starts multiple session tasks and worktrees with deterministic agent ownership.
+ *
+ * @param argumentsList - Positional CLI args passed after `start-batch`.
+ */
+function startBatchSession(argumentsList: string[]): void {
+  const [sessionIdentifier, ...taskIdentifiers] = argumentsList;
+  if (!sessionIdentifier || taskIdentifiers.length === 0) {
+    usage();
+    fail("missing required arguments for ops:start-batch");
+  }
+
+  validateSegment(sessionIdentifier, "session-id");
+  const ownershipEntries = loadOwnershipEntries();
+  const createdOptions: StartCommandOptions[] = [];
+
+  for (const [taskIndex, taskIdentifier] of taskIdentifiers.entries()) {
+    validateSegment(taskIdentifier, "task-id");
+
+    const ownerName = `agent-${taskIndex + 1}`;
+    const scopeName = inferScopeName(taskIdentifier, ownershipEntries);
+    const branchName = buildSessionBranchName(
+      sessionIdentifier,
+      taskIdentifier,
+      "feat",
+    );
+
+    const options: StartCommandOptions = {
+      taskIdentifier,
+      branchName,
+      ownerName,
+      scopeName,
+    };
+
+    ensureTaskFile(options);
+    addBoardRowToInProgress(options);
+    createWorktree(branchName);
+    createdOptions.push(options);
+  }
+
+  console.log("\nBatch started.");
+  console.log(`Session: ${sessionIdentifier}`);
+  console.log(`Tasks: ${createdOptions.length}`);
+  console.log("\nAgent Terminal Commands:");
+  for (const createdOption of createdOptions) {
+    const worktreePath = resolveWorktreePath(createdOption.branchName);
+    console.log(
+      `- ${createdOption.ownerName}: cd ${worktreePath} && bun run ops:prompt -- ${createdOption.taskIdentifier}`,
+    );
+  }
+
+  console.log("\nTech Lead Commands:");
+  console.log("- bun run ops:status");
+  for (const createdOption of createdOptions) {
+    console.log(
+      `- bun run ops:review-ready -- ${createdOption.taskIdentifier} && bun run ops:open-pr -- ${createdOption.taskIdentifier}`,
+    );
+  }
+  console.log(`- bun run wt:cleanup:session ${sessionIdentifier}`);
 }
 
 /**
@@ -965,6 +1160,11 @@ function main(): void {
     return;
   }
 
+  if (commandName === "start-batch") {
+    startBatchSession(argumentsList);
+    return;
+  }
+
   if (commandName === "agent") {
     startAgentSession(argumentsList);
     return;
@@ -978,6 +1178,17 @@ function main(): void {
     }
 
     openPullRequestForTask(taskIdentifier);
+    return;
+  }
+
+  if (commandName === "finish") {
+    const [taskIdentifier] = argumentsList;
+    if (!taskIdentifier) {
+      usage();
+      fail("missing task-id for ops:finish");
+    }
+
+    finishTask(taskIdentifier);
     return;
   }
 

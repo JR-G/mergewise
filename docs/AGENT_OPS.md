@@ -16,7 +16,7 @@ Use `ops/` with worktrees to run multiple agents safely in parallel.
 1. Create a task file from `ops/tasks/TEMPLATE.md`.
 2. Add the task to `.mergewise-runtime/ops/board.md`.
 3. Spawn worktree:
-   - `bun run ops:new <task-id> <branch-name>`
+   - `bun run ops:start -- <task-id> <branch-name> <owner> <scope>`
 4. Give the assigned agent the task file and branch.
 5. Track active work with:
    - `bun run ops:status`
@@ -64,6 +64,26 @@ Creates branch:
 
 `feat/s01-github-client`
 
+Batch session setup for tech leads:
+
+```bash
+bun run ops:start-batch -- <session-id> <task-id> [task-id...]
+```
+
+Example:
+
+```bash
+bun run ops:start-batch -- s03 mw-003 mw-004 mw-006
+```
+
+This command:
+
+- Creates task files when missing.
+- Ensures one `In Progress` board row per task id (no duplicates).
+- Creates one worktree per task branch.
+- Assigns deterministic owners (`agent-1`, `agent-2`, ...).
+- Prints copy-paste commands for each agent terminal and tech lead PR flow.
+
 One-command agent launcher (start + prompt + shell in worktree):
 
 ```bash
@@ -85,9 +105,22 @@ bun run wt:cleanup:session s01
 Open PR from task identifier:
 
 ```bash
+bun run ops:finish -- <task-id>
+```
+
+Or step-by-step:
+
+```bash
 bun run ops:review-ready -- <task-id>
 bun run ops:open-pr -- <task-id>
 ```
+
+`ops:open-pr` behavior:
+
+- Fails when the task branch has zero commits ahead of `main`.
+- Fails when the task worktree has uncommitted changes.
+- Pushes the task branch to `origin` before creating or updating the PR.
+- `ops:finish` runs the full completion flow via `ops:open-pr`.
 
 ## Rules
 
@@ -96,6 +129,7 @@ bun run ops:open-pr -- <task-id>
 - Agent-to-worktree: one agent per worktree.
 - File boundaries: no edits outside task-allowed paths.
 - Completion requires a posted PR URL.
+- `ops:finish` is the canonical single-command completion step for agents.
 - `ops:open-pr` runs review-ready checks before creating the PR.
 - `ops:review-ready` runs `quality:gates`, lint, typecheck, test, and build in the task worktree.
 - `ops:open-pr` auto-generates a compliant PR body and updates an existing PR for the branch when one already exists.
