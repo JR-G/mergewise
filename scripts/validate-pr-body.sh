@@ -4,6 +4,10 @@ set -euo pipefail
 PR_BODY_INPUT="${PR_BODY:-}"
 
 if [ -z "$PR_BODY_INPUT" ]; then
+  if [ "${CI:-}" = "true" ] || [ -n "${GITHUB_ACTIONS:-}" ]; then
+    echo "pr-body validation failed: PR_BODY is empty in CI" >&2
+    exit 1
+  fi
   echo "pr-body validation skipped: PR_BODY is empty"
   exit 0
 fi

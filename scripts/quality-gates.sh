@@ -65,9 +65,15 @@ check_set_interval_catch_in_file() {
   ' "$file_path" || fail "setInterval async invocation must handle rejections in $file_path"
 }
 
+if command -v rg >/dev/null 2>&1; then
+  timer_files_command=(rg -l --glob '**/*.ts' --glob '**/*.tsx' --glob '!node_modules/**' --glob '!dist/**' --glob '!.mergewise-runtime/**' "setInterval\\(" apps packages)
+else
+  timer_files_command=(grep -Rl --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.mergewise-runtime "setInterval\\(" apps packages)
+fi
+
 while IFS= read -r timer_file; do
   check_set_interval_catch_in_file "$timer_file"
-done < <(rg -l --glob '**/*.ts' --glob '**/*.tsx' --glob '!node_modules/**' --glob '!dist/**' --glob '!.mergewise-runtime/**' "setInterval\\(" apps packages || true)
+done < <("${timer_files_command[@]}" || true)
 
 check_catch_logging_in_file() {
   local file_path="$1"
