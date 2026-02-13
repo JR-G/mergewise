@@ -9,58 +9,62 @@ import {
   createProcessedKeyState,
   loadConfig,
   processAnalyzePullRequestJob,
+  runPollCycleWithInFlightGuard,
   trackProcessedKey,
 } from "./index";
 
 const config = loadConfig();
-const state = createProcessedKeyState();
-let isPollInFlight = false;
+const processedKeyState = createProcessedKeyState();
+const pollCycleState = { isPollInFlight: false };
+const processLogger = console;
 
 console.log(
   `[worker] started (poll=${config.pollIntervalMs}ms, max_keys=${config.maxProcessedKeys}, source=${DEFAULT_JOB_FILE_PATH})`,
 );
 
 async function pollAndProcessJobs(): Promise<void> {
-  if (isPollInFlight) {
-    return;
-  }
-
-  isPollInFlight = true;
-  try {
-    let jobs: AnalyzePullRequestJob[];
+  const didRun = await runPollCycleWithInFlightGuard(pollCycleState, async () => {
+    let queuedJobs: AnalyzePullRequestJob[];
     try {
-      jobs = readAllAnalyzePullRequestJobs();
+      queuedJobs = readAllAnalyzePullRequestJobs();
     } catch (error) {
       const details = error instanceof Error ? error.stack ?? error.message : String(error);
       console.error(`[worker] failed to read queued jobs: ${details}`);
       return;
     }
 
-    for (const job of jobs) {
-      const key = buildIdempotencyKey(job);
-      if (state.keys.has(key)) {
+    for (const queuedJob of queuedJobs) {
+      const idempotencyKey = buildIdempotencyKey(queuedJob);
+      if (processedKeyState.keys.has(idempotencyKey)) {
         continue;
       }
 
       try {
-        const summary = await processAnalyzePullRequestJob(job);
-        if (!summary) {
-          continue;
-        }
-        trackProcessedKey(key, state, config.maxProcessedKeys);
+        await processAnalyzePullRequestJob(queuedJob, {
+          githubFetchOptions: {
+            githubApiBaseUrl: config.githubApiBaseUrl,
+            githubUserAgent: config.githubUserAgent,
+            githubRequestTimeoutMs: config.githubRequestTimeoutMs,
+            githubFetchRetries: config.githubFetchRetries,
+            githubRetryDelayMs: config.githubRetryDelayMs,
+          },
+        });
+        trackProcessedKey(idempotencyKey, processedKeyState, config.maxProcessedKeys);
       } catch (error) {
         const details = error instanceof Error ? error.stack ?? error.message : String(error);
-        console.error(`[worker] failed to process job=${job.job_id}: ${details}`);
+        console.error(`[worker] failed to process job=${queuedJob.job_id}: ${details}`);
       }
     }
-  } finally {
-    isPollInFlight = false;
+  });
+
+  if (!didRun) {
+    console.log("[worker] poll skipped: previous cycle still in flight");
   }
 }
 
 setInterval(() => {
-  pollAndProcessJobs().catch((error: unknown) => {
+  pollAndProcessJobs().catch((error) => {
     const details = error instanceof Error ? error.stack ?? error.message : String(error);
-    console.error(`[worker] poll cycle failed unexpectedly: ${details}`);
+    processLogger.error(`[worker] poll cycle failed: ${details}`);
   });
 }, config.pollIntervalMs);
