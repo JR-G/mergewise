@@ -7,6 +7,7 @@ Run multi-agent delivery in a repeatable way where one `Agent Tech Lead` plans a
 ## Inputs
 
 - Strategy statement for the current session
+- Backlog source: `ops/backlog.md`
 - Session identifier (example: `s02`)
 - Parallelism cap (default: `3`)
 
@@ -53,18 +54,20 @@ Every planning run must output:
 
 ## Setup Flow
 
-1. Agent Tech Lead generates task plan from strategy.
-2. Start one task per command:
+1. Agent Tech Lead filters `ops/backlog.md` to `todo` items only.
+2. Agent Tech Lead generates task plan from strategy and top backlog items.
+3. Start one task per command:
    - `bun run ops:start-session -- <session-id> <task-id>`
-3. Generate prompts:
+4. Generate prompts:
    - `bun run ops:prompt -- <task-id>`
-4. Assign each prompt to one agent in its worktree.
+5. Assign each prompt to one agent in its worktree.
 
 ## Review And Merge Flow
 
 1. Validate each PR against coding and scope rules.
 2. Merge in declared dependency order.
 3. Confirm `main` green after final merge.
+4. Mark completed backlog items as `done` in `ops/backlog.md`.
 
 ## Teardown Flow
 

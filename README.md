@@ -30,6 +30,7 @@ mergewise --version
 - `docs/AGENT_OPS.md`
 - `docs/ORCHESTRATION_PLAYBOOK.md`
 - `docs/ORCHESTRATOR_KICKOFF_TEMPLATE.md`
+- `ops/backlog.md`
 
 ## Contributor Docs
 

@@ -8,6 +8,10 @@ Act as Agent Tech Lead for Mergewise.
 Strategy:
 <paste strategy and outcome>
 
+Backlog source:
+- ops/backlog.md
+- Use only items with status `todo`
+
 Constraints:
 - Max 3 parallel tasks
 - Bun-only
