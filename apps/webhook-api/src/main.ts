@@ -1,5 +1,4 @@
 import { enqueueAnalyzePullRequestJob } from "@mergewise/job-store";
-import type { GitHubPullRequestAction } from "@mergewise/shared-types";
 
 import {
   buildAnalyzePullRequestJob,
@@ -7,10 +6,10 @@ import {
   createWebhookJsonResponse,
   getRequestId,
   isPullRequestWebhookEvent,
+  isSupportedPullRequestAction,
   isWebhookSignatureValid,
   loadConfig,
   logWebhookFailure,
-  SUPPORTED_PULL_REQUEST_ACTIONS,
 } from "./index";
 
 const config = loadConfig();
@@ -112,11 +111,7 @@ Bun.serve({
       );
     }
 
-    if (
-      !SUPPORTED_PULL_REQUEST_ACTIONS.has(
-        payload.action as GitHubPullRequestAction,
-      )
-    ) {
+    if (!isSupportedPullRequestAction(payload.action)) {
       return createWebhookJsonResponse(
         { status: "ignored", request_id: requestId, reason: "pull_request_action_ignored" },
         202,

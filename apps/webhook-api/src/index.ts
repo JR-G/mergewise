@@ -167,8 +167,30 @@ export function logWebhookFailure(logEvent: WebhookFailureLogEvent): void {
 /**
  * Supported GitHub pull request actions that should queue analysis work.
  */
-export const SUPPORTED_PULL_REQUEST_ACTIONS: ReadonlySet<GitHubPullRequestAction> =
-  new Set(["opened", "reopened", "synchronize"]);
+const SUPPORTED_PULL_REQUEST_ACTION_VALUES = [
+  "opened",
+  "reopened",
+  "synchronize",
+] as const satisfies readonly GitHubPullRequestAction[];
+
+/**
+ * Supported GitHub pull request actions that should queue analysis work.
+ */
+export const SUPPORTED_PULL_REQUEST_ACTIONS: ReadonlySet<string> = new Set(
+  SUPPORTED_PULL_REQUEST_ACTION_VALUES,
+);
+
+/**
+ * Checks whether a pull request action should queue analysis work.
+ *
+ * @param action - Action name from webhook payload.
+ * @returns `true` when action is supported for queueing.
+ */
+export function isSupportedPullRequestAction(
+  action: string,
+): action is GitHubPullRequestAction {
+  return SUPPORTED_PULL_REQUEST_ACTIONS.has(action);
+}
 
 /**
  * Runtime configuration for the webhook API service.
