@@ -545,9 +545,6 @@ async function buildAnalysisContextFromGitHub(
   }
 
   const appCredentials = loadGitHubAppCredentials();
-  if (!appCredentials) {
-    throw new Error("[worker] missing GITHUB_APP_ID or GITHUB_APP_PRIVATE_KEY");
-  }
 
   const createGitHubAppJwtFn = dependencies.createGitHubAppJwtFn ?? createGitHubAppJwt;
   const exchangeInstallationAccessTokenFn =
@@ -659,24 +656,34 @@ function isRetryablePullRequestFileFetchError(error: unknown): boolean {
   return false;
 }
 
-function loadGitHubAppCredentials():
-  | Readonly<{ appId: number; privateKeyPem: string }>
-  | null {
+function loadGitHubAppCredentials(): Readonly<{ appId: number; privateKeyPem: string }> {
   const appIdRaw = process.env.GITHUB_APP_ID;
-  const privateKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY;
-
-  if (!appIdRaw || !privateKeyRaw) {
-    return null;
+  if (!appIdRaw?.trim()) {
+    throw new Error("[worker] missing GITHUB_APP_ID");
   }
 
   const appId = Number.parseInt(appIdRaw, 10);
   if (Number.isNaN(appId) || appId <= 0) {
-    return null;
+    throw new Error(`[worker] invalid GITHUB_APP_ID value: ${appIdRaw}`);
+  }
+
+  const preferredPrivateKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY;
+  const legacyPrivateKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY_PEM;
+  const privateKeyRaw = preferredPrivateKeyRaw ?? legacyPrivateKeyRaw;
+
+  if (privateKeyRaw === undefined) {
+    throw new Error(
+      "[worker] missing GITHUB_APP_PRIVATE_KEY (or legacy GITHUB_APP_PRIVATE_KEY_PEM)",
+    );
   }
 
   const privateKeyPem = privateKeyRaw.replace(/\\n/g, "\n").trim();
   if (!privateKeyPem) {
-    return null;
+    if (preferredPrivateKeyRaw !== undefined) {
+      throw new Error("[worker] invalid GITHUB_APP_PRIVATE_KEY value: empty");
+    }
+
+    throw new Error("[worker] invalid GITHUB_APP_PRIVATE_KEY_PEM value: empty");
   }
 
   return { appId, privateKeyPem };

@@ -407,6 +407,95 @@ describe("processAnalyzePullRequestJob", () => {
       ),
     ).rejects.toBeInstanceOf(GitHubApiError);
   });
+
+  test("supports legacy GITHUB_APP_PRIVATE_KEY_PEM when new key name is unset", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
+    process.env.GITHUB_APP_PRIVATE_KEY_PEM = "legacy-private-key";
+
+    const summary = await processAnalyzePullRequestJob(
+      {
+        job_id: "job-legacy-key",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 52,
+        head_sha: "def458",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => ({
+          findings: [],
+          summary: {
+            totalRules: 0,
+            successfulRules: 0,
+            failedRules: 0,
+            totalFindings: 0,
+            findingsByCategory: {
+              clean: 0,
+              perf: 0,
+              safety: 0,
+              idiomatic: 0,
+            },
+          },
+          failedRuleIds: [],
+        }),
+      },
+    );
+
+    expect(summary.jobId).toBe("job-legacy-key");
+  });
+
+  test("invalid GITHUB_APP_ID surfaces explicit error", async () => {
+    process.env.GITHUB_APP_ID = "not-a-number";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    await expect(
+      processAnalyzePullRequestJob(
+        {
+          job_id: "job-invalid-app-id",
+          installation_id: 44,
+          repo_full_name: "acme/widget",
+          pr_number: 53,
+          head_sha: "def459",
+          queued_at: "2025-01-01T00:00:00Z",
+        },
+        {
+          githubFetchOptions: workerFetchOptions,
+          rules: [],
+          createGitHubAppJwtFn: () => "jwt",
+          exchangeInstallationAccessTokenFn: async () => ({
+            token: "installation-token",
+            expires_at: "2026-01-01T00:00:00Z",
+          }),
+          fetchPullRequestFilesWithRetryFn: async () => [],
+          executeRulesFn: async () => ({
+            findings: [],
+            summary: {
+              totalRules: 0,
+              successfulRules: 0,
+              failedRules: 0,
+              totalFindings: 0,
+              findingsByCategory: {
+                clean: 0,
+                perf: 0,
+                safety: 0,
+                idiomatic: 0,
+              },
+            },
+            failedRuleIds: [],
+          }),
+        },
+      ),
+    ).rejects.toThrow("[worker] invalid GITHUB_APP_ID value: not-a-number");
+  });
 });
 
 describe("loadConfig", () => {
