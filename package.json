@@ -31,6 +31,7 @@
     "build": "bunx tsc -p tsconfig.build.json",
     "dev:webhook": "bun run apps/webhook-api/src/main.ts",
     "dev:worker": "bun run apps/worker/src/main.ts",
+    "dev:site": "bun run apps/site/server.ts",
     "wt:new": "bash scripts/worktree.sh new",
     "wt:new:session": "bash scripts/worktree.sh new-session",
     "wt:list": "bash scripts/worktree.sh list",
