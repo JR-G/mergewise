@@ -203,6 +203,40 @@ export function createProcessedKeyState(): ProcessedKeyState {
 }
 
 /**
+ * Mutable state tracking whether one poll cycle is currently active.
+ */
+export interface PollCycleState {
+  /**
+   * Indicates whether poll execution is currently in flight.
+   */
+  isPollInFlight: boolean;
+}
+
+/**
+ * Executes one poll cycle while preventing overlapping runs.
+ *
+ * @param state - Mutable poll cycle state.
+ * @param pollCycle - Poll cycle callback.
+ * @returns `true` when execution ran, or `false` when skipped due to in-flight work.
+ */
+export async function runPollCycleWithInFlightGuard(
+  state: PollCycleState,
+  pollCycle: () => Promise<void>,
+): Promise<boolean> {
+  if (state.isPollInFlight) {
+    return false;
+  }
+
+  state.isPollInFlight = true;
+  try {
+    await pollCycle();
+    return true;
+  } finally {
+    state.isPollInFlight = false;
+  }
+}
+
+/**
  * Tracks a processed idempotency key while enforcing a fixed-size in-memory cap.
  *
  * @remarks

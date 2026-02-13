@@ -7,6 +7,7 @@ import {
   createProcessedKeyState,
   loadConfig,
   processAnalyzePullRequestJob,
+  runPollCycleWithInFlightGuard,
   trackProcessedKey,
 } from "./index";
 
@@ -77,6 +78,49 @@ describe("trackProcessedKey", () => {
     expect(state.keys.has("a")).toBe(false);
     expect(state.keys.has("b")).toBe(true);
     expect(state.keys.has("c")).toBe(true);
+  });
+});
+
+describe("runPollCycleWithInFlightGuard", () => {
+  test("runs when no poll is in flight and resets state", async () => {
+    const state = { isPollInFlight: false };
+    let runCount = 0;
+
+    const wasRun = await runPollCycleWithInFlightGuard(state, async () => {
+      runCount += 1;
+    });
+
+    expect(wasRun).toBe(true);
+    expect(runCount).toBe(1);
+    expect(state.isPollInFlight).toBe(false);
+  });
+
+  test("skips overlapping run when a poll is already in flight", async () => {
+    let releasePollCycle: () => void = () => {};
+    const firstPollStarted = new Promise<void>((resolve) => {
+      releasePollCycle = resolve;
+    });
+    const state = { isPollInFlight: false };
+    let runCount = 0;
+
+    const firstRunPromise = runPollCycleWithInFlightGuard(state, async () => {
+      runCount += 1;
+      await firstPollStarted;
+    });
+
+    const secondRunResult = await runPollCycleWithInFlightGuard(state, async () => {
+      runCount += 1;
+    });
+
+    expect(secondRunResult).toBe(false);
+    expect(runCount).toBe(1);
+    expect(state.isPollInFlight).toBe(true);
+
+    releasePollCycle();
+    const firstRunResult = await firstRunPromise;
+
+    expect(firstRunResult).toBe(true);
+    expect(state.isPollInFlight).toBe(false);
   });
 });
 

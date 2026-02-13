@@ -14,34 +14,44 @@ import {
 
 const config = loadConfig();
 const state = createProcessedKeyState();
+let isPollInFlight = false;
 
 console.log(
   `[worker] started (poll=${config.pollIntervalMs}ms, max_keys=${config.maxProcessedKeys}, source=${DEFAULT_JOB_FILE_PATH})`,
 );
 
 async function pollAndProcessJobs(): Promise<void> {
-  let jobs: AnalyzePullRequestJob[];
-  try {
-    jobs = readAllAnalyzePullRequestJobs();
-  } catch (error) {
-    const details = error instanceof Error ? error.stack ?? error.message : String(error);
-    console.error(`[worker] failed to read queued jobs: ${details}`);
+  if (isPollInFlight) {
     return;
   }
 
-  for (const job of jobs) {
-    const key = buildIdempotencyKey(job);
-    if (state.keys.has(key)) {
-      continue;
-    }
-
+  isPollInFlight = true;
+  try {
+    let jobs: AnalyzePullRequestJob[];
     try {
-      await processAnalyzePullRequestJob(job);
-      trackProcessedKey(key, state, config.maxProcessedKeys);
+      jobs = readAllAnalyzePullRequestJobs();
     } catch (error) {
       const details = error instanceof Error ? error.stack ?? error.message : String(error);
-      console.error(`[worker] failed to process job=${job.job_id}: ${details}`);
+      console.error(`[worker] failed to read queued jobs: ${details}`);
+      return;
     }
+
+    for (const job of jobs) {
+      const key = buildIdempotencyKey(job);
+      if (state.keys.has(key)) {
+        continue;
+      }
+
+      try {
+        await processAnalyzePullRequestJob(job);
+        trackProcessedKey(key, state, config.maxProcessedKeys);
+      } catch (error) {
+        const details = error instanceof Error ? error.stack ?? error.message : String(error);
+        console.error(`[worker] failed to process job=${job.job_id}: ${details}`);
+      }
+    }
+  } finally {
+    isPollInFlight = false;
   }
 }
 
