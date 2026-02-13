@@ -4,6 +4,7 @@ import { GitHubApiError } from "@mergewise/github-client";
 import type { Finding, FindingCategory, Rule } from "@mergewise/shared-types";
 
 import {
+  applyFindingGates,
   buildAnalysisContext,
   buildJobSummary,
   buildIdempotencyKey,
@@ -58,6 +59,31 @@ function createFinding(
     recommendation: "Avoid explicit any",
     confidence,
     status: "posted",
+  };
+}
+
+function createExecutionResultWithFindings(findings: readonly Finding[]) {
+  const findingsByCategory = {
+    clean: 0,
+    perf: 0,
+    safety: 0,
+    idiomatic: 0,
+  };
+
+  for (const finding of findings) {
+    findingsByCategory[finding.category] += 1;
+  }
+
+  return {
+    findings,
+    summary: {
+      totalRules: 0,
+      successfulRules: 0,
+      failedRules: 0,
+      totalFindings: findings.length,
+      findingsByCategory,
+    },
+    failedRuleIds: [],
   };
 }
 
@@ -654,9 +680,60 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.findingsByCategory).toEqual({
       clean: 0,
       perf: 1,
-      safety: 1,
-      idiomatic: 0,
+      safety: 0,
+      idiomatic: 1,
     });
+  });
+});
+
+describe("applyFindingGates", () => {
+  test("keeps highest-confidence findings when max-comments truncates", () => {
+    const executionResult = createExecutionResultWithFindings([
+      createFinding("finding-low", 0.8, "clean"),
+      createFinding("finding-top", 0.99, "perf"),
+      createFinding("finding-mid", 0.95, "safety"),
+      createFinding("finding-lower", 0.81, "idiomatic"),
+    ]);
+
+    const gatedResult = applyFindingGates(executionResult, {
+      gating: {
+        confidenceThreshold: 0,
+        maxComments: 2,
+      },
+      rules: {
+        include: [],
+        exclude: [],
+      },
+    });
+
+    expect(gatedResult.findings.map((finding) => finding.findingId)).toEqual([
+      "finding-top",
+      "finding-mid",
+    ]);
+  });
+
+  test("uses deterministic tie ordering for equal-confidence findings", () => {
+    const executionResult = createExecutionResultWithFindings([
+      createFinding("z-finding", 0.9, "clean"),
+      createFinding("a-finding", 0.9, "perf"),
+      createFinding("m-finding", 0.9, "safety"),
+    ]);
+
+    const gatedResult = applyFindingGates(executionResult, {
+      gating: {
+        confidenceThreshold: 0,
+        maxComments: 2,
+      },
+      rules: {
+        include: [],
+        exclude: [],
+      },
+    });
+
+    expect(gatedResult.findings.map((finding) => finding.findingId)).toEqual([
+      "a-finding",
+      "m-finding",
+    ]);
   });
 });
 

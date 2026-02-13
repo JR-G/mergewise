@@ -614,7 +614,8 @@ export function applyFindingGates(
   const confidenceFilteredFindings = executionResult.findings.filter(
     (finding) => finding.confidence >= confidenceThreshold,
   );
-  const gatedFindings = confidenceFilteredFindings.slice(0, maxComments);
+  const sortedFindings = [...confidenceFilteredFindings].sort(compareFindingsForGating);
+  const gatedFindings = sortedFindings.slice(0, maxComments);
   const findingsByCategory = {
     clean: 0,
     perf: 0,
@@ -635,6 +636,45 @@ export function applyFindingGates(
     },
     failedRuleIds: executionResult.failedRuleIds,
   };
+}
+
+function compareFindingsForGating(
+  leftFinding: {
+    readonly confidence: number;
+    readonly findingId: string;
+    readonly ruleId: string;
+    readonly filePath: string;
+    readonly line: number;
+  },
+  rightFinding: {
+    readonly confidence: number;
+    readonly findingId: string;
+    readonly ruleId: string;
+    readonly filePath: string;
+    readonly line: number;
+  },
+): number {
+  const confidenceDifference = rightFinding.confidence - leftFinding.confidence;
+  if (confidenceDifference !== 0) {
+    return confidenceDifference;
+  }
+
+  const findingIdComparison = leftFinding.findingId.localeCompare(rightFinding.findingId);
+  if (findingIdComparison !== 0) {
+    return findingIdComparison;
+  }
+
+  const ruleIdComparison = leftFinding.ruleId.localeCompare(rightFinding.ruleId);
+  if (ruleIdComparison !== 0) {
+    return ruleIdComparison;
+  }
+
+  const filePathComparison = leftFinding.filePath.localeCompare(rightFinding.filePath);
+  if (filePathComparison !== 0) {
+    return filePathComparison;
+  }
+
+  return leftFinding.line - rightFinding.line;
 }
 
 async function buildAnalysisContextFromGitHub(
