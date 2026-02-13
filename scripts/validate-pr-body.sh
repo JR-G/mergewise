@@ -14,7 +14,7 @@ normalize() {
 
 contains_checked_item() {
   local expected_text="$1"
-  if printf "%s\n" "$PR_BODY_INPUT" | normalize | rg -q --fixed-strings "[x] ${expected_text}"; then
+  if printf "%s\n" "$PR_BODY_INPUT" | normalize | grep -Fq -- "[x] ${expected_text}"; then
     return 0
   fi
   return 1

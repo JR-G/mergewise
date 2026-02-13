@@ -9,7 +9,13 @@ fail() {
   exit 1
 }
 
-if rg -n --glob '**/*.ts' --glob '**/*.tsx' --glob '!node_modules/**' --glob '!dist/**' --glob '!.mergewise-runtime/**' "from ['\"](\\.\\./)+(apps|packages)/" . >/tmp/mergewise-quality-imports.txt 2>/dev/null; then
+if grep -rEn \
+  --include='*.ts' \
+  --include='*.tsx' \
+  --exclude-dir='node_modules' \
+  --exclude-dir='dist' \
+  --exclude-dir='.mergewise-runtime' \
+  -- "from ['\"](\\.\\./)+(apps|packages)/" . >/tmp/mergewise-quality-imports.txt 2>/dev/null; then
   echo "disallowed deep relative cross-package imports found:" >&2
   cat /tmp/mergewise-quality-imports.txt >&2
   fail "use workspace package imports instead of deep relative imports"

@@ -770,7 +770,9 @@ function findPullRequestByHead(branchName: string): PullRequestReference | null 
       return null;
     }
 
-    return null;
+    throw new Error(
+      `findPullRequestByHead(${branchName}) failed in ${repositoryRoot}: ${errorText}`,
+    );
   }
 }
 
@@ -790,10 +792,11 @@ function openPullRequestForTask(taskIdentifier: string): void {
     runtimeOpsDirectoryPath,
     `pr-body-${taskIdentifier}.md`,
   );
-  writeFileSync(pullRequestBodyFilePath, pullRequestBody, "utf8");
   const existingPullRequest = findPullRequestByHead(branchName);
 
   try {
+    writeFileSync(pullRequestBodyFilePath, pullRequestBody, "utf8");
+
     if (existingPullRequest) {
       execFileSync(
         "gh",
