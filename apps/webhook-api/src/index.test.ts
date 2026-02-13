@@ -3,9 +3,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   buildAnalyzePullRequestJob,
   computeGitHubSignature,
+  createWebhookErrorResponse,
+  createWebhookJsonResponse,
+  getRequestId,
   isPullRequestWebhookEvent,
   isWebhookSignatureValid,
   loadConfig,
+  logWebhookFailure,
   SUPPORTED_PULL_REQUEST_ACTIONS,
 } from "./index";
 
@@ -156,5 +160,99 @@ describe("loadConfig", () => {
   test("throws for invalid port", () => {
     process.env.WEBHOOK_PORT = "not-a-number";
     expect(() => loadConfig()).toThrow("Invalid WEBHOOK_PORT value");
+  });
+});
+
+describe("getRequestId", () => {
+  test("uses existing x-request-id header", () => {
+    const request = new Request("http://localhost/webhook", {
+      method: "POST",
+      headers: {
+        "x-request-id": "external-request-id",
+      },
+    });
+
+    expect(getRequestId(request)).toBe("external-request-id");
+  });
+
+  test("generates uuid when header is missing", () => {
+    const request = new Request("http://localhost/webhook", {
+      method: "POST",
+    });
+
+    expect(getRequestId(request)).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+  });
+});
+
+describe("createWebhookJsonResponse", () => {
+  test("propagates request id as response header", async () => {
+    const response = createWebhookJsonResponse(
+      { status: "ok", request_id: "test-request-id" },
+      200,
+      "test-request-id",
+    );
+
+    expect(response.headers.get("x-request-id")).toBe("test-request-id");
+    expect(await response.json()).toEqual({
+      status: "ok",
+      request_id: "test-request-id",
+    });
+  });
+});
+
+describe("createWebhookErrorResponse", () => {
+  test("returns standard error envelope", async () => {
+    const response = createWebhookErrorResponse(
+      "invalid_signature",
+      "Invalid signature",
+      401,
+      "request-123",
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("x-request-id")).toBe("request-123");
+    expect(await response.json()).toEqual({
+      status: "error",
+      request_id: "request-123",
+      error: {
+        code: "invalid_signature",
+        message: "Invalid signature",
+      },
+    });
+  });
+});
+
+describe("logWebhookFailure", () => {
+  test("emits structured json logs", () => {
+    const originalConsoleError = console.error;
+    const capturedLogs: unknown[] = [];
+    console.error = (value?: unknown): void => {
+      capturedLogs.push(value);
+    };
+
+    try {
+      logWebhookFailure({
+        event: "webhook_request_failed",
+        request_id: "request-456",
+        http_status: 503,
+        error_code: "queue_enqueue_failed",
+        message: "Failed to queue analysis job",
+      });
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    expect(capturedLogs).toHaveLength(1);
+    expect(capturedLogs[0]).toBe(
+      JSON.stringify({
+        event: "webhook_request_failed",
+        request_id: "request-456",
+        http_status: 503,
+        error_code: "queue_enqueue_failed",
+        message: "Failed to queue analysis job",
+      }),
+    );
   });
 });

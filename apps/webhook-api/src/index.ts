@@ -7,6 +7,164 @@ import type {
 } from "@mergewise/shared-types";
 
 /**
+ * Stable error envelope returned by webhook API failures.
+ */
+export interface WebhookErrorEnvelope {
+  /**
+   * Fixed status marker for error responses.
+   */
+  status: "error";
+  /**
+   * Correlation identifier for this request.
+   */
+  request_id: string;
+  /**
+   * Structured error details for clients and logs.
+   */
+  error: {
+    /**
+     * Machine-readable error code.
+     */
+    code: WebhookErrorCode;
+    /**
+     * Human-readable summary of the failure.
+     */
+    message: string;
+  };
+}
+
+/**
+ * Known webhook API error codes.
+ */
+export type WebhookErrorCode =
+  | "method_not_allowed"
+  | "event_ignored"
+  | "invalid_signature"
+  | "invalid_json_payload"
+  | "unsupported_pull_request_payload"
+  | "pull_request_action_ignored"
+  | "queue_enqueue_failed";
+
+/**
+ * Structured event payload for webhook failure logs.
+ */
+export interface WebhookFailureLogEvent {
+  /**
+   * Stable log event name.
+   */
+  event: "webhook_request_failed";
+  /**
+   * Correlation identifier for this request.
+   */
+  request_id: string;
+  /**
+   * HTTP status returned to caller.
+   */
+  http_status: number;
+  /**
+   * Machine-readable error code.
+   */
+  error_code: WebhookErrorCode;
+  /**
+   * Human-readable failure summary.
+   */
+  message: string;
+  /**
+   * Optional GitHub event name.
+   */
+  github_event?: string | null;
+  /**
+   * Optional repository full name.
+   */
+  repo_full_name?: string;
+  /**
+   * Optional pull request number.
+   */
+  pr_number?: number;
+  /**
+   * Optional queue job id.
+   */
+  job_id?: string;
+  /**
+   * Optional serialized cause.
+   */
+  cause?: string;
+}
+
+/**
+ * Resolves a request identifier from headers or generates a new UUID.
+ *
+ * @param request - Incoming request.
+ * @returns Existing `x-request-id` value or a generated UUID.
+ */
+export function getRequestId(request: Request): string {
+  const providedRequestId = request.headers.get("x-request-id")?.trim();
+  if (providedRequestId) {
+    return providedRequestId;
+  }
+  return randomUUID();
+}
+
+/**
+ * Creates a JSON response with request id header propagation.
+ *
+ * @param body - Serializable response payload.
+ * @param status - HTTP response status.
+ * @param requestId - Correlation request id.
+ * @returns JSON response with `x-request-id` header.
+ */
+export function createWebhookJsonResponse<T>(
+  body: T,
+  status: number,
+  requestId: string,
+): Response {
+  return Response.json(body, {
+    status,
+    headers: {
+      "x-request-id": requestId,
+    },
+  });
+}
+
+/**
+ * Creates a standardized webhook API error response envelope.
+ *
+ * @param code - Machine-readable error code.
+ * @param message - Human-readable failure summary.
+ * @param status - HTTP status code.
+ * @param requestId - Correlation request id.
+ * @returns JSON response with stable error shape.
+ */
+export function createWebhookErrorResponse(
+  code: WebhookErrorCode,
+  message: string,
+  status: number,
+  requestId: string,
+): Response {
+  return createWebhookJsonResponse<WebhookErrorEnvelope>(
+    {
+      status: "error",
+      request_id: requestId,
+      error: {
+        code,
+        message,
+      },
+    },
+    status,
+    requestId,
+  );
+}
+
+/**
+ * Emits a structured webhook failure log for operational debugging.
+ *
+ * @param logEvent - Structured failure event payload.
+ */
+export function logWebhookFailure(logEvent: WebhookFailureLogEvent): void {
+  console.error(JSON.stringify(logEvent));
+}
+
+/**
  * Supported GitHub pull request actions that should queue analysis work.
  */
 export const SUPPORTED_PULL_REQUEST_ACTIONS: ReadonlySet<GitHubPullRequestAction> =
