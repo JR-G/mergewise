@@ -55,6 +55,14 @@ This removes local merged branches and worktrees for:
 - `feat/s01-*`
 - `fix/s01-*`
 
+## Cleanup All Worktrees
+
+```bash
+bun run wt:cleanup:all
+```
+
+This removes every linked worktree except the repository root worktree, prunes stale metadata, and attempts to switch the root checkout to `main`.
+
 ## Prune Stale Metadata
 
 ```bash
