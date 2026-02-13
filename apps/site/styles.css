@@ -42,7 +42,7 @@ body::before {
     radial-gradient(circle at 45% 78%, rgba(38, 122, 214, 0.14), transparent 44%);
   filter: blur(46px);
   transform: translate3d(0, 0, 0) scale(1.05);
-  animation: gradientShift 18s ease-in-out infinite alternate;
+  animation: gradient-shift 18s ease-in-out infinite alternate;
 }
 
 .background-glow {
@@ -147,7 +147,7 @@ h1 span {
   }
 }
 
-@keyframes gradientShift {
+@keyframes gradient-shift {
   0% {
     transform: translate3d(-5%, -3%, 0) scale(1.03);
   }

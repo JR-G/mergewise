@@ -49,26 +49,32 @@ const serverPort = Number.parseInt(process.env.SITE_PORT ?? "4173", 10);
 Bun.serve({
   port: Number.isNaN(serverPort) ? 4173 : serverPort,
   async fetch(request: Request): Promise<Response> {
-    const requestUrl = new URL(request.url);
-    const filePath = resolveRequestedFilePath(requestUrl.pathname);
-    const fileHandle = Bun.file(filePath);
+    try {
+      const requestUrl = new URL(request.url);
+      const filePath = resolveRequestedFilePath(requestUrl.pathname);
+      const fileHandle = Bun.file(filePath);
 
-    if (!(await fileHandle.exists())) {
-      if (requestUrl.pathname !== "/") {
-        const fallbackHandle = Bun.file(join(siteRootPath, defaultFileName));
-        if (await fallbackHandle.exists()) {
-          return new Response(fallbackHandle, {
-            headers: { "content-type": "text/html; charset=utf-8" },
-          });
+      if (!(await fileHandle.exists())) {
+        if (requestUrl.pathname !== "/") {
+          const fallbackHandle = Bun.file(join(siteRootPath, defaultFileName));
+          if (await fallbackHandle.exists()) {
+            return new Response(fallbackHandle, {
+              headers: { "content-type": "text/html; charset=utf-8" },
+            });
+          }
         }
+
+        return buildNotFoundResponse();
       }
 
-      return buildNotFoundResponse();
+      return new Response(fileHandle, {
+        headers: { "content-type": getContentTypeForPath(filePath) },
+      });
+    } catch (error: unknown) {
+      const errorDetails = error instanceof Error ? error.stack ?? error.message : String(error);
+      console.error(`[site] request handling failed: ${errorDetails}`);
+      return new Response("Internal Server Error", { status: 500 });
     }
-
-    return new Response(fileHandle, {
-      headers: { "content-type": getContentTypeForPath(filePath) },
-    });
   },
 });
 
