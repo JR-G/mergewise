@@ -607,6 +607,70 @@ describe("finding delivery", () => {
     expect(delivery.comments[1]!.dedupeKey).toBe("acme/widget#3:cap-1");
   });
 
+  test("prepareFindingDelivery ordering is deterministic across input permutations", () => {
+    const findings = [
+      {
+        ...baseFinding,
+        findingId: "same-key",
+        ruleId: "rule/a",
+        filePath: "src/a.ts",
+        line: 1,
+        evidence: "const a: any = source;",
+        recommendation: "Use a typed value.",
+        confidence: 0.9,
+      },
+      {
+        ...baseFinding,
+        findingId: "same-key",
+        ruleId: "rule/a",
+        filePath: "src/a.ts",
+        line: 1,
+        evidence: "const a: any = source;",
+        recommendation: "Use a typed value.",
+        confidence: 0.88,
+      },
+      {
+        ...baseFinding,
+        findingId: "cap-1",
+        ruleId: "rule/b",
+        filePath: "src/b.ts",
+        line: 2,
+        evidence: "const b: any = source;",
+        recommendation: "Use a typed value.",
+        confidence: 0.87,
+      },
+      {
+        ...baseFinding,
+        findingId: "cap-2",
+        ruleId: "rule/c",
+        filePath: "src/c.ts",
+        line: 3,
+        evidence: "const c: any = source;",
+        recommendation: "Use a typed value.",
+        confidence: 0.86,
+      },
+    ];
+
+    const forwardOrderDelivery = prepareFindingDelivery(findings, {
+      confidenceThreshold: 0.8,
+      maxComments: 2,
+    });
+    const reverseOrderDelivery = prepareFindingDelivery([...findings].reverse(), {
+      confidenceThreshold: 0.8,
+      maxComments: 2,
+    });
+
+    expect(forwardOrderDelivery.comments.map((comment) => comment.dedupeKey)).toEqual([
+      "acme/widget#3:same-key",
+      "acme/widget#3:cap-1",
+    ]);
+    expect(reverseOrderDelivery.comments.map((comment) => comment.dedupeKey)).toEqual([
+      "acme/widget#3:same-key",
+      "acme/widget#3:cap-1",
+    ]);
+    expect(reverseOrderDelivery).toEqual(forwardOrderDelivery);
+  });
+
   test("postPreparedFindingComments only posts prepared bounded payload", async () => {
     const delivery = prepareFindingDelivery(
       [

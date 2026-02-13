@@ -454,6 +454,10 @@ export function buildFindingDedupeKey(finding: Finding): string {
 /**
  * Prepares deterministic, bounded PR comment payloads from rule findings.
  *
+ * @remarks
+ * Selection order is deterministic and independent of input ordering.
+ * Findings are sorted by confidence descending, then by stable dedupe key.
+ *
  * @param findings - Findings emitted by rule execution.
  * @param options - Confidence threshold and posting cap.
  * @returns Prepared comments and skip counters.
