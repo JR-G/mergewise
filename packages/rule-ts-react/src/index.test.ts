@@ -170,6 +170,27 @@ describe("rule-ts-react non-null assertion", () => {
 
     expect(findings).toEqual([]);
   });
+
+  test("excludes definite-assignment assertions on class fields", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/example.ts", [
+        makeDiffHunk("@@ -1,0 +1,6 @@", [
+          "+class ServiceConsumer {",
+          "+  private readonly service!: Service;",
+          "+  cache!: Map<string, number>;",
+          "+  render(user: User) { return user!.name; }",
+          "+}",
+          "+export default ServiceConsumer;",
+        ]),
+      ]),
+    ]);
+
+    const findings = await nonNullAssertionRule.analyse(context);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.line).toBe(4);
+    expect(findings[0]!.evidence).toContain("user!.name");
+  });
 });
 
 describe("rule-ts-react array index key", () => {
@@ -244,6 +265,24 @@ describe("rule-ts-react debugger statement", () => {
           "+// debugger;",
           "+const debuggerEnabled = true;",
           "+return debuggerEnabled;",
+        ]),
+      ]),
+    ]);
+
+    const findings = await debuggerStatementRule.analyse(context);
+
+    expect(findings).toEqual([]);
+  });
+
+  test("guards against member and property debugger tokens", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/example.ts", [
+        makeDiffHunk("@@ -1,0 +1,5 @@", [
+          "+window.debugger = createClientDebugger();",
+          "+const current = state.debugger;",
+          "+const flags = { debugger: true };",
+          "+const alias = debuggerConfig.debugger;",
+          "+return flags;",
         ]),
       ]),
     ]);

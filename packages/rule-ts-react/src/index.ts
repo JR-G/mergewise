@@ -15,8 +15,10 @@ const ARRAY_INDEX_KEY_RULE_IDENTIFIER = "ts-react/no-array-index-key";
 const ARRAY_INDEX_KEY_PATTERN = /\bkey\s*=\s*{\s*(?:index|idx|i)\s*}/;
 
 const DEBUGGER_STATEMENT_RULE_IDENTIFIER = "ts-react/no-debugger-statement";
-const DEBUGGER_STATEMENT_PATTERN = /\bdebugger\b\s*;?/;
+const DEBUGGER_TOKEN_PATTERN = /\bdebugger\b/g;
 const ONLY_DEBUGGER_STATEMENT_PATTERN = /^\s*debugger\s*;?\s*$/;
+const DEFINITE_ASSIGNMENT_ASSERTION_PATTERN =
+  /^\s*(?:(?:public|private|protected|readonly|static|declare|abstract|override)\s+)*(?:#?[A-Za-z_$][\w$]*)\s*!\s*:\s*/;
 
 type LineScanState = {
   insideBlockComment: boolean;
@@ -89,6 +91,10 @@ export const nonNullAssertionRule: StatelessRule = {
 
     for (const addedLine of collectAddedLines(context, TYPE_SCRIPT_REACT_FILE_PATTERN)) {
       if (!NON_NULL_ASSERTION_PATTERN.test(addedLine.sanitizedContent)) {
+        continue;
+      }
+
+      if (isDefiniteAssignmentAssertion(addedLine.sanitizedContent)) {
         continue;
       }
 
@@ -171,7 +177,7 @@ export const debuggerStatementRule: StatelessRule = {
     const findings: Finding[] = [];
 
     for (const addedLine of collectAddedLines(context, TYPE_SCRIPT_REACT_FILE_PATTERN)) {
-      if (!DEBUGGER_STATEMENT_PATTERN.test(addedLine.sanitizedContent)) {
+      if (!containsDebuggerStatement(addedLine.sanitizedContent)) {
         continue;
       }
 
@@ -455,6 +461,98 @@ function buildDebuggerPatchPreview(
     removedLines: [evidence],
     addedLines: [],
   };
+}
+
+/**
+ * Returns whether one sanitized line declares a class field using a definite-assignment assertion.
+ *
+ * @param sanitizedContent - Line content with comments and strings removed.
+ * @returns `true` when the line matches `field!: Type` declaration shape.
+ */
+function isDefiniteAssignmentAssertion(sanitizedContent: string): boolean {
+  return DEFINITE_ASSIGNMENT_ASSERTION_PATTERN.test(sanitizedContent);
+}
+
+/**
+ * Returns whether one sanitized line contains a `debugger` keyword in statement position.
+ *
+ * @param sanitizedContent - Line content with comments and strings removed.
+ * @returns `true` when at least one token is statement-position `debugger`.
+ */
+function containsDebuggerStatement(sanitizedContent: string): boolean {
+  for (const debuggerMatch of sanitizedContent.matchAll(DEBUGGER_TOKEN_PATTERN)) {
+    const matchIndex = debuggerMatch.index;
+    if (matchIndex === undefined) {
+      continue;
+    }
+
+    const tokenStartIndex = matchIndex;
+    const tokenEndIndex = tokenStartIndex + "debugger".length;
+
+    const previousCharacter = findPreviousNonWhitespaceCharacter(sanitizedContent, tokenStartIndex - 1);
+    const nextCharacter = findNextNonWhitespaceCharacter(sanitizedContent, tokenEndIndex);
+
+    if (previousCharacter === "." || nextCharacter === "." || nextCharacter === ":") {
+      continue;
+    }
+
+    const statementStart =
+      previousCharacter === null ||
+      previousCharacter === ";" ||
+      previousCharacter === "{" ||
+      previousCharacter === "}" ||
+      previousCharacter === "(" ||
+      previousCharacter === ")";
+    const statementEnd = nextCharacter === null || nextCharacter === ";" || nextCharacter === "}";
+
+    if (statementStart && statementEnd) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Finds the previous non-whitespace character in one string.
+ *
+ * @param source - Source string.
+ * @param startIndex - Index to start scanning backwards from.
+ * @returns Previous non-whitespace character, or `null` when none exists.
+ */
+function findPreviousNonWhitespaceCharacter(source: string, startIndex: number): string | null {
+  let currentIndex = startIndex;
+
+  while (currentIndex >= 0) {
+    const character = source[currentIndex];
+    if (character && !/\s/.test(character)) {
+      return character;
+    }
+    currentIndex -= 1;
+  }
+
+  return null;
+}
+
+/**
+ * Finds the next non-whitespace character in one string.
+ *
+ * @param source - Source string.
+ * @param startIndex - Index to start scanning forward from.
+ * @returns Next non-whitespace character, or `null` when none exists.
+ */
+function findNextNonWhitespaceCharacter(source: string, startIndex: number): string | null {
+  let currentIndex = startIndex;
+
+  while (currentIndex < source.length) {
+    const character = source[currentIndex];
+    if (character && !/\s/.test(character)) {
+      return character;
+    }
+    currentIndex += 1;
+  }
+
+  return null;
 }
 
 /**
