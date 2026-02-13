@@ -12,6 +12,7 @@ Usage:
   scripts/worktree.sh list
   scripts/worktree.sh remove <branch>
   scripts/worktree.sh cleanup-session <session-id>
+  scripts/worktree.sh cleanup-all
   scripts/worktree.sh prune
 
 Notes:
@@ -142,6 +143,45 @@ cmd_cleanup_session() {
   echo "Skipped unmerged branches: $skipped_count"
 }
 
+cmd_cleanup_all() {
+  local repository_root_real_path
+  repository_root_real_path="$(cd "$REPO_ROOT" && pwd -P)"
+  local removed_count=0
+  local skipped_count=0
+
+  while IFS= read -r worktree_path; do
+    [[ -z "$worktree_path" ]] && continue
+
+    local worktree_real_path
+    if worktree_real_path="$(cd "$worktree_path" 2>/dev/null && pwd -P)"; then
+      :
+    else
+      worktree_real_path="$worktree_path"
+    fi
+
+    if [[ "$worktree_real_path" == "$repository_root_real_path" ]]; then
+      continue
+    fi
+
+    if git -C "$REPO_ROOT" worktree remove "$worktree_path"; then
+      removed_count=$((removed_count + 1))
+    else
+      echo "Skipped worktree: $worktree_path"
+      skipped_count=$((skipped_count + 1))
+    fi
+  done < <(git -C "$REPO_ROOT" worktree list --porcelain | awk '/^worktree /{print substr($0,10)}')
+
+  git -C "$REPO_ROOT" worktree prune
+
+  if ! git -C "$REPO_ROOT" switch main; then
+    echo "Skipped branch switch to main in $REPO_ROOT"
+  fi
+
+  echo "Cleanup complete."
+  echo "Removed worktrees: $removed_count"
+  echo "Skipped worktrees: $skipped_count"
+}
+
 main() {
   local cmd="${1:-}"
   shift || true
@@ -152,6 +192,7 @@ main() {
     list) cmd_list ;;
     remove) cmd_remove "$@" ;;
     cleanup-session) cmd_cleanup_session "$@" ;;
+    cleanup-all) cmd_cleanup_all ;;
     prune) cmd_prune ;;
     *) usage; exit 1 ;;
   esac
