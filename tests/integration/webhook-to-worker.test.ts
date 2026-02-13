@@ -17,7 +17,10 @@ import {
   isWebhookSignatureValid,
   SUPPORTED_PULL_REQUEST_ACTIONS,
 } from "@mergewise/webhook-api";
-import { buildIdempotencyKey } from "@mergewise/worker";
+import {
+  buildIdempotencyKey,
+  processAnalyzePullRequestJob,
+} from "@mergewise/worker";
 
 import validOpened from "./fixtures/valid-pr-opened.json";
 import validSynchronize from "./fixtures/valid-pr-synchronize.json";
@@ -61,6 +64,43 @@ describe("webhook-to-worker pipeline", () => {
     const key = buildIdempotencyKey(jobs[0]!);
     expect(key).toContain("acme/widget");
     expect(key).toContain("#1@");
+  });
+
+  test("valid payload flows through worker processing and returns rule summary", async () => {
+    expect(isPullRequestWebhookEvent(validOpened)).toBe(true);
+    const job = buildAnalyzePullRequestJob(
+      validOpened as GitHubPullRequestWebhookEvent,
+    );
+    enqueueAnalyzePullRequestJob(job, queuePath);
+
+    const jobs = readAllAnalyzePullRequestJobs(queuePath);
+    expect(jobs).toHaveLength(1);
+
+    const summary = await processAnalyzePullRequestJob(jobs[0]!, {
+      logInfo: () => {},
+      logError: () => {},
+      loadAnalysisContextFn: async (loadedJob) => ({
+        diffs: [],
+        pullRequest: {
+          repo: loadedJob.repo_full_name,
+          prNumber: loadedJob.pr_number,
+          headSha: loadedJob.head_sha,
+          installationId: loadedJob.installation_id,
+        },
+      }),
+    });
+
+    expect(summary).not.toBeNull();
+    if (!summary) {
+      throw new Error("Expected worker summary");
+    }
+    expect(summary.jobId).toBe(job.job_id);
+    expect(summary.repository).toBe("acme/widget");
+    expect(summary.pullRequestNumber).toBe(1);
+    expect(summary.idempotencyKey).toBe(buildIdempotencyKey(job));
+    expect(summary.totalRules).toBeGreaterThan(0);
+    expect(summary.failedRules).toBe(0);
+    expect(summary.totalFindings).toBe(0);
   });
 
   test("multiple payloads produce multiple jobs", () => {

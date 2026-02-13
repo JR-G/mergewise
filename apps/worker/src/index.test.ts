@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import {
+  buildAnalysisContext,
+  buildJobSummary,
   buildIdempotencyKey,
   createProcessedKeyState,
+  loadAnalysisContextForJob,
   loadConfig,
+  processAnalyzePullRequestJob,
+  runPollCycleWithInFlightGuard,
   trackProcessedKey,
 } from "./index";
 
@@ -74,6 +79,267 @@ describe("trackProcessedKey", () => {
     expect(state.keys.has("a")).toBe(false);
     expect(state.keys.has("b")).toBe(true);
     expect(state.keys.has("c")).toBe(true);
+  });
+});
+
+describe("runPollCycleWithInFlightGuard", () => {
+  test("runs when no poll is in flight and resets state", async () => {
+    const state = { isPollInFlight: false };
+    let runCount = 0;
+
+    const wasRun = await runPollCycleWithInFlightGuard(state, async () => {
+      runCount += 1;
+    });
+
+    expect(wasRun).toBe(true);
+    expect(runCount).toBe(1);
+    expect(state.isPollInFlight).toBe(false);
+  });
+
+  test("skips overlapping run when a poll is already in flight", async () => {
+    let releasePollCycle: () => void = () => {};
+    const firstPollStarted = new Promise<void>((resolve) => {
+      releasePollCycle = resolve;
+    });
+    const state = { isPollInFlight: false };
+    let runCount = 0;
+
+    const firstRunPromise = runPollCycleWithInFlightGuard(state, async () => {
+      runCount += 1;
+      await firstPollStarted;
+    });
+
+    const secondRunResult = await runPollCycleWithInFlightGuard(state, async () => {
+      runCount += 1;
+    });
+
+    expect(secondRunResult).toBe(false);
+    expect(runCount).toBe(1);
+    expect(state.isPollInFlight).toBe(true);
+
+    releasePollCycle();
+    const firstRunResult = await firstRunPromise;
+
+    expect(firstRunResult).toBe(true);
+    expect(state.isPollInFlight).toBe(false);
+  });
+});
+
+describe("buildAnalysisContext", () => {
+  test("maps queued job fields to rule-engine analysis context", () => {
+    const diffs = [
+      {
+        filePath: "src/example.ts",
+        previousPath: null,
+        hunks: [{ header: "@@ -1,0 +1,1 @@", lines: ["+const value = 1;"] }],
+      },
+    ];
+    const context = buildAnalysisContext({
+      job_id: "j1",
+      installation_id: 99,
+      repo_full_name: "acme/widget",
+      pr_number: 42,
+      head_sha: "abc123",
+      queued_at: "2025-01-01T00:00:00Z",
+    }, diffs);
+
+    expect(context.diffs).toEqual(diffs);
+    expect(context.pullRequest.repo).toBe("acme/widget");
+    expect(context.pullRequest.prNumber).toBe(42);
+    expect(context.pullRequest.headSha).toBe("abc123");
+    expect(context.pullRequest.installationId).toBe(99);
+  });
+});
+
+describe("buildJobSummary", () => {
+  test("returns deterministic summary fields from execution result", () => {
+    const processedAt = "2026-02-13T12:00:00.000Z";
+    const summary = buildJobSummary(
+      {
+        job_id: "job-1",
+        installation_id: 99,
+        repo_full_name: "acme/widget",
+        pr_number: 42,
+        head_sha: "abc123",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      "acme/widget#42@abc123",
+      {
+        findings: [],
+        summary: {
+          totalRules: 1,
+          successfulRules: 1,
+          failedRules: 0,
+          totalFindings: 0,
+          findingsByCategory: {
+            clean: 0,
+            perf: 0,
+            safety: 0,
+            idiomatic: 0,
+          },
+        },
+        failedRuleIds: [],
+      },
+      processedAt,
+    );
+
+    expect(summary.jobId).toBe("job-1");
+    expect(summary.idempotencyKey).toBe("acme/widget#42@abc123");
+    expect(summary.repository).toBe("acme/widget");
+    expect(summary.pullRequestNumber).toBe(42);
+    expect(summary.totalFindings).toBe(0);
+    expect(summary.totalRules).toBe(1);
+    expect(summary.successfulRules).toBe(1);
+    expect(summary.failedRules).toBe(0);
+    expect(summary.failedRuleIds).toEqual([]);
+    expect(summary.processedAt).toBe(processedAt);
+  });
+});
+
+describe("processAnalyzePullRequestJob", () => {
+  test("executes rules and returns summary", async () => {
+    const infoMessages: string[] = [];
+    const errorMessages: string[] = [];
+
+    const summary = await processAnalyzePullRequestJob(
+      {
+        job_id: "job-2",
+        installation_id: 99,
+        repo_full_name: "acme/widget",
+        pr_number: 50,
+        head_sha: "def456",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        loadAnalysisContextFn: async () => ({
+          diffs: [],
+          pullRequest: {
+            repo: "acme/widget",
+            prNumber: 50,
+            headSha: "def456",
+            installationId: 99,
+          },
+        }),
+        executeRulesFn: async () => ({
+          findings: [],
+          summary: {
+            totalRules: 2,
+            successfulRules: 1,
+            failedRules: 1,
+            totalFindings: 0,
+            findingsByCategory: {
+              clean: 0,
+              perf: 0,
+              safety: 0,
+              idiomatic: 0,
+            },
+          },
+          failedRuleIds: ["sample/failing-rule"],
+        }),
+        logInfo: (message) => {
+          infoMessages.push(message);
+        },
+        logError: (message) => {
+          errorMessages.push(message);
+        },
+      },
+    );
+
+    expect(summary).not.toBeNull();
+    if (!summary) {
+      throw new Error("Expected worker summary");
+    }
+    expect(summary.jobId).toBe("job-2");
+    expect(summary.idempotencyKey).toBe("acme/widget#50@def456");
+    expect(summary.totalRules).toBe(2);
+    expect(summary.successfulRules).toBe(1);
+    expect(summary.failedRules).toBe(1);
+    expect(summary.failedRuleIds).toEqual(["sample/failing-rule"]);
+    expect(infoMessages).toHaveLength(2);
+    expect(errorMessages).toEqual([]);
+  });
+
+  test("returns null and logs when executeRules throws unexpectedly", async () => {
+    const errorMessages: string[] = [];
+
+    const summary = await processAnalyzePullRequestJob(
+      {
+        job_id: "job-3",
+        installation_id: 99,
+        repo_full_name: "acme/widget",
+        pr_number: 51,
+        head_sha: "aaa111",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        loadAnalysisContextFn: async () => ({
+          diffs: [],
+          pullRequest: {
+            repo: "acme/widget",
+            prNumber: 51,
+            headSha: "aaa111",
+            installationId: 99,
+          },
+        }),
+        executeRulesFn: async () => {
+          throw new Error("unexpected execute failure");
+        },
+        logInfo: () => {},
+        logError: (message) => {
+          errorMessages.push(message);
+        },
+      },
+    );
+
+    expect(summary).toBeNull();
+    expect(errorMessages).toHaveLength(1);
+    expect(errorMessages[0]).toContain("failed to execute rules job=job-3");
+  });
+});
+
+describe("loadAnalysisContextForJob", () => {
+  test("loads pull request files and maps patches to analysis diffs", async () => {
+    const context = await loadAnalysisContextForJob(
+      {
+        job_id: "job-4",
+        installation_id: 10,
+        repo_full_name: "acme/widget",
+        pr_number: 8,
+        head_sha: "abc999",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        env: {
+          GITHUB_APP_ID: "123",
+          GITHUB_APP_PRIVATE_KEY_PEM: "pem-value",
+        },
+        createGitHubAppJwtFn: () => "jwt-token",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesFn: async () => [
+          {
+            filename: "src/example.ts",
+            status: "modified",
+            additions: 1,
+            deletions: 0,
+            changes: 1,
+            patch: "@@ -1,0 +1,1 @@\n+const value: any = input;",
+          },
+        ],
+      },
+    );
+
+    expect(context.pullRequest.repo).toBe("acme/widget");
+    expect(context.pullRequest.prNumber).toBe(8);
+    expect(context.diffs).toHaveLength(1);
+    expect(context.diffs[0]!.filePath).toBe("src/example.ts");
+    expect(context.diffs[0]!.hunks).toHaveLength(1);
+    expect(context.diffs[0]!.hunks[0]!.header).toBe("@@ -1,0 +1,1 @@");
+    expect(context.diffs[0]!.hunks[0]!.lines).toEqual([
+      "+const value: any = input;",
+    ]);
   });
 });
 
