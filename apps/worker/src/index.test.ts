@@ -3,12 +3,15 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { GitHubApiError } from "@mergewise/github-client";
 
 import {
+  buildAnalysisContext,
+  buildJobSummary,
   buildIdempotencyKey,
   createProcessedKeyState,
   fetchPullRequestFilesWithRetry,
   loadConfig,
   parseRepositoryFullName,
   processAnalyzePullRequestJob,
+  runPollCycleWithInFlightGuard,
   trackProcessedKey,
   type WorkerGitHubFetchOptions,
 } from "./index";
@@ -46,6 +49,91 @@ describe("buildIdempotencyKey", () => {
     const keyA = buildIdempotencyKey({ ...base, head_sha: "aaa" });
     const keyB = buildIdempotencyKey({ ...base, head_sha: "bbb" });
     expect(keyA).not.toBe(keyB);
+  });
+});
+
+describe("trackProcessedKey", () => {
+  test("adds key to state", () => {
+    const state = createProcessedKeyState();
+    trackProcessedKey("key-1", state, 10);
+    expect(state.keys.has("key-1")).toBe(true);
+    expect(state.order).toEqual(["key-1"]);
+  });
+
+  test("evicts oldest key at max capacity via FIFO", () => {
+    const state = createProcessedKeyState();
+    trackProcessedKey("a", state, 2);
+    trackProcessedKey("b", state, 2);
+    trackProcessedKey("c", state, 2);
+
+    expect(state.keys.has("a")).toBe(false);
+    expect(state.keys.has("b")).toBe(true);
+    expect(state.keys.has("c")).toBe(true);
+    expect(state.order).toEqual(["b", "c"]);
+  });
+
+  test("preserves insertion order", () => {
+    const state = createProcessedKeyState();
+    trackProcessedKey("x", state, 5);
+    trackProcessedKey("y", state, 5);
+    trackProcessedKey("z", state, 5);
+    expect(state.order).toEqual(["x", "y", "z"]);
+  });
+
+  test("ignores duplicate keys and keeps order/key set consistent", () => {
+    const state = createProcessedKeyState();
+    trackProcessedKey("a", state, 2);
+    trackProcessedKey("a", state, 2);
+    trackProcessedKey("b", state, 2);
+    trackProcessedKey("c", state, 2);
+
+    expect(state.order).toEqual(["b", "c"]);
+    expect(state.keys.has("a")).toBe(false);
+    expect(state.keys.has("b")).toBe(true);
+    expect(state.keys.has("c")).toBe(true);
+  });
+});
+
+describe("runPollCycleWithInFlightGuard", () => {
+  test("runs when no poll is in flight and resets state", async () => {
+    const state = { isPollInFlight: false };
+    let runCount = 0;
+
+    const wasRun = await runPollCycleWithInFlightGuard(state, async () => {
+      runCount += 1;
+    });
+
+    expect(wasRun).toBe(true);
+    expect(runCount).toBe(1);
+    expect(state.isPollInFlight).toBe(false);
+  });
+
+  test("skips overlapping run when a poll is already in flight", async () => {
+    let releasePollCycle: () => void = () => {};
+    const firstPollStarted = new Promise<void>((resolve) => {
+      releasePollCycle = resolve;
+    });
+    const state = { isPollInFlight: false };
+    let runCount = 0;
+
+    const firstRunPromise = runPollCycleWithInFlightGuard(state, async () => {
+      runCount += 1;
+      await firstPollStarted;
+    });
+
+    const secondRunResult = await runPollCycleWithInFlightGuard(state, async () => {
+      runCount += 1;
+    });
+
+    expect(secondRunResult).toBe(false);
+    expect(runCount).toBe(1);
+    expect(state.isPollInFlight).toBe(true);
+
+    releasePollCycle();
+    const firstRunResult = await firstRunPromise;
+
+    expect(firstRunResult).toBe(true);
+    expect(state.isPollInFlight).toBe(false);
   });
 });
 
@@ -133,6 +221,84 @@ describe("fetchPullRequestFilesWithRetry", () => {
   });
 });
 
+describe("buildAnalysisContext", () => {
+  test("maps queued job fields and provided diffs to analysis context", () => {
+    const context = buildAnalysisContext(
+      {
+        job_id: "j1",
+        installation_id: 99,
+        repo_full_name: "acme/widget",
+        pr_number: 42,
+        head_sha: "abc123",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      [
+        {
+          filePath: "src/index.ts",
+          previousPath: null,
+          hunks: [
+            {
+              header: "@@ -1,1 +1,2 @@",
+              lines: ["-const a = 1;", "+const value = 1;", "+const b = 2;"],
+            },
+          ],
+        },
+      ],
+    );
+
+    expect(context.diffs).toHaveLength(1);
+    expect(context.diffs[0]?.filePath).toBe("src/index.ts");
+    expect(context.pullRequest.repo).toBe("acme/widget");
+    expect(context.pullRequest.prNumber).toBe(42);
+    expect(context.pullRequest.headSha).toBe("abc123");
+    expect(context.pullRequest.installationId).toBe(99);
+  });
+});
+
+describe("buildJobSummary", () => {
+  test("returns deterministic summary fields from execution result", () => {
+    const summary = buildJobSummary(
+      {
+        job_id: "job-1",
+        installation_id: 99,
+        repo_full_name: "acme/widget",
+        pr_number: 42,
+        head_sha: "abc123",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      "acme/widget#42@abc123",
+      {
+        findings: [],
+        summary: {
+          totalRules: 1,
+          successfulRules: 1,
+          failedRules: 0,
+          totalFindings: 0,
+          findingsByCategory: {
+            clean: 0,
+            perf: 0,
+            safety: 0,
+            idiomatic: 0,
+          },
+        },
+        failedRuleIds: [],
+      },
+      "2026-01-02T03:04:05.000Z",
+    );
+
+    expect(summary.jobId).toBe("job-1");
+    expect(summary.idempotencyKey).toBe("acme/widget#42@abc123");
+    expect(summary.repository).toBe("acme/widget");
+    expect(summary.pullRequestNumber).toBe(42);
+    expect(summary.totalFindings).toBe(0);
+    expect(summary.totalRules).toBe(1);
+    expect(summary.successfulRules).toBe(1);
+    expect(summary.failedRules).toBe(0);
+    expect(summary.failedRuleIds).toEqual([]);
+    expect(summary.processedAt).toBe("2026-01-02T03:04:05.000Z");
+  });
+});
+
 describe("processAnalyzePullRequestJob", () => {
   const originalEnv = { ...process.env };
 
@@ -140,161 +306,106 @@ describe("processAnalyzePullRequestJob", () => {
     process.env = { ...originalEnv };
   });
 
-  test("returns false when installation id is missing", async () => {
-    const isSuccess = await processAnalyzePullRequestJob(
-      {
-        job_id: "j1",
-        installation_id: null,
-        repo_full_name: "acme/widget",
-        pr_number: 5,
-        head_sha: "head",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
-      workerFetchOptions,
-      {
-        createGitHubAppJwt: () => "jwt",
-        exchangeInstallationAccessToken: async () => ({
-          token: "installation-token",
-          expires_at: "2026-01-01T00:00:00Z",
-        }),
-        fetchPullRequestFilesWithRetry: async () => [],
-      },
-    );
-
-    expect(isSuccess).toBe(false);
-  });
-
-  test("returns false when app credentials are missing", async () => {
-    delete process.env.GITHUB_APP_ID;
-    delete process.env.GITHUB_APP_PRIVATE_KEY;
-
-    const isSuccess = await processAnalyzePullRequestJob(
-      {
-        job_id: "j1",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 5,
-        head_sha: "head",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
-      workerFetchOptions,
-      {
-        createGitHubAppJwt: () => "jwt",
-        exchangeInstallationAccessToken: async () => ({
-          token: "installation-token",
-          expires_at: "2026-01-01T00:00:00Z",
-        }),
-        fetchPullRequestFilesWithRetry: async () => [],
-      },
-    );
-
-    expect(isSuccess).toBe(false);
-  });
-
-  test("returns true when GitHub file fetch succeeds", async () => {
+  test("successful fetch feeds rule execution and returns deterministic summary", async () => {
     process.env.GITHUB_APP_ID = "123";
     process.env.GITHUB_APP_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----";
 
-    const isSuccess = await processAnalyzePullRequestJob(
+    const capturedContexts: unknown[] = [];
+
+    const summary = await processAnalyzePullRequestJob(
       {
-        job_id: "j1",
+        job_id: "job-2",
         installation_id: 44,
         repo_full_name: "acme/widget",
-        pr_number: 5,
-        head_sha: "head",
+        pr_number: 50,
+        head_sha: "def456",
         queued_at: "2025-01-01T00:00:00Z",
       },
-      workerFetchOptions,
       {
-        createGitHubAppJwt: () => "jwt",
-        exchangeInstallationAccessToken: async () => ({
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
           token: "installation-token",
           expires_at: "2026-01-01T00:00:00Z",
         }),
-        fetchPullRequestFilesWithRetry: async () => [
+        fetchPullRequestFilesWithRetryFn: async () => [
           {
             filename: "src/index.ts",
             status: "modified",
             additions: 1,
             deletions: 0,
             changes: 1,
+            patch: "@@ -1,1 +1,2 @@\n-const a = 1;\n+const value = 1;\n+const b = 2;",
           },
         ],
+        executeRulesFn: async ({ context }) => {
+          capturedContexts.push(context);
+          return {
+            findings: [],
+            summary: {
+              totalRules: 0,
+              successfulRules: 0,
+              failedRules: 0,
+              totalFindings: 0,
+              findingsByCategory: {
+                clean: 0,
+                perf: 0,
+                safety: 0,
+                idiomatic: 0,
+              },
+            },
+            failedRuleIds: [],
+          };
+        },
+        now: () => new Date("2026-01-02T03:04:05.000Z"),
       },
     );
 
-    expect(isSuccess).toBe(true);
+    const analysisContext = capturedContexts[0] as {
+      diffs: Array<{ filePath: string; hunks: Array<{ header: string; lines: string[] }> }>;
+    };
+
+    expect(analysisContext.diffs).toHaveLength(1);
+    expect(analysisContext.diffs[0]?.filePath).toBe("src/index.ts");
+    expect(analysisContext.diffs[0]?.hunks[0]?.header).toBe("@@ -1,1 +1,2 @@");
+    expect(analysisContext.diffs[0]?.hunks[0]?.lines).toEqual([
+      "-const a = 1;",
+      "+const value = 1;",
+      "+const b = 2;",
+    ]);
+    expect(summary.jobId).toBe("job-2");
+    expect(summary.idempotencyKey).toBe("acme/widget#50@def456");
+    expect(summary.processedAt).toBe("2026-01-02T03:04:05.000Z");
   });
 
-  test("returns false when GitHub fetch fails", async () => {
+  test("non-retryable GitHub fetch failure is surfaced", async () => {
     process.env.GITHUB_APP_ID = "123";
     process.env.GITHUB_APP_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----";
 
-    const isSuccess = await processAnalyzePullRequestJob(
-      {
-        job_id: "j1",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 5,
-        head_sha: "head",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
-      workerFetchOptions,
-      {
-        createGitHubAppJwt: () => "jwt",
-        exchangeInstallationAccessToken: async () => ({
-          token: "installation-token",
-          expires_at: "2026-01-01T00:00:00Z",
-        }),
-        fetchPullRequestFilesWithRetry: async () => {
-          throw new Error("network down");
+    await expect(
+      processAnalyzePullRequestJob(
+        {
+          job_id: "job-3",
+          installation_id: 44,
+          repo_full_name: "acme/widget",
+          pr_number: 51,
+          head_sha: "def457",
+          queued_at: "2025-01-01T00:00:00Z",
         },
-      },
-    );
-
-    expect(isSuccess).toBe(false);
-  });
-});
-
-describe("trackProcessedKey", () => {
-  test("adds key to state", () => {
-    const state = createProcessedKeyState();
-    trackProcessedKey("key-1", state, 10);
-    expect(state.keys.has("key-1")).toBe(true);
-    expect(state.order).toEqual(["key-1"]);
-  });
-
-  test("evicts oldest key at max capacity via FIFO", () => {
-    const state = createProcessedKeyState();
-    trackProcessedKey("a", state, 2);
-    trackProcessedKey("b", state, 2);
-    trackProcessedKey("c", state, 2);
-
-    expect(state.keys.has("a")).toBe(false);
-    expect(state.keys.has("b")).toBe(true);
-    expect(state.keys.has("c")).toBe(true);
-    expect(state.order).toEqual(["b", "c"]);
-  });
-
-  test("preserves insertion order", () => {
-    const state = createProcessedKeyState();
-    trackProcessedKey("x", state, 5);
-    trackProcessedKey("y", state, 5);
-    trackProcessedKey("z", state, 5);
-    expect(state.order).toEqual(["x", "y", "z"]);
-  });
-
-  test("ignores duplicate keys and keeps order/key set consistent", () => {
-    const state = createProcessedKeyState();
-    trackProcessedKey("a", state, 2);
-    trackProcessedKey("a", state, 2);
-    trackProcessedKey("b", state, 2);
-    trackProcessedKey("c", state, 2);
-
-    expect(state.order).toEqual(["b", "c"]);
-    expect(state.keys.has("a")).toBe(false);
-    expect(state.keys.has("b")).toBe(true);
-    expect(state.keys.has("c")).toBe(true);
+        {
+          githubFetchOptions: workerFetchOptions,
+          createGitHubAppJwtFn: () => "jwt",
+          exchangeInstallationAccessTokenFn: async () => ({
+            token: "installation-token",
+            expires_at: "2026-01-01T00:00:00Z",
+          }),
+          fetchPullRequestFilesWithRetryFn: async () => {
+            throw new GitHubApiError(404, "GET", "https://api.github.com/x", "missing");
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(GitHubApiError);
   });
 });
 

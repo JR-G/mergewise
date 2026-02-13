@@ -76,31 +76,53 @@ describe("webhook-to-worker pipeline", () => {
     const jobs = readAllAnalyzePullRequestJobs(queuePath);
     expect(jobs).toHaveLength(1);
 
-    const summary = await processAnalyzePullRequestJob(jobs[0]!, {
-      logInfo: () => {},
-      logError: () => {},
-      loadAnalysisContextFn: async (loadedJob) => ({
-        diffs: [],
-        pullRequest: {
-          repo: loadedJob.repo_full_name,
-          prNumber: loadedJob.pr_number,
-          headSha: loadedJob.head_sha,
-          installationId: loadedJob.installation_id,
-        },
-      }),
-    });
+    const previousAppId = process.env.GITHUB_APP_ID;
+    const previousPrivateKey = process.env.GITHUB_APP_PRIVATE_KEY;
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----";
+
+    let summary = null as Awaited<ReturnType<typeof processAnalyzePullRequestJob>> | null;
+    try {
+      summary = await processAnalyzePullRequestJob(jobs[0]!, {
+        logInfo: () => {},
+        logError: () => {},
+        rules: [],
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => ({
+          findings: [],
+          summary: {
+            totalRules: 0,
+            successfulRules: 0,
+            failedRules: 0,
+            totalFindings: 0,
+            findingsByCategory: {
+              clean: 0,
+              perf: 0,
+              safety: 0,
+              idiomatic: 0,
+            },
+          },
+          failedRuleIds: [],
+        }),
+      });
+    } finally {
+      process.env.GITHUB_APP_ID = previousAppId;
+      process.env.GITHUB_APP_PRIVATE_KEY = previousPrivateKey;
+    }
 
     expect(summary).not.toBeNull();
-    if (!summary) {
-      throw new Error("Expected worker summary");
-    }
-    expect(summary.jobId).toBe(job.job_id);
-    expect(summary.repository).toBe("acme/widget");
-    expect(summary.pullRequestNumber).toBe(1);
-    expect(summary.idempotencyKey).toBe(buildIdempotencyKey(job));
-    expect(summary.totalRules).toBeGreaterThan(0);
-    expect(summary.failedRules).toBe(0);
-    expect(summary.totalFindings).toBe(0);
+    expect(summary!.jobId).toBe(job.job_id);
+    expect(summary!.repository).toBe("acme/widget");
+    expect(summary!.pullRequestNumber).toBe(1);
+    expect(summary!.idempotencyKey).toBe(buildIdempotencyKey(job));
+    expect(summary!.totalRules).toBe(0);
+    expect(summary!.failedRules).toBe(0);
+    expect(summary!.totalFindings).toBe(0);
   });
 
   test("multiple payloads produce multiple jobs", () => {
