@@ -173,7 +173,8 @@ export async function processAnalyzePullRequestJob(
     },
   });
 
-  const summary = buildJobSummary(job, key, executionResult);
+  const processedAt = new Date().toISOString();
+  const summary = buildJobSummary(job, key, executionResult, processedAt);
   infoLogger(
     `[worker] summary job=${summary.jobId} findings=${summary.totalFindings} rules_ok=${summary.successfulRules}/${summary.totalRules}`,
   );
@@ -291,12 +292,14 @@ export function buildAnalysisContext(job: AnalyzePullRequestJob): AnalysisContex
  * @param job - Original queued job.
  * @param idempotencyKey - Stable job key.
  * @param executionResult - Rule-engine execution output.
+ * @param processedAt - Precomputed processing completion timestamp.
  * @returns Worker summary payload.
  */
 export function buildJobSummary(
   job: AnalyzePullRequestJob,
   idempotencyKey: string,
   executionResult: RuleExecutionResult,
+  processedAt: string,
 ): AnalyzePullRequestJobSummary {
   return {
     jobId: job.job_id,
@@ -310,6 +313,6 @@ export function buildJobSummary(
     successfulRules: executionResult.summary.successfulRules,
     failedRules: executionResult.summary.failedRules,
     failedRuleIds: executionResult.failedRuleIds,
-    processedAt: new Date().toISOString(),
+    processedAt,
   };
 }

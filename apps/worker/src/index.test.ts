@@ -145,6 +145,7 @@ describe("buildAnalysisContext", () => {
 
 describe("buildJobSummary", () => {
   test("returns deterministic summary fields from execution result", () => {
+    const processedAt = "2026-02-13T12:00:00.000Z";
     const summary = buildJobSummary(
       {
         job_id: "job-1",
@@ -171,6 +172,7 @@ describe("buildJobSummary", () => {
         },
         failedRuleIds: [],
       },
+      processedAt,
     );
 
     expect(summary.jobId).toBe("job-1");
@@ -182,7 +184,7 @@ describe("buildJobSummary", () => {
     expect(summary.successfulRules).toBe(1);
     expect(summary.failedRules).toBe(0);
     expect(summary.failedRuleIds).toEqual([]);
-    expect(summary.processedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(summary.processedAt).toBe(processedAt);
   });
 });
 
