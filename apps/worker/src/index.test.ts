@@ -687,6 +687,30 @@ describe("processAnalyzePullRequestJob", () => {
 });
 
 describe("applyFindingGates", () => {
+  test("drops an earlier low-confidence finding when a later higher-confidence finding competes for capped slots", () => {
+    const executionResult = createExecutionResultWithFindings([
+      createFinding("finding-early-low", 0.51, "clean"),
+      createFinding("finding-middle", 0.7, "perf"),
+      createFinding("finding-late-high", 0.99, "safety"),
+    ]);
+
+    const gatedResult = applyFindingGates(executionResult, {
+      gating: {
+        confidenceThreshold: 0,
+        maxComments: 2,
+      },
+      rules: {
+        include: [],
+        exclude: [],
+      },
+    });
+
+    expect(gatedResult.findings.map((finding) => finding.findingId)).toEqual([
+      "finding-late-high",
+      "finding-middle",
+    ]);
+  });
+
   test("keeps highest-confidence findings when max-comments truncates", () => {
     const executionResult = createExecutionResultWithFindings([
       createFinding("finding-low", 0.8, "clean"),
