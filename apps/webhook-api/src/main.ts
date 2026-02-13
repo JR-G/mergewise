@@ -131,8 +131,8 @@ Bun.serve({
         error_code: "queue_enqueue_failed",
         message: "Failed to queue analysis job",
         github_event: eventName,
-        repo_full_name: job.repo_full_name,
-        pr_number: job.pr_number,
+        repository_full_name: job.repo_full_name,
+        pull_request_number: job.pr_number,
         job_id: job.job_id,
         cause,
       });

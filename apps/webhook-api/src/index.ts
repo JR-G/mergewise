@@ -74,11 +74,11 @@ export interface WebhookFailureLogEvent {
   /**
    * Optional repository full name.
    */
-  repo_full_name?: string;
+  repository_full_name?: string;
   /**
    * Optional pull request number.
    */
-  pr_number?: number;
+  pull_request_number?: number;
   /**
    * Optional queue job id.
    */
@@ -88,6 +88,27 @@ export interface WebhookFailureLogEvent {
    */
   cause?: string;
 }
+
+/**
+ * Legacy webhook failure log field aliases kept for backward compatibility.
+ */
+export interface LegacyWebhookFailureLogAliases {
+  /**
+   * Deprecated alias for `repository_full_name`.
+   */
+  repo_full_name?: string;
+  /**
+   * Deprecated alias for `pull_request_number`.
+   */
+  pr_number?: number;
+}
+
+/**
+ * Accepted webhook failure log input with canonical and legacy aliases.
+ */
+export interface WebhookFailureLogEventInput
+  extends WebhookFailureLogEvent,
+    LegacyWebhookFailureLogAliases {}
 
 /**
  * Resolves a request identifier from headers or generates a new UUID.
@@ -158,8 +179,21 @@ export function createWebhookErrorResponse(
  *
  * @param logEvent - Structured failure event payload.
  */
-export function logWebhookFailure(logEvent: WebhookFailureLogEvent): void {
-  console.error(JSON.stringify(logEvent));
+export function logWebhookFailure(
+  logEvent: WebhookFailureLogEventInput,
+): void {
+  const repositoryFullName = logEvent.repository_full_name ?? logEvent.repo_full_name;
+  const pullRequestNumber = logEvent.pull_request_number ?? logEvent.pr_number;
+
+  const serializedLogEvent = {
+    ...logEvent,
+    repository_full_name: repositoryFullName,
+    pull_request_number: pullRequestNumber,
+    repo_full_name: repositoryFullName,
+    pr_number: pullRequestNumber,
+  };
+
+  console.error(JSON.stringify(serializedLogEvent));
 }
 
 /**

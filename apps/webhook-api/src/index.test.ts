@@ -255,4 +255,78 @@ describe("logWebhookFailure", () => {
       }),
     );
   });
+
+  test("serializes canonical repository and pull request fields", () => {
+    const originalConsoleError = console.error;
+    const capturedLogs: unknown[] = [];
+    console.error = (value?: unknown): void => {
+      capturedLogs.push(value);
+    };
+
+    try {
+      logWebhookFailure({
+        event: "webhook_request_failed",
+        request_id: "request-789",
+        http_status: 503,
+        error_code: "queue_enqueue_failed",
+        message: "Failed to queue analysis job",
+        repository_full_name: "acme/widget",
+        pull_request_number: 7,
+      });
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    expect(capturedLogs).toHaveLength(1);
+    expect(capturedLogs[0]).toBe(
+      JSON.stringify({
+        event: "webhook_request_failed",
+        request_id: "request-789",
+        http_status: 503,
+        error_code: "queue_enqueue_failed",
+        message: "Failed to queue analysis job",
+        repository_full_name: "acme/widget",
+        pull_request_number: 7,
+        repo_full_name: "acme/widget",
+        pr_number: 7,
+      }),
+    );
+  });
+
+  test("maps legacy aliases to canonical fields", () => {
+    const originalConsoleError = console.error;
+    const capturedLogs: unknown[] = [];
+    console.error = (value?: unknown): void => {
+      capturedLogs.push(value);
+    };
+
+    try {
+      logWebhookFailure({
+        event: "webhook_request_failed",
+        request_id: "request-790",
+        http_status: 503,
+        error_code: "queue_enqueue_failed",
+        message: "Failed to queue analysis job",
+        repo_full_name: "acme/legacy",
+        pr_number: 13,
+      });
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    expect(capturedLogs).toHaveLength(1);
+    expect(capturedLogs[0]).toBe(
+      JSON.stringify({
+        event: "webhook_request_failed",
+        request_id: "request-790",
+        http_status: 503,
+        error_code: "queue_enqueue_failed",
+        message: "Failed to queue analysis job",
+        repo_full_name: "acme/legacy",
+        pr_number: 13,
+        repository_full_name: "acme/legacy",
+        pull_request_number: 13,
+      }),
+    );
+  });
 });
