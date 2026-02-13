@@ -43,7 +43,10 @@ async function pollAndProcessJobs(): Promise<void> {
       }
 
       try {
-        await processAnalyzePullRequestJob(job);
+        const summary = await processAnalyzePullRequestJob(job);
+        if (!summary) {
+          continue;
+        }
         trackProcessedKey(key, state, config.maxProcessedKeys);
       } catch (error) {
         const details = error instanceof Error ? error.stack ?? error.message : String(error);

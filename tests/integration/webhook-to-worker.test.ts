@@ -81,8 +81,21 @@ describe("webhook-to-worker pipeline", () => {
     const summary = await processAnalyzePullRequestJob(jobs[0]!, {
       logInfo: () => {},
       logError: () => {},
+      loadAnalysisContextFn: async (loadedJob) => ({
+        diffs: [],
+        pullRequest: {
+          repo: loadedJob.repo_full_name,
+          prNumber: loadedJob.pr_number,
+          headSha: loadedJob.head_sha,
+          installationId: loadedJob.installation_id,
+        },
+      }),
     });
 
+    expect(summary).not.toBeNull();
+    if (!summary) {
+      throw new Error("Expected worker summary");
+    }
     expect(summary.jobId).toBe(job.job_id);
     expect(summary.repository).toBe("acme/widget");
     expect(summary.pullRequestNumber).toBe(1);

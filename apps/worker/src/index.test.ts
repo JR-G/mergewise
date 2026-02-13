@@ -5,6 +5,7 @@ import {
   buildJobSummary,
   buildIdempotencyKey,
   createProcessedKeyState,
+  loadAnalysisContextForJob,
   loadConfig,
   processAnalyzePullRequestJob,
   runPollCycleWithInFlightGuard,
@@ -126,6 +127,13 @@ describe("runPollCycleWithInFlightGuard", () => {
 
 describe("buildAnalysisContext", () => {
   test("maps queued job fields to rule-engine analysis context", () => {
+    const diffs = [
+      {
+        filePath: "src/example.ts",
+        previousPath: null,
+        hunks: [{ header: "@@ -1,0 +1,1 @@", lines: ["+const value = 1;"] }],
+      },
+    ];
     const context = buildAnalysisContext({
       job_id: "j1",
       installation_id: 99,
@@ -133,9 +141,9 @@ describe("buildAnalysisContext", () => {
       pr_number: 42,
       head_sha: "abc123",
       queued_at: "2025-01-01T00:00:00Z",
-    });
+    }, diffs);
 
-    expect(context.diffs).toEqual([]);
+    expect(context.diffs).toEqual(diffs);
     expect(context.pullRequest.repo).toBe("acme/widget");
     expect(context.pullRequest.prNumber).toBe(42);
     expect(context.pullRequest.headSha).toBe("abc123");
@@ -203,6 +211,15 @@ describe("processAnalyzePullRequestJob", () => {
         queued_at: "2025-01-01T00:00:00Z",
       },
       {
+        loadAnalysisContextFn: async () => ({
+          diffs: [],
+          pullRequest: {
+            repo: "acme/widget",
+            prNumber: 50,
+            headSha: "def456",
+            installationId: 99,
+          },
+        }),
         executeRulesFn: async () => ({
           findings: [],
           summary: {
@@ -228,6 +245,10 @@ describe("processAnalyzePullRequestJob", () => {
       },
     );
 
+    expect(summary).not.toBeNull();
+    if (!summary) {
+      throw new Error("Expected worker summary");
+    }
     expect(summary.jobId).toBe("job-2");
     expect(summary.idempotencyKey).toBe("acme/widget#50@def456");
     expect(summary.totalRules).toBe(2);
@@ -236,6 +257,89 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.failedRuleIds).toEqual(["sample/failing-rule"]);
     expect(infoMessages).toHaveLength(2);
     expect(errorMessages).toEqual([]);
+  });
+
+  test("returns null and logs when executeRules throws unexpectedly", async () => {
+    const errorMessages: string[] = [];
+
+    const summary = await processAnalyzePullRequestJob(
+      {
+        job_id: "job-3",
+        installation_id: 99,
+        repo_full_name: "acme/widget",
+        pr_number: 51,
+        head_sha: "aaa111",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        loadAnalysisContextFn: async () => ({
+          diffs: [],
+          pullRequest: {
+            repo: "acme/widget",
+            prNumber: 51,
+            headSha: "aaa111",
+            installationId: 99,
+          },
+        }),
+        executeRulesFn: async () => {
+          throw new Error("unexpected execute failure");
+        },
+        logInfo: () => {},
+        logError: (message) => {
+          errorMessages.push(message);
+        },
+      },
+    );
+
+    expect(summary).toBeNull();
+    expect(errorMessages).toHaveLength(1);
+    expect(errorMessages[0]).toContain("failed to execute rules job=job-3");
+  });
+});
+
+describe("loadAnalysisContextForJob", () => {
+  test("loads pull request files and maps patches to analysis diffs", async () => {
+    const context = await loadAnalysisContextForJob(
+      {
+        job_id: "job-4",
+        installation_id: 10,
+        repo_full_name: "acme/widget",
+        pr_number: 8,
+        head_sha: "abc999",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        env: {
+          GITHUB_APP_ID: "123",
+          GITHUB_APP_PRIVATE_KEY_PEM: "pem-value",
+        },
+        createGitHubAppJwtFn: () => "jwt-token",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesFn: async () => [
+          {
+            filename: "src/example.ts",
+            status: "modified",
+            additions: 1,
+            deletions: 0,
+            changes: 1,
+            patch: "@@ -1,0 +1,1 @@\n+const value: any = input;",
+          },
+        ],
+      },
+    );
+
+    expect(context.pullRequest.repo).toBe("acme/widget");
+    expect(context.pullRequest.prNumber).toBe(8);
+    expect(context.diffs).toHaveLength(1);
+    expect(context.diffs[0]!.filePath).toBe("src/example.ts");
+    expect(context.diffs[0]!.hunks).toHaveLength(1);
+    expect(context.diffs[0]!.hunks[0]!.header).toBe("@@ -1,0 +1,1 @@");
+    expect(context.diffs[0]!.hunks[0]!.lines).toEqual([
+      "+const value: any = input;",
+    ]);
   });
 });
 
