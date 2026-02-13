@@ -79,7 +79,7 @@ describe("webhook-to-worker pipeline", () => {
     const previousAppId = process.env.GITHUB_APP_ID;
     const previousPrivateKey = process.env.GITHUB_APP_PRIVATE_KEY;
     process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----";
+    process.env.GITHUB_APP_PRIVATE_KEY = "private-key-placeholder";
 
     let summary = null as Awaited<ReturnType<typeof processAnalyzePullRequestJob>> | null;
     try {

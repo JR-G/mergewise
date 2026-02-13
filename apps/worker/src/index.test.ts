@@ -308,7 +308,7 @@ describe("processAnalyzePullRequestJob", () => {
 
   test("successful fetch feeds rule execution and returns deterministic summary", async () => {
     process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
 
     const capturedContexts: unknown[] = [];
 
@@ -381,7 +381,7 @@ describe("processAnalyzePullRequestJob", () => {
 
   test("non-retryable GitHub fetch failure is surfaced", async () => {
     process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
 
     await expect(
       processAnalyzePullRequestJob(
