@@ -1,16 +1,28 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { GitHubApiError } from "@mergewise/github-client";
+
 import {
   buildAnalysisContext,
   buildJobSummary,
   buildIdempotencyKey,
   createProcessedKeyState,
-  loadAnalysisContextForJob,
+  fetchPullRequestFilesWithRetry,
   loadConfig,
+  parseRepositoryFullName,
   processAnalyzePullRequestJob,
   runPollCycleWithInFlightGuard,
   trackProcessedKey,
+  type WorkerGitHubFetchOptions,
 } from "./index";
+
+const workerFetchOptions: WorkerGitHubFetchOptions = {
+  githubApiBaseUrl: "https://api.github.com",
+  githubUserAgent: "mergewise-worker-test",
+  githubRequestTimeoutMs: 1000,
+  githubFetchRetries: 2,
+  githubRetryDelayMs: 1,
+};
 
 describe("buildIdempotencyKey", () => {
   test("produces repo#pr@sha format", () => {
@@ -125,25 +137,117 @@ describe("runPollCycleWithInFlightGuard", () => {
   });
 });
 
-describe("buildAnalysisContext", () => {
-  test("maps queued job fields to rule-engine analysis context", () => {
-    const diffs = [
-      {
-        filePath: "src/example.ts",
-        previousPath: null,
-        hunks: [{ header: "@@ -1,0 +1,1 @@", lines: ["+const value = 1;"] }],
-      },
-    ];
-    const context = buildAnalysisContext({
-      job_id: "j1",
-      installation_id: 99,
-      repo_full_name: "acme/widget",
-      pr_number: 42,
-      head_sha: "abc123",
-      queued_at: "2025-01-01T00:00:00Z",
-    }, diffs);
+describe("parseRepositoryFullName", () => {
+  test("returns owner and repository for valid value", () => {
+    expect(parseRepositoryFullName("acme/widget")).toEqual({
+      owner: "acme",
+      repository: "widget",
+    });
+  });
 
-    expect(context.diffs).toEqual(diffs);
+  test("returns null for invalid values", () => {
+    expect(parseRepositoryFullName("acme")).toBeNull();
+    expect(parseRepositoryFullName("acme/widget/extra")).toBeNull();
+    expect(parseRepositoryFullName("/")).toBeNull();
+  });
+});
+
+describe("fetchPullRequestFilesWithRetry", () => {
+  test("retries transient GitHubApiError then succeeds", async () => {
+    let callCount = 0;
+    const sleepDurations: number[] = [];
+
+    const files = await fetchPullRequestFilesWithRetry(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 8,
+        installationAccessToken: "token",
+      },
+      2,
+      5,
+      {
+        fetchPullRequestFiles: async () => {
+          callCount += 1;
+          if (callCount === 1) {
+            throw new GitHubApiError(503, "GET", "https://api.github.com/x", "down");
+          }
+
+          return [
+            {
+              filename: "src/index.ts",
+              status: "modified",
+              additions: 1,
+              deletions: 0,
+              changes: 1,
+            },
+          ];
+        },
+        sleep: async (delayMs) => {
+          sleepDurations.push(delayMs);
+        },
+      },
+    );
+
+    expect(callCount).toBe(2);
+    expect(sleepDurations).toEqual([5]);
+    expect(files).toHaveLength(1);
+  });
+
+  test("does not retry non-retryable GitHubApiError", async () => {
+    let callCount = 0;
+
+    await expect(
+      fetchPullRequestFilesWithRetry(
+        {
+          owner: "acme",
+          repository: "widget",
+          pullRequestNumber: 8,
+          installationAccessToken: "token",
+        },
+        2,
+        5,
+        {
+          fetchPullRequestFiles: async () => {
+            callCount += 1;
+            throw new GitHubApiError(404, "GET", "https://api.github.com/x", "missing");
+          },
+          sleep: async () => {},
+        },
+      ),
+    ).rejects.toBeInstanceOf(GitHubApiError);
+
+    expect(callCount).toBe(1);
+  });
+});
+
+describe("buildAnalysisContext", () => {
+  test("maps queued job fields and provided diffs to analysis context", () => {
+    const context = buildAnalysisContext(
+      {
+        job_id: "j1",
+        installation_id: 99,
+        repo_full_name: "acme/widget",
+        pr_number: 42,
+        head_sha: "abc123",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      [
+        {
+          filePath: "src/index.ts",
+          previousPath: null,
+          hunks: [
+            {
+              header: "@@ -1,1 +1,2 @@",
+              lines: ["-const a = 1;", "+const value = 1;", "+const b = 2;"],
+            },
+          ],
+        },
+      ],
+    );
+
+    expect(context.diffs).toHaveLength(1);
+    expect(context.diffs[0]?.filePath).toBe("src/index.ts");
     expect(context.pullRequest.repo).toBe("acme/widget");
     expect(context.pullRequest.prNumber).toBe(42);
     expect(context.pullRequest.headSha).toBe("abc123");
@@ -153,7 +257,6 @@ describe("buildAnalysisContext", () => {
 
 describe("buildJobSummary", () => {
   test("returns deterministic summary fields from execution result", () => {
-    const processedAt = "2026-02-13T12:00:00.000Z";
     const summary = buildJobSummary(
       {
         job_id: "job-1",
@@ -180,7 +283,7 @@ describe("buildJobSummary", () => {
         },
         failedRuleIds: [],
       },
-      processedAt,
+      "2026-01-02T03:04:05.000Z",
     );
 
     expect(summary.jobId).toBe("job-1");
@@ -192,40 +295,148 @@ describe("buildJobSummary", () => {
     expect(summary.successfulRules).toBe(1);
     expect(summary.failedRules).toBe(0);
     expect(summary.failedRuleIds).toEqual([]);
-    expect(summary.processedAt).toBe(processedAt);
+    expect(summary.processedAt).toBe("2026-01-02T03:04:05.000Z");
   });
 });
 
 describe("processAnalyzePullRequestJob", () => {
-  test("executes rules and returns summary", async () => {
-    const infoMessages: string[] = [];
-    const errorMessages: string[] = [];
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  test("successful fetch feeds rule execution and returns deterministic summary", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    const capturedContexts: unknown[] = [];
 
     const summary = await processAnalyzePullRequestJob(
       {
         job_id: "job-2",
-        installation_id: 99,
+        installation_id: 44,
         repo_full_name: "acme/widget",
         pr_number: 50,
         head_sha: "def456",
         queued_at: "2025-01-01T00:00:00Z",
       },
       {
-        loadAnalysisContextFn: async () => ({
-          diffs: [],
-          pullRequest: {
-            repo: "acme/widget",
-            prNumber: 50,
-            headSha: "def456",
-            installationId: 99,
-          },
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
         }),
+        fetchPullRequestFilesWithRetryFn: async () => [
+          {
+            filename: "src/index.ts",
+            status: "modified",
+            additions: 1,
+            deletions: 0,
+            changes: 1,
+            patch: "@@ -1,1 +1,2 @@\n-const a = 1;\n+const value = 1;\n+const b = 2;",
+          },
+        ],
+        executeRulesFn: async ({ context }) => {
+          capturedContexts.push(context);
+          return {
+            findings: [],
+            summary: {
+              totalRules: 0,
+              successfulRules: 0,
+              failedRules: 0,
+              totalFindings: 0,
+              findingsByCategory: {
+                clean: 0,
+                perf: 0,
+                safety: 0,
+                idiomatic: 0,
+              },
+            },
+            failedRuleIds: [],
+          };
+        },
+        now: () => new Date("2026-01-02T03:04:05.000Z"),
+      },
+    );
+
+    const analysisContext = capturedContexts[0] as {
+      diffs: Array<{ filePath: string; hunks: Array<{ header: string; lines: string[] }> }>;
+    };
+
+    expect(analysisContext.diffs).toHaveLength(1);
+    expect(analysisContext.diffs[0]?.filePath).toBe("src/index.ts");
+    expect(analysisContext.diffs[0]?.hunks[0]?.header).toBe("@@ -1,1 +1,2 @@");
+    expect(analysisContext.diffs[0]?.hunks[0]?.lines).toEqual([
+      "-const a = 1;",
+      "+const value = 1;",
+      "+const b = 2;",
+    ]);
+    expect(summary.jobId).toBe("job-2");
+    expect(summary.idempotencyKey).toBe("acme/widget#50@def456");
+    expect(summary.processedAt).toBe("2026-01-02T03:04:05.000Z");
+  });
+
+  test("non-retryable GitHub fetch failure is surfaced", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    await expect(
+      processAnalyzePullRequestJob(
+        {
+          job_id: "job-3",
+          installation_id: 44,
+          repo_full_name: "acme/widget",
+          pr_number: 51,
+          head_sha: "def457",
+          queued_at: "2025-01-01T00:00:00Z",
+        },
+        {
+          githubFetchOptions: workerFetchOptions,
+          createGitHubAppJwtFn: () => "jwt",
+          exchangeInstallationAccessTokenFn: async () => ({
+            token: "installation-token",
+            expires_at: "2026-01-01T00:00:00Z",
+          }),
+          fetchPullRequestFilesWithRetryFn: async () => {
+            throw new GitHubApiError(404, "GET", "https://api.github.com/x", "missing");
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(GitHubApiError);
+  });
+
+  test("supports legacy GITHUB_APP_PRIVATE_KEY_PEM when new key name is unset", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
+    process.env.GITHUB_APP_PRIVATE_KEY_PEM = "legacy-private-key";
+
+    const summary = await processAnalyzePullRequestJob(
+      {
+        job_id: "job-legacy-key",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 52,
+        head_sha: "def458",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
         executeRulesFn: async () => ({
           findings: [],
           summary: {
-            totalRules: 2,
-            successfulRules: 1,
-            failedRules: 1,
+            totalRules: 0,
+            successfulRules: 0,
+            failedRules: 0,
             totalFindings: 0,
             findingsByCategory: {
               clean: 0,
@@ -234,112 +445,56 @@ describe("processAnalyzePullRequestJob", () => {
               idiomatic: 0,
             },
           },
-          failedRuleIds: ["sample/failing-rule"],
+          failedRuleIds: [],
         }),
-        logInfo: (message) => {
-          infoMessages.push(message);
-        },
-        logError: (message) => {
-          errorMessages.push(message);
-        },
       },
     );
 
-    expect(summary).not.toBeNull();
-    if (!summary) {
-      throw new Error("Expected worker summary");
-    }
-    expect(summary.jobId).toBe("job-2");
-    expect(summary.idempotencyKey).toBe("acme/widget#50@def456");
-    expect(summary.totalRules).toBe(2);
-    expect(summary.successfulRules).toBe(1);
-    expect(summary.failedRules).toBe(1);
-    expect(summary.failedRuleIds).toEqual(["sample/failing-rule"]);
-    expect(infoMessages).toHaveLength(2);
-    expect(errorMessages).toEqual([]);
+    expect(summary.jobId).toBe("job-legacy-key");
   });
 
-  test("returns null and logs when executeRules throws unexpectedly", async () => {
-    const errorMessages: string[] = [];
+  test("invalid GITHUB_APP_ID surfaces explicit error", async () => {
+    process.env.GITHUB_APP_ID = "not-a-number";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
 
-    const summary = await processAnalyzePullRequestJob(
-      {
-        job_id: "job-3",
-        installation_id: 99,
-        repo_full_name: "acme/widget",
-        pr_number: 51,
-        head_sha: "aaa111",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
-      {
-        loadAnalysisContextFn: async () => ({
-          diffs: [],
-          pullRequest: {
-            repo: "acme/widget",
-            prNumber: 51,
-            headSha: "aaa111",
-            installationId: 99,
-          },
-        }),
-        executeRulesFn: async () => {
-          throw new Error("unexpected execute failure");
+    await expect(
+      processAnalyzePullRequestJob(
+        {
+          job_id: "job-invalid-app-id",
+          installation_id: 44,
+          repo_full_name: "acme/widget",
+          pr_number: 53,
+          head_sha: "def459",
+          queued_at: "2025-01-01T00:00:00Z",
         },
-        logInfo: () => {},
-        logError: (message) => {
-          errorMessages.push(message);
+        {
+          githubFetchOptions: workerFetchOptions,
+          rules: [],
+          createGitHubAppJwtFn: () => "jwt",
+          exchangeInstallationAccessTokenFn: async () => ({
+            token: "installation-token",
+            expires_at: "2026-01-01T00:00:00Z",
+          }),
+          fetchPullRequestFilesWithRetryFn: async () => [],
+          executeRulesFn: async () => ({
+            findings: [],
+            summary: {
+              totalRules: 0,
+              successfulRules: 0,
+              failedRules: 0,
+              totalFindings: 0,
+              findingsByCategory: {
+                clean: 0,
+                perf: 0,
+                safety: 0,
+                idiomatic: 0,
+              },
+            },
+            failedRuleIds: [],
+          }),
         },
-      },
-    );
-
-    expect(summary).toBeNull();
-    expect(errorMessages).toHaveLength(1);
-    expect(errorMessages[0]).toContain("failed to execute rules job=job-3");
-  });
-});
-
-describe("loadAnalysisContextForJob", () => {
-  test("loads pull request files and maps patches to analysis diffs", async () => {
-    const context = await loadAnalysisContextForJob(
-      {
-        job_id: "job-4",
-        installation_id: 10,
-        repo_full_name: "acme/widget",
-        pr_number: 8,
-        head_sha: "abc999",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
-      {
-        env: {
-          GITHUB_APP_ID: "123",
-          GITHUB_APP_PRIVATE_KEY_PEM: "pem-value",
-        },
-        createGitHubAppJwtFn: () => "jwt-token",
-        exchangeInstallationAccessTokenFn: async () => ({
-          token: "installation-token",
-          expires_at: "2026-01-01T00:00:00Z",
-        }),
-        fetchPullRequestFilesFn: async () => [
-          {
-            filename: "src/example.ts",
-            status: "modified",
-            additions: 1,
-            deletions: 0,
-            changes: 1,
-            patch: "@@ -1,0 +1,1 @@\n+const value: any = input;",
-          },
-        ],
-      },
-    );
-
-    expect(context.pullRequest.repo).toBe("acme/widget");
-    expect(context.pullRequest.prNumber).toBe(8);
-    expect(context.diffs).toHaveLength(1);
-    expect(context.diffs[0]!.filePath).toBe("src/example.ts");
-    expect(context.diffs[0]!.hunks).toHaveLength(1);
-    expect(context.diffs[0]!.hunks[0]!.header).toBe("@@ -1,0 +1,1 @@");
-    expect(context.diffs[0]!.hunks[0]!.lines).toEqual([
-      "+const value: any = input;",
-    ]);
+      ),
+    ).rejects.toThrow("[worker] invalid GITHUB_APP_ID value: not-a-number");
   });
 });
 
@@ -347,16 +502,27 @@ describe("loadConfig", () => {
   const originalEnv = { ...process.env };
 
   afterEach(() => {
-    process.env.WORKER_POLL_INTERVAL_MS = originalEnv.WORKER_POLL_INTERVAL_MS;
-    process.env.WORKER_MAX_PROCESSED_KEYS = originalEnv.WORKER_MAX_PROCESSED_KEYS;
+    process.env = { ...originalEnv };
   });
 
   test("returns defaults when env is unset", () => {
     delete process.env.WORKER_POLL_INTERVAL_MS;
     delete process.env.WORKER_MAX_PROCESSED_KEYS;
-    const cfg = loadConfig();
-    expect(cfg.pollIntervalMs).toBe(3000);
-    expect(cfg.maxProcessedKeys).toBe(10000);
+    delete process.env.GITHUB_API_BASE_URL;
+    delete process.env.WORKER_GITHUB_USER_AGENT;
+    delete process.env.WORKER_GITHUB_REQUEST_TIMEOUT_MS;
+    delete process.env.WORKER_GITHUB_FETCH_RETRIES;
+    delete process.env.WORKER_GITHUB_RETRY_DELAY_MS;
+
+    const config = loadConfig();
+
+    expect(config.pollIntervalMs).toBe(3000);
+    expect(config.maxProcessedKeys).toBe(10000);
+    expect(config.githubApiBaseUrl).toBe("https://api.github.com");
+    expect(config.githubUserAgent).toBe("mergewise-worker");
+    expect(config.githubRequestTimeoutMs).toBe(10000);
+    expect(config.githubFetchRetries).toBe(2);
+    expect(config.githubRetryDelayMs).toBe(250);
   });
 
   test("throws for below-minimum poll interval", () => {
@@ -370,8 +536,18 @@ describe("loadConfig", () => {
     expect(() => loadConfig()).toThrow("Invalid WORKER_MAX_PROCESSED_KEYS value");
   });
 
-  test("throws for non-numeric values", () => {
+  test("throws for non-numeric poll interval", () => {
     process.env.WORKER_POLL_INTERVAL_MS = "abc";
     expect(() => loadConfig()).toThrow("Invalid WORKER_POLL_INTERVAL_MS value");
+  });
+
+  test("throws for negative fetch retries", () => {
+    process.env.WORKER_GITHUB_FETCH_RETRIES = "-1";
+    expect(() => loadConfig()).toThrow("Invalid WORKER_GITHUB_FETCH_RETRIES value");
+  });
+
+  test("throws for timeout below minimum", () => {
+    process.env.WORKER_GITHUB_REQUEST_TIMEOUT_MS = "50";
+    expect(() => loadConfig()).toThrow("Invalid WORKER_GITHUB_REQUEST_TIMEOUT_MS value");
   });
 });

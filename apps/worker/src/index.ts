@@ -2,6 +2,9 @@ import {
   createGitHubAppJwt,
   exchangeInstallationAccessToken,
   fetchPullRequestFiles,
+  GitHubApiError,
+  type FetchPullRequestFilesOptions,
+  type GitHubPullRequestFile,
 } from "@mergewise/github-client";
 import type { RuleExecutionResult } from "@mergewise/rule-engine";
 import { executeRules } from "@mergewise/rule-engine";
@@ -27,38 +30,52 @@ export interface WorkerConfig {
    * Maximum count of idempotency keys retained in memory.
    */
   maxProcessedKeys: number;
+  /**
+   * Base URL for GitHub API requests.
+   */
+  githubApiBaseUrl: string;
+  /**
+   * User-Agent header for GitHub API requests.
+   */
+  githubUserAgent: string;
+  /**
+   * Timeout for each GitHub API request in milliseconds.
+   */
+  githubRequestTimeoutMs: number;
+  /**
+   * Maximum retry count for pull request file fetch failures.
+   */
+  githubFetchRetries: number;
+  /**
+   * Delay between pull request file fetch retries in milliseconds.
+   */
+  githubRetryDelayMs: number;
 }
 
 /**
- * Loads worker runtime configuration from environment variables.
- *
- * @returns Validated worker configuration.
+ * Runtime options for fetching pull request files in the worker.
  */
-export function loadConfig(): WorkerConfig {
-  const pollRaw = process.env.WORKER_POLL_INTERVAL_MS ?? "3000";
-  const pollIntervalMs = Number.parseInt(pollRaw, 10);
-  const maxKeysRaw = process.env.WORKER_MAX_PROCESSED_KEYS ?? "10000";
-  const maxProcessedKeys = Number.parseInt(maxKeysRaw, 10);
-
-  if (Number.isNaN(pollIntervalMs) || pollIntervalMs < 250) {
-    throw new Error(`Invalid WORKER_POLL_INTERVAL_MS value: ${pollRaw}`);
-  }
-
-  if (Number.isNaN(maxProcessedKeys) || maxProcessedKeys < 100) {
-    throw new Error(`Invalid WORKER_MAX_PROCESSED_KEYS value: ${maxKeysRaw}`);
-  }
-
-  return { pollIntervalMs, maxProcessedKeys };
-}
-
-/**
- * Builds a stable idempotency key for queued analysis jobs.
- *
- * @param job - Pull request analysis job payload.
- * @returns Stable idempotency key scoped to repository PR head SHA.
- */
-export function buildIdempotencyKey(job: AnalyzePullRequestJob): string {
-  return `${job.repo_full_name}#${job.pr_number}@${job.head_sha}`;
+export interface WorkerGitHubFetchOptions {
+  /**
+   * Base URL for GitHub API requests.
+   */
+  readonly githubApiBaseUrl: string;
+  /**
+   * User-Agent header for GitHub API requests.
+   */
+  readonly githubUserAgent: string;
+  /**
+   * Timeout for each GitHub API request in milliseconds.
+   */
+  readonly githubRequestTimeoutMs: number;
+  /**
+   * Maximum retry count for pull request file fetch failures.
+   */
+  readonly githubFetchRetries: number;
+  /**
+   * Delay between pull request file fetch retries in milliseconds.
+   */
+  readonly githubRetryDelayMs: number;
 }
 
 /**
@@ -120,6 +137,34 @@ export interface AnalyzePullRequestJobSummary {
 }
 
 /**
+ * Dependency hooks for retryable pull request file fetch.
+ */
+export interface PullRequestFileRetryDependencies {
+  /**
+   * GitHub client function for fetching pull request files.
+   */
+  readonly fetchPullRequestFiles: (
+    options: FetchPullRequestFilesOptions,
+  ) => Promise<GitHubPullRequestFile[]>;
+  /**
+   * Async delay function used between retry attempts.
+   */
+  readonly sleep: (delayMs: number) => Promise<void>;
+  /**
+   * Warning logger for retry attempts.
+   */
+  readonly logWarn?: (message: string) => void;
+  /**
+   * Info logger fallback when warning logger is not provided.
+   */
+  readonly logInfo?: (message: string) => void;
+  /**
+   * Error logger fallback when warning/info loggers are not provided.
+   */
+  readonly logError?: (message: string) => void;
+}
+
+/**
  * Dependency overrides for job processing.
  */
 export interface WorkerProcessingDependencies {
@@ -138,126 +183,37 @@ export interface WorkerProcessingDependencies {
     },
   ) => Promise<RuleExecutionResult>;
   /**
+   * Optional override for resolved GitHub fetch options.
+   */
+  readonly githubFetchOptions?: WorkerGitHubFetchOptions;
+  /**
+   * GitHub App JWT creation function override.
+   */
+  readonly createGitHubAppJwtFn?: typeof createGitHubAppJwt;
+  /**
+   * Installation token exchange function override.
+   */
+  readonly exchangeInstallationAccessTokenFn?: typeof exchangeInstallationAccessToken;
+  /**
+   * Retryable pull request file fetch function override.
+   */
+  readonly fetchPullRequestFilesWithRetryFn?: typeof fetchPullRequestFilesWithRetry;
+  /**
    * Info logger for operational events.
    */
   readonly logInfo?: (message: string) => void;
   /**
-   * Error logger for rule failures.
+   * Error logger for operational events.
    */
   readonly logError?: (message: string) => void;
   /**
-   * Analysis context loader override for testing.
+   * Warning logger for retryable operational events.
    */
-  readonly loadAnalysisContextFn?: (
-    job: AnalyzePullRequestJob,
-  ) => Promise<AnalysisContext>;
-}
-
-/**
- * Dependency overrides for analysis context loading.
- */
-export interface AnalysisContextLoadingDependencies {
+  readonly logWarn?: (message: string) => void;
   /**
-   * JWT creation override for tests.
+   * Time source override for deterministic testing.
    */
-  readonly createGitHubAppJwtFn?: typeof createGitHubAppJwt;
-  /**
-   * Installation token exchange override for tests.
-   */
-  readonly exchangeInstallationAccessTokenFn?: typeof exchangeInstallationAccessToken;
-  /**
-   * Pull request files fetch override for tests.
-   */
-  readonly fetchPullRequestFilesFn?: typeof fetchPullRequestFiles;
-  /**
-   * Environment source override for tests.
-   */
-  readonly env?: NodeJS.ProcessEnv;
-}
-
-/**
- * GitHub API settings required for worker-side pull request file loading.
- */
-export interface GitHubWorkerApiConfig {
-  /**
-   * GitHub App identifier.
-   */
-  readonly appId: number;
-  /**
-   * PEM-encoded GitHub App private key.
-   */
-  readonly privateKeyPem: string;
-  /**
-   * Optional API base URL override.
-   */
-  readonly apiBaseUrl?: string;
-  /**
-   * Optional request timeout override in milliseconds.
-   */
-  readonly requestTimeoutMs?: number;
-  /**
-   * Optional user agent override.
-   */
-  readonly userAgent?: string;
-}
-
-/**
- * Processes a queued analysis job through rule execution and summary generation.
- *
- * @param job - Job payload to process.
- * @param dependencies - Optional dependency overrides.
- * @returns Deterministic processing summary, or `null` when the job is skipped after a recoverable failure.
- */
-export async function processAnalyzePullRequestJob(
-  job: AnalyzePullRequestJob,
-  dependencies: WorkerProcessingDependencies = {},
-): Promise<AnalyzePullRequestJobSummary | null> {
-  const key = buildIdempotencyKey(job);
-  const infoLogger = dependencies.logInfo ?? console.log;
-  const errorLogger = dependencies.logError ?? console.error;
-  const rules = dependencies.rules ?? tsReactRules;
-  const executeRulesFn = dependencies.executeRulesFn ?? executeRules;
-  const loadAnalysisContextFn =
-    dependencies.loadAnalysisContextFn ?? loadAnalysisContextForJob;
-
-  infoLogger(
-    `[worker] processing job=${job.job_id} key=${key} installation=${job.installation_id ?? "none"} rules=${rules.length}`,
-  );
-
-  let analysisContext: AnalysisContext;
-  try {
-    analysisContext = await loadAnalysisContextFn(job);
-  } catch (error) {
-    const detail = error instanceof Error ? error.stack ?? error.message : String(error);
-    errorLogger(`[worker] failed to load analysis context job=${job.job_id}: ${detail}`);
-    return null;
-  }
-
-  let executionResult: RuleExecutionResult;
-  try {
-    executionResult = await executeRulesFn({
-      context: analysisContext,
-      rules,
-      onRuleExecutionError: (rule, error) => {
-        const detail = error instanceof Error ? error.stack ?? error.message : String(error);
-        errorLogger(
-          `[worker] rule failure job=${job.job_id} rule=${rule.metadata.ruleId}: ${detail}`,
-        );
-      },
-    });
-  } catch (error) {
-    const detail = error instanceof Error ? error.stack ?? error.message : String(error);
-    errorLogger(`[worker] failed to execute rules job=${job.job_id}: ${detail}`);
-    return null;
-  }
-
-  const processedAt = new Date().toISOString();
-  const summary = buildJobSummary(job, key, executionResult, processedAt);
-  infoLogger(
-    `[worker] summary job=${summary.jobId} findings=${summary.totalFindings} rules_ok=${summary.successfulRules}/${summary.totalRules}`,
-  );
-
-  return summary;
+  readonly now?: () => Date;
 }
 
 /**
@@ -275,13 +231,6 @@ export interface ProcessedKeyState {
 }
 
 /**
- * Creates a fresh empty processed key tracking state.
- */
-export function createProcessedKeyState(): ProcessedKeyState {
-  return { keys: new Set(), order: [] };
-}
-
-/**
  * Mutable state tracking whether one poll cycle is currently active.
  */
 export interface PollCycleState {
@@ -289,6 +238,227 @@ export interface PollCycleState {
    * Indicates whether poll execution is currently in flight.
    */
   isPollInFlight: boolean;
+}
+
+/**
+ * Loads worker runtime configuration from environment variables.
+ *
+ * @returns Validated worker configuration.
+ */
+export function loadConfig(): WorkerConfig {
+  const pollRaw = process.env.WORKER_POLL_INTERVAL_MS ?? "3000";
+  const pollIntervalMs = Number.parseInt(pollRaw, 10);
+  const maxKeysRaw = process.env.WORKER_MAX_PROCESSED_KEYS ?? "10000";
+  const maxProcessedKeys = Number.parseInt(maxKeysRaw, 10);
+  const githubApiBaseUrl = process.env.GITHUB_API_BASE_URL ?? "https://api.github.com";
+  const githubUserAgent = process.env.WORKER_GITHUB_USER_AGENT ?? "mergewise-worker";
+  const timeoutRaw = process.env.WORKER_GITHUB_REQUEST_TIMEOUT_MS ?? "10000";
+  const githubRequestTimeoutMs = Number.parseInt(timeoutRaw, 10);
+  const retriesRaw = process.env.WORKER_GITHUB_FETCH_RETRIES ?? "2";
+  const githubFetchRetries = Number.parseInt(retriesRaw, 10);
+  const retryDelayRaw = process.env.WORKER_GITHUB_RETRY_DELAY_MS ?? "250";
+  const githubRetryDelayMs = Number.parseInt(retryDelayRaw, 10);
+
+  if (Number.isNaN(pollIntervalMs) || pollIntervalMs < 250) {
+    throw new Error(`Invalid WORKER_POLL_INTERVAL_MS value: ${pollRaw}`);
+  }
+
+  if (Number.isNaN(maxProcessedKeys) || maxProcessedKeys < 100) {
+    throw new Error(`Invalid WORKER_MAX_PROCESSED_KEYS value: ${maxKeysRaw}`);
+  }
+
+  if (!githubApiBaseUrl.trim()) {
+    throw new Error("Invalid GITHUB_API_BASE_URL value: empty");
+  }
+
+  if (!githubUserAgent.trim()) {
+    throw new Error("Invalid WORKER_GITHUB_USER_AGENT value: empty");
+  }
+
+  if (Number.isNaN(githubRequestTimeoutMs) || githubRequestTimeoutMs < 100) {
+    throw new Error(`Invalid WORKER_GITHUB_REQUEST_TIMEOUT_MS value: ${timeoutRaw}`);
+  }
+
+  if (Number.isNaN(githubFetchRetries) || githubFetchRetries < 0) {
+    throw new Error(`Invalid WORKER_GITHUB_FETCH_RETRIES value: ${retriesRaw}`);
+  }
+
+  if (Number.isNaN(githubRetryDelayMs) || githubRetryDelayMs < 10) {
+    throw new Error(`Invalid WORKER_GITHUB_RETRY_DELAY_MS value: ${retryDelayRaw}`);
+  }
+
+  return {
+    pollIntervalMs,
+    maxProcessedKeys,
+    githubApiBaseUrl,
+    githubUserAgent,
+    githubRequestTimeoutMs,
+    githubFetchRetries,
+    githubRetryDelayMs,
+  };
+}
+
+/**
+ * Builds a stable idempotency key for queued analysis jobs.
+ *
+ * @param job - Pull request analysis job payload.
+ * @returns Stable idempotency key scoped to repository PR head SHA.
+ */
+export function buildIdempotencyKey(job: AnalyzePullRequestJob): string {
+  return `${job.repo_full_name}#${job.pr_number}@${job.head_sha}`;
+}
+
+/**
+ * Parses a `repo_full_name` value into owner and repository segments.
+ *
+ * @param repoFullName - Repository name in `owner/name` format.
+ * @returns Parsed owner/repository tuple, or `null` when malformed.
+ */
+export function parseRepositoryFullName(
+  repoFullName: string,
+): Readonly<{ owner: string; repository: string }> | null {
+  const segments = repoFullName.split("/");
+  if (segments.length !== 2) {
+    return null;
+  }
+
+  const owner = segments[0]?.trim() ?? "";
+  const repository = segments[1]?.trim() ?? "";
+  if (!owner || !repository) {
+    return null;
+  }
+
+  return { owner, repository };
+}
+
+/**
+ * Fetches pull request files with bounded retries for transient failures.
+ *
+ * @param options - GitHub file fetch options.
+ * @param maxRetries - Maximum retry count after the initial attempt.
+ * @param retryDelayMs - Delay between retries in milliseconds.
+ * @param dependencies - Test hooks for network call and delay behavior.
+ * @returns Pull request files returned by GitHub.
+ */
+export async function fetchPullRequestFilesWithRetry(
+  options: FetchPullRequestFilesOptions,
+  maxRetries: number,
+  retryDelayMs: number,
+  dependencies: PullRequestFileRetryDependencies = {
+    fetchPullRequestFiles,
+    sleep: defaultSleep,
+  },
+): Promise<GitHubPullRequestFile[]> {
+  const totalAttempts = maxRetries + 1;
+  const errorLogger =
+    dependencies.logWarn ?? dependencies.logInfo ?? dependencies.logError ?? console.warn;
+
+  for (let attemptNumber = 1; attemptNumber <= totalAttempts; attemptNumber += 1) {
+    try {
+      return await dependencies.fetchPullRequestFiles(options);
+    } catch (error) {
+      const details = error instanceof Error ? error.stack ?? error.message : String(error);
+      errorLogger(
+        `[worker] GitHub PR file fetch failed attempt=${attemptNumber}/${totalAttempts}: ${details}`,
+      );
+
+      const isLastAttempt = attemptNumber === totalAttempts;
+      const isRetryable = isRetryablePullRequestFileFetchError(error);
+
+      if (isLastAttempt || !isRetryable) {
+        throw error;
+      }
+
+      errorLogger(
+        `[worker] retrying GitHub PR file fetch attempt=${attemptNumber}/${totalAttempts} retryable=${String(isRetryable)}`,
+      );
+      await dependencies.sleep(retryDelayMs);
+    }
+  }
+
+  throw new Error("Unreachable: retry loop exited without returning or throwing");
+}
+
+/**
+ * Builds rule-engine analysis context from fetched GitHub file metadata.
+ *
+ * @param job - Job payload.
+ * @param fileDiffs - Parsed file diffs for the pull request.
+ * @returns Rule-engine analysis context.
+ */
+export function buildAnalysisContext(
+  job: AnalyzePullRequestJob,
+  fileDiffs: readonly FileDiff[],
+): AnalysisContext {
+  return {
+    diffs: fileDiffs,
+    pullRequest: {
+      repo: job.repo_full_name,
+      prNumber: job.pr_number,
+      headSha: job.head_sha,
+      installationId: job.installation_id,
+    },
+  };
+}
+
+/**
+ * Processes a queued analysis job through GitHub fetch, rule execution, and summary generation.
+ *
+ * @param job - Job payload to process.
+ * @param dependencies - Optional dependency overrides.
+ * @returns Deterministic processing summary for this job.
+ */
+export async function processAnalyzePullRequestJob(
+  job: AnalyzePullRequestJob,
+  dependencies: WorkerProcessingDependencies = {},
+): Promise<AnalyzePullRequestJobSummary> {
+  const key = buildIdempotencyKey(job);
+  const infoLogger = dependencies.logInfo ?? console.log;
+  const errorLogger = dependencies.logError ?? console.error;
+  const warnLogger = dependencies.logWarn ?? infoLogger ?? errorLogger;
+  const rules = dependencies.rules ?? tsReactRules;
+  const executeRulesFn = dependencies.executeRulesFn ?? executeRules;
+  const githubFetchOptions = dependencies.githubFetchOptions ?? resolveGitHubFetchOptions();
+
+  infoLogger(
+    `[worker] processing job=${job.job_id} key=${key} installation=${job.installation_id ?? "none"} rules=${rules.length}`,
+  );
+
+  const analysisContext = await buildAnalysisContextFromGitHub(
+    job,
+    githubFetchOptions,
+    {
+      createGitHubAppJwtFn: dependencies.createGitHubAppJwtFn,
+      exchangeInstallationAccessTokenFn: dependencies.exchangeInstallationAccessTokenFn,
+      fetchPullRequestFilesWithRetryFn: dependencies.fetchPullRequestFilesWithRetryFn,
+      logWarn: warnLogger,
+      logInfo: infoLogger,
+      logError: errorLogger,
+    },
+  );
+
+  const executionResult = await executeRulesFn({
+    context: analysisContext,
+    rules,
+    onRuleExecutionError: (rule, error) => {
+      const detail = error instanceof Error ? error.stack ?? error.message : String(error);
+      errorLogger(
+        `[worker] rule failure job=${job.job_id} rule=${rule.metadata.ruleId}: ${detail}`,
+      );
+    },
+  });
+
+  const summary = buildJobSummary(
+    job,
+    key,
+    executionResult,
+    (dependencies.now ?? (() => new Date()))().toISOString(),
+  );
+  infoLogger(
+    `[worker] summary job=${summary.jobId} findings=${summary.totalFindings} rules_ok=${summary.successfulRules}/${summary.totalRules}`,
+  );
+
+  return summary;
 }
 
 /**
@@ -313,6 +483,13 @@ export async function runPollCycleWithInFlightGuard(
   } finally {
     state.isPollInFlight = false;
   }
+}
+
+/**
+ * Creates a fresh empty processed key tracking state.
+ */
+export function createProcessedKeyState(): ProcessedKeyState {
+  return { keys: new Set(), order: [] };
 }
 
 /**
@@ -347,210 +524,12 @@ export function trackProcessedKey(
 }
 
 /**
- * Loads pull request diffs from GitHub and builds analysis context.
- *
- * @param job - Job payload.
- * @param dependencies - Optional dependency overrides.
- * @returns Rule-engine analysis context.
- */
-export async function loadAnalysisContextForJob(
-  job: AnalyzePullRequestJob,
-  dependencies: AnalysisContextLoadingDependencies = {},
-): Promise<AnalysisContext> {
-  if (job.installation_id === null) {
-    throw new Error(
-      `Unable to load PR diffs for job=${job.job_id}: installation_id is required.`,
-    );
-  }
-
-  const repositoryCoordinates = parseRepositoryFullName(job.repo_full_name);
-  const githubConfig = loadGitHubWorkerApiConfig(dependencies.env ?? process.env);
-  const createGitHubAppJwtFn =
-    dependencies.createGitHubAppJwtFn ?? createGitHubAppJwt;
-  const exchangeInstallationAccessTokenFn =
-    dependencies.exchangeInstallationAccessTokenFn ??
-    exchangeInstallationAccessToken;
-  const fetchPullRequestFilesFn =
-    dependencies.fetchPullRequestFilesFn ?? fetchPullRequestFiles;
-
-  const appJwt = createGitHubAppJwtFn({
-    appId: githubConfig.appId,
-    privateKeyPem: githubConfig.privateKeyPem,
-  });
-  const installationToken = await exchangeInstallationAccessTokenFn(
-    appJwt,
-    job.installation_id,
-    {
-      apiBaseUrl: githubConfig.apiBaseUrl,
-      requestTimeoutMs: githubConfig.requestTimeoutMs,
-      userAgent: githubConfig.userAgent,
-    },
-  );
-  const pullRequestFiles = await fetchPullRequestFilesFn({
-    owner: repositoryCoordinates.owner,
-    repository: repositoryCoordinates.repository,
-    pullRequestNumber: job.pr_number,
-    installationAccessToken: installationToken.token,
-    apiBaseUrl: githubConfig.apiBaseUrl,
-    requestTimeoutMs: githubConfig.requestTimeoutMs,
-    userAgent: githubConfig.userAgent,
-  });
-  const diffs = pullRequestFiles.map((file) =>
-    mapGitHubPullRequestFileToDiff(file),
-  );
-
-  return buildAnalysisContext(job, diffs);
-}
-
-/**
- * Builds rule-engine analysis context from a queued webhook job and diff payload.
- *
- * @param job - Job payload.
- * @param diffs - Parsed file diffs for the pull request.
- * @returns Rule-engine analysis context.
- */
-export function buildAnalysisContext(
-  job: AnalyzePullRequestJob,
-  diffs: readonly FileDiff[],
-): AnalysisContext {
-  return {
-    diffs,
-    pullRequest: {
-      repo: job.repo_full_name,
-      prNumber: job.pr_number,
-      headSha: job.head_sha,
-      installationId: job.installation_id,
-    },
-  };
-}
-
-type RepositoryCoordinates = {
-  owner: string;
-  repository: string;
-};
-
-type GitHubPullRequestFileWithRename = {
-  filename: string;
-  status: string;
-  patch?: string;
-  previous_filename?: string;
-};
-
-function parseRepositoryFullName(repoFullName: string): RepositoryCoordinates {
-  const separatorIndex = repoFullName.indexOf("/");
-  if (separatorIndex <= 0 || separatorIndex >= repoFullName.length - 1) {
-    throw new Error(
-      `Invalid repo_full_name format: ${repoFullName}. Expected owner/name.`,
-    );
-  }
-
-  return {
-    owner: repoFullName.slice(0, separatorIndex),
-    repository: repoFullName.slice(separatorIndex + 1),
-  };
-}
-
-function loadGitHubWorkerApiConfig(env: NodeJS.ProcessEnv): GitHubWorkerApiConfig {
-  const appIdRaw = env.GITHUB_APP_ID;
-  if (!appIdRaw) {
-    throw new Error("Missing GITHUB_APP_ID for worker GitHub API access.");
-  }
-
-  const appId = Number.parseInt(appIdRaw, 10);
-  if (Number.isNaN(appId) || appId <= 0) {
-    throw new Error(`Invalid GITHUB_APP_ID value: ${appIdRaw}`);
-  }
-
-  const privateKeyRaw = env.GITHUB_APP_PRIVATE_KEY_PEM;
-  if (!privateKeyRaw) {
-    throw new Error(
-      "Missing GITHUB_APP_PRIVATE_KEY_PEM for worker GitHub API access.",
-    );
-  }
-
-  const requestTimeoutRaw = env.GITHUB_API_REQUEST_TIMEOUT_MS;
-  let requestTimeoutMs: number | undefined;
-  if (requestTimeoutRaw !== undefined) {
-    const parsedTimeout = Number.parseInt(requestTimeoutRaw, 10);
-    if (Number.isNaN(parsedTimeout) || parsedTimeout <= 0) {
-      throw new Error(`Invalid GITHUB_API_REQUEST_TIMEOUT_MS value: ${requestTimeoutRaw}`);
-    }
-    requestTimeoutMs = parsedTimeout;
-  }
-
-  return {
-    appId,
-    privateKeyPem: privateKeyRaw.replace(/\\n/g, "\n"),
-    apiBaseUrl: env.GITHUB_API_BASE_URL,
-    requestTimeoutMs,
-    userAgent: env.GITHUB_API_USER_AGENT,
-  };
-}
-
-function mapGitHubPullRequestFileToDiff(
-  file: GitHubPullRequestFileWithRename,
-): FileDiff {
-  return {
-    filePath: file.filename,
-    previousPath:
-      file.status === "renamed" ? file.previous_filename ?? null : null,
-    hunks: parseDiffHunksFromPatch(file.patch),
-  };
-}
-
-function parseDiffHunksFromPatch(patch: string | undefined): readonly DiffHunk[] {
-  if (!patch) {
-    return [];
-  }
-
-  const parsedHunks: DiffHunk[] = [];
-  const patchLines = patch.split("\n");
-  let currentHeader: string | null = null;
-  let currentLines: string[] = [];
-
-  for (const patchLine of patchLines) {
-    if (patchLine.startsWith("@@")) {
-      if (currentHeader !== null) {
-        parsedHunks.push({
-          header: currentHeader,
-          lines: currentLines,
-        });
-      }
-      currentHeader = patchLine;
-      currentLines = [];
-      continue;
-    }
-
-    if (currentHeader === null) {
-      continue;
-    }
-
-    if (
-      patchLine.startsWith("+") ||
-      patchLine.startsWith("-") ||
-      patchLine.startsWith(" ")
-    ) {
-      currentLines.push(patchLine);
-    }
-  }
-
-  if (currentHeader !== null) {
-    parsedHunks.push({
-      header: currentHeader,
-      lines: currentLines,
-    });
-  }
-
-  return parsedHunks;
-}
-
-/**
  * Converts rule-engine execution output into a worker job summary.
  *
  * @param job - Original queued job.
  * @param idempotencyKey - Stable job key.
  * @param executionResult - Rule-engine execution output.
- * @param processedAt - Precomputed processing completion timestamp.
+ * @param processedAt - ISO timestamp for summary emission.
  * @returns Worker summary payload.
  */
 export function buildJobSummary(
@@ -573,4 +552,182 @@ export function buildJobSummary(
     failedRuleIds: executionResult.failedRuleIds,
     processedAt,
   };
+}
+
+async function buildAnalysisContextFromGitHub(
+  job: AnalyzePullRequestJob,
+  githubFetchOptions: WorkerGitHubFetchOptions,
+  dependencies: {
+    readonly createGitHubAppJwtFn?: typeof createGitHubAppJwt;
+    readonly exchangeInstallationAccessTokenFn?: typeof exchangeInstallationAccessToken;
+    readonly fetchPullRequestFilesWithRetryFn?: typeof fetchPullRequestFilesWithRetry;
+    readonly logWarn?: (message: string) => void;
+    readonly logInfo?: (message: string) => void;
+    readonly logError?: (message: string) => void;
+  },
+): Promise<AnalysisContext> {
+  if (job.installation_id === null) {
+    throw new Error(
+      `[worker] missing installation_id for ${job.repo_full_name}#${job.pr_number}`,
+    );
+  }
+
+  const repositoryCoordinates = parseRepositoryFullName(job.repo_full_name);
+  if (!repositoryCoordinates) {
+    throw new Error(`[worker] invalid repo_full_name=${job.repo_full_name}`);
+  }
+
+  const appCredentials = loadGitHubAppCredentials();
+
+  const createGitHubAppJwtFn = dependencies.createGitHubAppJwtFn ?? createGitHubAppJwt;
+  const exchangeInstallationAccessTokenFn =
+    dependencies.exchangeInstallationAccessTokenFn ?? exchangeInstallationAccessToken;
+  const fetchPullRequestFilesWithRetryFn =
+    dependencies.fetchPullRequestFilesWithRetryFn ?? fetchPullRequestFilesWithRetry;
+
+  const appJwt = createGitHubAppJwtFn(appCredentials);
+  const installationAccessToken = await exchangeInstallationAccessTokenFn(
+    appJwt,
+    job.installation_id,
+    {
+      apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+      userAgent: githubFetchOptions.githubUserAgent,
+      requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+    },
+  );
+
+  const fetchedFiles = await fetchPullRequestFilesWithRetryFn(
+    {
+      owner: repositoryCoordinates.owner,
+      repository: repositoryCoordinates.repository,
+      pullRequestNumber: job.pr_number,
+      installationAccessToken: installationAccessToken.token,
+      apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+      userAgent: githubFetchOptions.githubUserAgent,
+      requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+    },
+    githubFetchOptions.githubFetchRetries,
+    githubFetchOptions.githubRetryDelayMs,
+    {
+      fetchPullRequestFiles,
+      sleep: defaultSleep,
+      logWarn: dependencies.logWarn,
+      logInfo: dependencies.logInfo,
+      logError: dependencies.logError,
+    },
+  );
+
+  const mappedDiffs = mapGitHubPullRequestFilesToDiffs(fetchedFiles);
+  return buildAnalysisContext(job, mappedDiffs);
+}
+
+function resolveGitHubFetchOptions(): WorkerGitHubFetchOptions {
+  const config = loadConfig();
+  return {
+    githubApiBaseUrl: config.githubApiBaseUrl,
+    githubUserAgent: config.githubUserAgent,
+    githubRequestTimeoutMs: config.githubRequestTimeoutMs,
+    githubFetchRetries: config.githubFetchRetries,
+    githubRetryDelayMs: config.githubRetryDelayMs,
+  };
+}
+
+function mapGitHubPullRequestFilesToDiffs(
+  githubFiles: readonly GitHubPullRequestFile[],
+): readonly FileDiff[] {
+  return githubFiles.map((githubFile) => ({
+    filePath: githubFile.filename,
+    previousPath: null,
+    hunks: parsePatchToDiffHunks(githubFile.patch),
+  }));
+}
+
+function parsePatchToDiffHunks(patch: string | undefined): readonly DiffHunk[] {
+  if (!patch) {
+    return [];
+  }
+
+  const lines = patch.split("\n");
+  const hunks: DiffHunk[] = [];
+  let currentHeader: string | null = null;
+  let currentLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith("@@")) {
+      if (currentHeader !== null) {
+        hunks.push({ header: currentHeader, lines: currentLines });
+      }
+      currentHeader = line;
+      currentLines = [];
+      continue;
+    }
+
+    if (currentHeader !== null) {
+      currentLines.push(line);
+    }
+  }
+
+  if (currentHeader !== null) {
+    hunks.push({ header: currentHeader, lines: currentLines });
+  }
+
+  return hunks;
+}
+
+function defaultSleep(delayMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+}
+
+function isRetryablePullRequestFileFetchError(error: unknown): boolean {
+  if (error instanceof GitHubApiError) {
+    return error.status === 429 || error.status >= 500;
+  }
+
+  if (
+    error instanceof DOMException &&
+    (error.name === "TimeoutError" || error.name === "AbortError")
+  ) {
+    return true;
+  }
+
+  if (error instanceof TypeError) {
+    return true;
+  }
+
+  return false;
+}
+
+function loadGitHubAppCredentials(): Readonly<{ appId: number; privateKeyPem: string }> {
+  const appIdRaw = process.env.GITHUB_APP_ID;
+  if (!appIdRaw?.trim()) {
+    throw new Error("[worker] missing GITHUB_APP_ID");
+  }
+
+  const appId = Number.parseInt(appIdRaw, 10);
+  if (Number.isNaN(appId) || appId <= 0) {
+    throw new Error(`[worker] invalid GITHUB_APP_ID value: ${appIdRaw}`);
+  }
+
+  const preferredPrivateKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY;
+  const legacyPrivateKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY_PEM;
+  const privateKeyRaw = preferredPrivateKeyRaw ?? legacyPrivateKeyRaw;
+
+  if (privateKeyRaw === undefined) {
+    throw new Error(
+      "[worker] missing GITHUB_APP_PRIVATE_KEY (or legacy GITHUB_APP_PRIVATE_KEY_PEM)",
+    );
+  }
+
+  const privateKeyPem = privateKeyRaw.replace(/\\n/g, "\n").trim();
+  if (!privateKeyPem) {
+    if (preferredPrivateKeyRaw !== undefined) {
+      throw new Error("[worker] invalid GITHUB_APP_PRIVATE_KEY value: empty");
+    }
+
+    throw new Error("[worker] invalid GITHUB_APP_PRIVATE_KEY_PEM value: empty");
+  }
+
+  return { appId, privateKeyPem };
 }
