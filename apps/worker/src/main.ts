@@ -16,7 +16,7 @@ import {
 const config = loadConfig();
 const processedKeyState = createProcessedKeyState();
 const pollCycleState = { isPollInFlight: false };
-const processLogger = console;
+const errorLogger = console.error;
 
 console.log(
   `[worker] started (poll=${config.pollIntervalMs}ms, max_keys=${config.maxProcessedKeys}, source=${DEFAULT_JOB_FILE_PATH})`,
@@ -29,7 +29,7 @@ async function pollAndProcessJobs(): Promise<void> {
       queuedJobs = readAllAnalyzePullRequestJobs();
     } catch (error) {
       const details = error instanceof Error ? error.stack ?? error.message : String(error);
-      console.error(`[worker] failed to read queued jobs: ${details}`);
+      errorLogger(`[worker] failed to read queued jobs: ${details}`);
       return;
     }
 
@@ -52,7 +52,7 @@ async function pollAndProcessJobs(): Promise<void> {
         trackProcessedKey(idempotencyKey, processedKeyState, config.maxProcessedKeys);
       } catch (error) {
         const details = error instanceof Error ? error.stack ?? error.message : String(error);
-        console.error(`[worker] failed to process job=${queuedJob.job_id}: ${details}`);
+        errorLogger(`[worker] failed to process job=${queuedJob.job_id}: ${details}`);
       }
     }
   });
@@ -65,6 +65,6 @@ async function pollAndProcessJobs(): Promise<void> {
 setInterval(() => {
   pollAndProcessJobs().catch((error) => {
     const details = error instanceof Error ? error.stack ?? error.message : String(error);
-    processLogger.error(`[worker] poll cycle failed: ${details}`);
+    errorLogger(`[worker] poll cycle failed: ${details}`);
   });
 }, config.pollIntervalMs);

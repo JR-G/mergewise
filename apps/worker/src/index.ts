@@ -350,13 +350,18 @@ export async function fetchPullRequestFilesWithRetry(
   },
 ): Promise<GitHubPullRequestFile[]> {
   const totalAttempts = maxRetries + 1;
-  const warnLogger =
+  const errorLogger =
     dependencies.logWarn ?? dependencies.logInfo ?? dependencies.logError ?? console.warn;
 
   for (let attemptNumber = 1; attemptNumber <= totalAttempts; attemptNumber += 1) {
     try {
       return await dependencies.fetchPullRequestFiles(options);
     } catch (error) {
+      const details = error instanceof Error ? error.stack ?? error.message : String(error);
+      errorLogger(
+        `[worker] GitHub PR file fetch failed attempt=${attemptNumber}/${totalAttempts}: ${details}`,
+      );
+
       const isLastAttempt = attemptNumber === totalAttempts;
       const isRetryable = isRetryablePullRequestFileFetchError(error);
 
@@ -364,9 +369,8 @@ export async function fetchPullRequestFilesWithRetry(
         throw error;
       }
 
-      const details = error instanceof Error ? error.stack ?? error.message : String(error);
-      warnLogger(
-        `[worker] retrying GitHub PR file fetch attempt=${attemptNumber}/${totalAttempts} retryable=${String(isRetryable)}: ${details}`,
+      errorLogger(
+        `[worker] retrying GitHub PR file fetch attempt=${attemptNumber}/${totalAttempts} retryable=${String(isRetryable)}`,
       );
       await dependencies.sleep(retryDelayMs);
     }
