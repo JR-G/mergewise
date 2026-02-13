@@ -38,11 +38,9 @@ export interface WebhookErrorEnvelope {
  */
 export type WebhookErrorCode =
   | "method_not_allowed"
-  | "event_ignored"
   | "invalid_signature"
   | "invalid_json_payload"
   | "unsupported_pull_request_payload"
-  | "pull_request_action_ignored"
   | "queue_enqueue_failed";
 
 /**
