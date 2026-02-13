@@ -45,6 +45,8 @@
     "ops:prompt": "bun run scripts/ops.ts prompt",
     "ops:review-ready": "bun run scripts/ops.ts review-ready",
     "ops:open-pr": "bun run scripts/ops.ts open-pr",
+    "quality:gates": "bash scripts/quality-gates.sh",
+    "pr:validate-body": "bash scripts/validate-pr-body.sh",
     "lint": "bunx eslint .",
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",

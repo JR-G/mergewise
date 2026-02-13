@@ -63,3 +63,9 @@ Open a PR for a task using branch mapping from the runtime board:
 bun run ops:review-ready -- <task-id>
 bun run ops:open-pr -- <task-id>
 ```
+
+Run repository quality guards directly:
+
+```bash
+bun run quality:gates
+```

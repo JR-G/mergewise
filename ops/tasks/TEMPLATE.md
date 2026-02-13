@@ -15,6 +15,7 @@ Describe exactly what this task must deliver.
 
 ## Definition Of Done
 
+- `bun run quality:gates`
 - `bun run lint`
 - `bun run typecheck`
 - `bun run test`

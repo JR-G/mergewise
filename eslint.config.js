@@ -13,6 +13,7 @@ export default [
       parserOptions: {
         ecmaVersion: "latest",
         sourceType: "module",
+        project: "./tsconfig.json",
       },
     },
     plugins: {
@@ -26,6 +27,10 @@ export default [
         { "min": 2, "exceptions": ["_", "$"], "properties": "never" },
       ],
       "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/no-floating-promises": [
+        "error",
+        { "ignoreVoid": false, "ignoreIIFE": false },
+      ],
       "no-warning-comments": [
         "warn",
         { "terms": ["todo", "fixme", "xxx"], "location": "anywhere" },
@@ -35,7 +40,7 @@ export default [
         {
           "patterns": [
             {
-              "group": ["**/packages/*", "../**/packages/*"],
+              "group": ["**/packages/*", "../**/packages/*", "**/apps/*", "../**/apps/*"],
               "message": "Use workspace aliases (for example @mergewise/shared-types) for cross-package imports."
             }
           ]

@@ -97,3 +97,4 @@ bun run ops:open-pr -- <task-id>
 - File boundaries: no edits outside task-allowed paths.
 - Completion requires a posted PR URL.
 - `ops:open-pr` runs review-ready checks before creating the PR.
+- `ops:review-ready` runs `quality:gates`, lint, typecheck, test, and build in the task worktree.

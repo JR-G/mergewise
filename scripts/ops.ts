@@ -594,6 +594,7 @@ function runQualityGates(boardEntry: TaskBoardEntry): void {
   }
 
   try {
+    execFileSync("bun", ["run", "quality:gates"], { cwd: worktreePath, stdio: "inherit" });
     execFileSync("bun", ["run", "lint"], { cwd: worktreePath, stdio: "inherit" });
     execFileSync("bun", ["run", "typecheck"], { cwd: worktreePath, stdio: "inherit" });
     execFileSync("bun", ["run", "test"], { cwd: worktreePath, stdio: "inherit" });
@@ -644,7 +645,7 @@ function printPrompt(taskIdentifier: string): void {
     console.log("Execution rules:");
     console.log("- Only edit allowed paths from the task file.");
     console.log(
-      "- Run: bun run lint && bun run typecheck && bun run test && bun run build",
+      "- Run: bun run quality:gates && bun run lint && bun run typecheck && bun run test && bun run build",
     );
     console.log("- Use TSDoc for documentation behavior notes.");
     console.log("- No inline comments.");
