@@ -82,9 +82,16 @@ Session teardown after merges:
 bun run wt:cleanup:session s01
 ```
 
+Open PR from task identifier:
+
+```bash
+bun run ops:open-pr -- <task-id>
+```
+
 ## Rules
 
 - Task-to-branch: one task per branch.
 - Branch-to-worktree: one branch per worktree.
 - Agent-to-worktree: one agent per worktree.
 - File boundaries: no edits outside task-allowed paths.
+- Completion requires a posted PR URL.

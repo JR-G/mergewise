@@ -63,13 +63,15 @@ function usage(): void {
   bun run ops:start-session -- <session-id> <task-id> [owner] [scope] [branch-kind]
   bun run ops:agent -- <session-id> <task-id> [owner] [scope] [branch-kind]
   bun run ops:prompt -- <task-id>
+  bun run ops:open-pr -- <task-id>
 
 Examples:
   bun run ops:start -- github-client feat/agent-github-client alice packages/github-client
   bun run ops:start-session -- s01 github-client
   bun run ops:agent -- s01 github-client
   bun run ops:start-session -- s01 github-client agent-1 packages/github-client fix
-  bun run ops:prompt -- github-client`);
+  bun run ops:prompt -- github-client
+  bun run ops:open-pr -- github-client`);
 }
 
 /**
@@ -442,9 +444,85 @@ function printPrompt(taskIdentifier: string): void {
     console.log("- Use TSDoc for documentation behavior notes.");
     console.log("- No inline comments.");
     console.log("- No single-letter or abbreviated variable names.");
-    console.log("- Commit and push branch, do not merge.");
+    console.log("- Task is complete only after: quality gates pass, branch is pushed, and PR URL is posted.");
+    console.log("- Open PR with: bun run ops:open-pr -- <task-id>");
+    console.log("- Return PR URL in your completion message. Do not merge.");
   } catch (caughtError) {
     fail(`printPrompt(${taskIdentifier}) failed: ${formatError(caughtError)}`);
+  }
+}
+
+/**
+ * Resolves branch name for a task by parsing the runtime board entries.
+ *
+ * @param taskIdentifier - Unique task identifier.
+ * @returns Branch name mapped to the task.
+ */
+function resolveBranchNameForTask(taskIdentifier: string): string {
+  try {
+    ensureBoardFile();
+    const boardContents = readFileSync(boardFilePath, "utf8");
+    const tableLinePattern = /^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$/;
+    const matchedBranches = new Set<string>();
+
+    for (const boardLine of boardContents.split("\n")) {
+      const parsedLine = boardLine.match(tableLinePattern);
+      if (!parsedLine) {
+        continue;
+      }
+
+      const parsedTaskIdentifier = (parsedLine[1] ?? "").trim();
+      const parsedBranchName = (parsedLine[2] ?? "").trim();
+      if (parsedTaskIdentifier === "Task ID" || parsedTaskIdentifier === "---") {
+        continue;
+      }
+
+      if (parsedTaskIdentifier === taskIdentifier && parsedBranchName.length > 0) {
+        matchedBranches.add(parsedBranchName);
+      }
+    }
+
+    const resolvedBranches = [...matchedBranches];
+    if (resolvedBranches.length === 0) {
+      fail(`resolveBranchNameForTask(${taskIdentifier}) failed: no branch found in ${boardFilePath}`);
+    }
+
+    if (resolvedBranches.length > 1) {
+      fail(
+        `resolveBranchNameForTask(${taskIdentifier}) failed: multiple branches found (${resolvedBranches.join(", ")})`,
+      );
+    }
+
+    const [resolvedBranchName] = resolvedBranches;
+    if (!resolvedBranchName) {
+      fail(`resolveBranchNameForTask(${taskIdentifier}) failed: unresolved branch value`);
+    }
+
+    return resolvedBranchName;
+  } catch (caughtError) {
+    fail(`resolveBranchNameForTask(${taskIdentifier}) failed: ${formatError(caughtError)}`);
+  }
+}
+
+/**
+ * Opens a pull request for a task branch using the GitHub CLI.
+ *
+ * @param taskIdentifier - Unique task identifier.
+ */
+function openPullRequestForTask(taskIdentifier: string): void {
+  const branchName = resolveBranchNameForTask(taskIdentifier);
+
+  try {
+    execFileSync(
+      "gh",
+      ["pr", "create", "--fill", "--base", "main", "--head", branchName],
+      {
+        cwd: repositoryRoot,
+        stdio: "inherit",
+      },
+    );
+  } catch (caughtError) {
+    fail(`openPullRequestForTask(${taskIdentifier}) failed: ${formatError(caughtError)}`);
   }
 }
 
@@ -572,6 +650,17 @@ function main(): void {
 
   if (commandName === "agent") {
     startAgentSession(argumentsList);
+    return;
+  }
+
+  if (commandName === "open-pr") {
+    const [taskIdentifier] = argumentsList;
+    if (!taskIdentifier) {
+      usage();
+      fail("missing task-id for ops:open-pr");
+    }
+
+    openPullRequestForTask(taskIdentifier);
     return;
   }
 
