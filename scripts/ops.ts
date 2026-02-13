@@ -587,6 +587,70 @@ function listChangedPathsAgainstMain(branchName: string): string[] {
 }
 
 /**
+ * Returns true when a branch has at least one commit ahead of main.
+ *
+ * @param branchName - Branch name to compare.
+ * @returns Whether the branch is ahead of main.
+ */
+function hasCommitsAheadOfMain(branchName: string): boolean {
+  try {
+    const revisionCountOutput = execFileSync(
+      "git",
+      ["rev-list", "--count", `main..${branchName}`],
+      {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+      },
+    ).trim();
+
+    const revisionCount = Number.parseInt(revisionCountOutput, 10);
+    return Number.isFinite(revisionCount) && revisionCount > 0;
+  } catch (caughtError) {
+    fail(`hasCommitsAheadOfMain(${branchName}) failed: ${formatError(caughtError)}`);
+  }
+}
+
+/**
+ * Fails when a task branch has zero commits ahead of main.
+ *
+ * @param boardEntry - Task row details.
+ */
+function assertBranchHasCommittedChanges(boardEntry: TaskBoardEntry): void {
+  if (!hasCommitsAheadOfMain(boardEntry.branchName)) {
+    fail(
+      `review-ready failed for ${boardEntry.taskIdentifier}: branch ${boardEntry.branchName} has no commits ahead of main`,
+    );
+  }
+}
+
+/**
+ * Fails when the task worktree has uncommitted changes.
+ *
+ * @param boardEntry - Task row details.
+ */
+function assertWorktreeClean(boardEntry: TaskBoardEntry): void {
+  const worktreePath = resolveWorktreePath(boardEntry.branchName);
+  if (!existsSync(worktreePath)) {
+    fail(`assertWorktreeClean failed: missing worktree path ${worktreePath}`);
+  }
+
+  try {
+    const porcelainStatus = execFileSync("git", ["status", "--porcelain"], {
+      cwd: worktreePath,
+      encoding: "utf8",
+    }).trim();
+
+    if (porcelainStatus.length > 0) {
+      fail(
+        `review-ready failed for ${boardEntry.taskIdentifier}: uncommitted changes exist in ${worktreePath}`,
+      );
+    }
+  } catch (caughtError) {
+    fail(`assertWorktreeClean(${boardEntry.taskIdentifier}) failed: ${formatError(caughtError)}`);
+  }
+}
+
+/**
  * Validates branch naming alignment with task identifier.
  *
  * @param boardEntry - Task row details.
@@ -671,6 +735,8 @@ function reviewTaskReadiness(taskIdentifier: string): void {
   loadTaskFile(taskIdentifier);
   const boardEntry = resolveTaskBoardEntry(taskIdentifier);
   assertTaskBranchAlignment(boardEntry);
+  assertBranchHasCommittedChanges(boardEntry);
+  assertWorktreeClean(boardEntry);
 
   const changedPaths = listChangedPathsAgainstMain(boardEntry.branchName);
   assertScopeBoundaries(boardEntry, changedPaths);
@@ -679,6 +745,27 @@ function reviewTaskReadiness(taskIdentifier: string): void {
   console.log(
     `review-ready passed for task=${boardEntry.taskIdentifier} branch=${boardEntry.branchName} scope=${boardEntry.scopeName}`,
   );
+}
+
+/**
+ * Pushes the task branch to origin and sets upstream when needed.
+ *
+ * @param boardEntry - Task row details.
+ */
+function pushTaskBranch(boardEntry: TaskBoardEntry): void {
+  const worktreePath = resolveWorktreePath(boardEntry.branchName);
+  if (!existsSync(worktreePath)) {
+    fail(`pushTaskBranch failed: missing worktree path ${worktreePath}`);
+  }
+
+  try {
+    execFileSync("git", ["push", "-u", "origin", boardEntry.branchName], {
+      cwd: worktreePath,
+      stdio: "inherit",
+    });
+  } catch (caughtError) {
+    fail(`pushTaskBranch(${boardEntry.taskIdentifier}) failed: ${formatError(caughtError)}`);
+  }
 }
 
 /**
@@ -831,6 +918,7 @@ function openPullRequestForTask(taskIdentifier: string): void {
   const existingPullRequest = findPullRequestByHead(branchName);
 
   try {
+    pushTaskBranch(boardEntry);
     writeFileSync(pullRequestBodyFilePath, pullRequestBody, "utf8");
 
     if (existingPullRequest) {

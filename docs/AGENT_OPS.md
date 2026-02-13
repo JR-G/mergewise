@@ -109,6 +109,12 @@ bun run ops:review-ready -- <task-id>
 bun run ops:open-pr -- <task-id>
 ```
 
+`ops:open-pr` behavior:
+
+- Fails when the task branch has zero commits ahead of `main`.
+- Fails when the task worktree has uncommitted changes.
+- Pushes the task branch to `origin` before creating or updating the PR.
+
 ## Rules
 
 - Task-to-branch: one task per branch.
