@@ -717,6 +717,7 @@ ${changedPathList}
 
 ## Checks
 
+- [x] \`bun run quality:gates\`
 - [x] \`bun run lint\`
 - [x] \`bun run typecheck\`
 - [x] \`bun run test\`

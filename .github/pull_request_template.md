@@ -4,6 +4,7 @@
 
 ## Checks
 
+- [ ] `bun run quality:gates`
 - [ ] `bun run lint`
 - [ ] `bun run typecheck`
 - [ ] `bun run test`
