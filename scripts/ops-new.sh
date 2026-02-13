@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RUNTIME_OPS_ROOT="$REPOSITORY_ROOT/.mergewise-runtime/ops"
 TASK_IDENTIFIER="${1:-}"
 BRANCH_NAME="${2:-}"
 
@@ -59,10 +60,13 @@ fi
 validate_safe_value "$TASK_IDENTIFIER" "task-id" "false"
 validate_safe_value "$BRANCH_NAME" "branch-name" "true"
 
-TASK_FILE_PATH="$REPOSITORY_ROOT/ops/tasks/${TASK_IDENTIFIER}.md"
+TASK_FILE_PATH="$RUNTIME_OPS_ROOT/tasks/${TASK_IDENTIFIER}.md"
+TASK_TEMPLATE_PATH="$REPOSITORY_ROOT/ops/tasks/TEMPLATE.md"
+
+mkdir -p "$RUNTIME_OPS_ROOT/tasks"
 
 if [[ ! -f "$TASK_FILE_PATH" ]]; then
-  cp "$REPOSITORY_ROOT/ops/tasks/TEMPLATE.md" "$TASK_FILE_PATH"
+  cp "$TASK_TEMPLATE_PATH" "$TASK_FILE_PATH"
   echo "Created task file from template: $TASK_FILE_PATH"
 fi
 
