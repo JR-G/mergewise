@@ -50,3 +50,9 @@ bun run ops:start-session -- <session-id> <task-id>
 bun run ops:prompt -- <task-id>
 bun run wt:cleanup:session <session-id>
 ```
+
+One-command agent start (creates task/worktree, prints prompt, opens shell):
+
+```bash
+bun run ops:agent -- <session-id> <task-id>
+```

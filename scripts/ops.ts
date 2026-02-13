@@ -17,10 +17,13 @@ if (!scriptPath) {
 }
 
 const repositoryRoot = resolve(dirname(scriptPath), "..");
-const boardFilePath = resolve(repositoryRoot, "ops/board.md");
-const tasksDirectoryPath = resolve(repositoryRoot, "ops/tasks");
-const taskTemplatePath = resolve(tasksDirectoryPath, "TEMPLATE.md");
+const runtimeDirectoryPath = resolve(repositoryRoot, ".mergewise-runtime");
+const runtimeOpsDirectoryPath = resolve(runtimeDirectoryPath, "ops");
+const boardFilePath = resolve(runtimeOpsDirectoryPath, "board.md");
+const tasksDirectoryPath = resolve(runtimeOpsDirectoryPath, "tasks");
+const taskTemplatePath = resolve(repositoryRoot, "ops/tasks/TEMPLATE.md");
 const ownershipFilePath = resolve(repositoryRoot, "ops/ownership.yml");
+const worktreeRootPath = process.env.WORKTREE_ROOT ?? resolve(repositoryRoot, "../mergewise-worktrees");
 
 interface OwnershipEntry {
   ownerName: string;
@@ -58,11 +61,13 @@ function usage(): void {
   console.log(`Usage:
   bun run ops:start -- <task-id> <branch-name> <owner> <scope>
   bun run ops:start-session -- <session-id> <task-id> [owner] [scope] [branch-kind]
+  bun run ops:agent -- <session-id> <task-id> [owner] [scope] [branch-kind]
   bun run ops:prompt -- <task-id>
 
 Examples:
   bun run ops:start -- github-client feat/agent-github-client alice packages/github-client
   bun run ops:start-session -- s01 github-client
+  bun run ops:agent -- s01 github-client
   bun run ops:start-session -- s01 github-client agent-1 packages/github-client fix
   bun run ops:prompt -- github-client`);
 }
@@ -255,6 +260,7 @@ function ensureTaskFile(options: StartCommandOptions): string {
       fail(`ensureTaskFile(${options.taskIdentifier}, ${options.branchName}): missing template at ${taskTemplatePath}`);
     }
 
+    mkdirSync(runtimeOpsDirectoryPath, { recursive: true });
     mkdirSync(tasksDirectoryPath, { recursive: true });
     const taskFilePath = resolve(tasksDirectoryPath, `${options.taskIdentifier}.md`);
 
@@ -286,6 +292,7 @@ function ensureBoardFile(): void {
       return;
     }
 
+    mkdirSync(runtimeOpsDirectoryPath, { recursive: true });
     const defaultBoard =
       "# Agent Board\n\n" +
       "## Todo\n\n" +
@@ -357,6 +364,37 @@ function createWorktree(branchName: string): void {
     );
   } catch (caughtError) {
     fail(`createWorktree(${branchName}) failed: ${formatError(caughtError)}`);
+  }
+}
+
+/**
+ * Resolves the absolute worktree path for a branch.
+ *
+ * @param branchName - Branch name used for worktree location.
+ * @returns Absolute path to the branch worktree.
+ */
+function resolveWorktreePath(branchName: string): string {
+  return resolve(worktreeRootPath, branchName);
+}
+
+/**
+ * Opens an interactive shell in the branch worktree.
+ *
+ * @param branchName - Branch name whose worktree should be opened.
+ */
+function openShellInWorktree(branchName: string): void {
+  const worktreePath = resolveWorktreePath(branchName);
+  if (!existsSync(worktreePath)) {
+    fail(`openShellInWorktree(${branchName}) failed: missing path ${worktreePath}`);
+  }
+
+  const shellPath = process.env.SHELL ?? "zsh";
+  const shellLaunchCommand = `cd ${JSON.stringify(worktreePath)} && exec ${JSON.stringify(shellPath)} -l`;
+
+  try {
+    execFileSync(shellPath, ["-lc", shellLaunchCommand], { stdio: "inherit" });
+  } catch (caughtError) {
+    fail(`openShellInWorktree(${branchName}) failed: ${formatError(caughtError)}`);
   }
 }
 
@@ -470,6 +508,33 @@ function startSessionTask(argumentsList: string[]): void {
 }
 
 /**
+ * Starts one session task, prints the prompt, and opens a shell in the task worktree.
+ *
+ * @param argumentsList - Positional CLI args passed after `agent`.
+ */
+function startAgentSession(argumentsList: string[]): void {
+  const [sessionIdentifier, taskIdentifier, ...optionalArguments] = argumentsList;
+  if (!sessionIdentifier || !taskIdentifier) {
+    usage();
+    fail("missing required arguments for ops:agent");
+  }
+
+  const { ownerName, scopeName, branchKind } = resolveSessionStartOptions(
+    taskIdentifier,
+    optionalArguments,
+  );
+  const branchName = buildSessionBranchName(
+    sessionIdentifier,
+    taskIdentifier,
+    branchKind,
+  );
+
+  startTask([taskIdentifier, branchName, ownerName, scopeName]);
+  printPrompt(taskIdentifier);
+  openShellInWorktree(branchName);
+}
+
+/**
  * Entrypoint for the ops CLI subcommands.
  */
 function main(): void {
@@ -502,6 +567,11 @@ function main(): void {
 
   if (commandName === "start-session") {
     startSessionTask(argumentsList);
+    return;
+  }
+
+  if (commandName === "agent") {
+    startAgentSession(argumentsList);
     return;
   }
 

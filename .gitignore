@@ -37,3 +37,5 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 docs/internal/
 .mergewise-runtime/
 .claude/
+ops/tasks/*.md
+!ops/tasks/TEMPLATE.md

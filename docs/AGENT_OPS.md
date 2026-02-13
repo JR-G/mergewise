@@ -6,14 +6,15 @@ Use `ops/` with worktrees to run multiple agents safely in parallel.
 
 ## Files
 
-- `ops/board.md`: task tracking (`Todo`, `In Progress`, `Done`)
-- `ops/tasks/TEMPLATE.md`: task contract template
+- `.mergewise-runtime/ops/board.md`: local task tracking (`Todo`, `In Progress`, `Done`)
+- `.mergewise-runtime/ops/tasks/*.md`: local task contracts generated from template
+- `ops/tasks/TEMPLATE.md`: tracked task contract template
 - `ops/ownership.yml`: ownership map for path boundaries
 
 ## Flow
 
 1. Create a task file from `ops/tasks/TEMPLATE.md`.
-2. Add the task to `ops/board.md`.
+2. Add the task to `.mergewise-runtime/ops/board.md`.
 3. Spawn worktree:
    - `bun run ops:new <task-id> <branch-name>`
 4. Give the assigned agent the task file and branch.
@@ -37,8 +38,8 @@ bun run ops:start -- github-client feat/agent-github-client alice packages/githu
 
 This command:
 
-- Creates `ops/tasks/<task-id>.md` from template when missing.
-- Adds the task row to `ops/board.md` under `In Progress`.
+- Creates `.mergewise-runtime/ops/tasks/<task-id>.md` from template when missing.
+- Adds the task row to `.mergewise-runtime/ops/board.md` under `In Progress`.
 - Creates the branch worktree using `scripts/worktree.sh`.
 
 Then generate a ready-to-paste agent prompt:
@@ -62,6 +63,12 @@ bun run ops:start-session -- s01 github-client
 Creates branch:
 
 `feat/s01-github-client`
+
+One-command agent launcher (start + prompt + shell in worktree):
+
+```bash
+bun run ops:agent -- <session-id> <task-id> [owner] [scope] [branch-kind]
+```
 
 Default inference behavior:
 

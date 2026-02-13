@@ -28,8 +28,7 @@ Required output:
    - branch
    - dependencies
 2) Exact setup commands:
-   - bun run ops:start-session -- <session-id> <task-id>
-   - bun run ops:prompt -- <task-id>
+   - bun run ops:agent -- <session-id> <task-id>
 3) Parallel execution groups
 4) Merge order
 5) Teardown command:

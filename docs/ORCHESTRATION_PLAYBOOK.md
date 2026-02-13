@@ -45,8 +45,7 @@ Every planning run must output:
    - `branch`
    - `dependencies`
 2. Exact setup commands:
-   - `bun run ops:start-session -- <session-id> <task-id>`
-   - `bun run ops:prompt -- <task-id>`
+   - `bun run ops:agent -- <session-id> <task-id>`
 3. Parallel execution groups.
 4. Merge order.
 5. Session teardown command:
@@ -57,10 +56,9 @@ Every planning run must output:
 1. Agent Tech Lead filters `.mergewise-runtime/backlog.md` to `todo` items only.
 2. Agent Tech Lead generates task plan from strategy and top backlog items.
 3. Start one task per command:
-   - `bun run ops:start-session -- <session-id> <task-id>`
-4. Generate prompts:
-   - `bun run ops:prompt -- <task-id>`
-5. Assign each prompt to one agent in its worktree.
+   - `bun run ops:agent -- <session-id> <task-id>`
+4. `ops:agent` creates the task/worktree, prints the prompt, and opens a shell in the task worktree.
+5. Assign one task per agent terminal.
 
 ## Review And Merge Flow
 
