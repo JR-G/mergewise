@@ -150,6 +150,18 @@ export interface PullRequestFileRetryDependencies {
    * Async delay function used between retry attempts.
    */
   readonly sleep: (delayMs: number) => Promise<void>;
+  /**
+   * Warning logger for retry attempts.
+   */
+  readonly logWarn?: (message: string) => void;
+  /**
+   * Info logger fallback when warning logger is not provided.
+   */
+  readonly logInfo?: (message: string) => void;
+  /**
+   * Error logger fallback when warning/info loggers are not provided.
+   */
+  readonly logError?: (message: string) => void;
 }
 
 /**
@@ -194,6 +206,10 @@ export interface WorkerProcessingDependencies {
    * Error logger for operational events.
    */
   readonly logError?: (message: string) => void;
+  /**
+   * Warning logger for retryable operational events.
+   */
+  readonly logWarn?: (message: string) => void;
   /**
    * Time source override for deterministic testing.
    */
@@ -334,6 +350,8 @@ export async function fetchPullRequestFilesWithRetry(
   },
 ): Promise<GitHubPullRequestFile[]> {
   const totalAttempts = maxRetries + 1;
+  const warnLogger =
+    dependencies.logWarn ?? dependencies.logInfo ?? dependencies.logError ?? console.warn;
 
   for (let attemptNumber = 1; attemptNumber <= totalAttempts; attemptNumber += 1) {
     try {
@@ -346,6 +364,10 @@ export async function fetchPullRequestFilesWithRetry(
         throw error;
       }
 
+      const details = error instanceof Error ? error.stack ?? error.message : String(error);
+      warnLogger(
+        `[worker] retrying GitHub PR file fetch attempt=${attemptNumber}/${totalAttempts} retryable=${String(isRetryable)}: ${details}`,
+      );
       await dependencies.sleep(retryDelayMs);
     }
   }
@@ -389,6 +411,7 @@ export async function processAnalyzePullRequestJob(
   const key = buildIdempotencyKey(job);
   const infoLogger = dependencies.logInfo ?? console.log;
   const errorLogger = dependencies.logError ?? console.error;
+  const warnLogger = dependencies.logWarn ?? infoLogger ?? errorLogger;
   const rules = dependencies.rules ?? tsReactRules;
   const executeRulesFn = dependencies.executeRulesFn ?? executeRules;
   const githubFetchOptions = dependencies.githubFetchOptions ?? resolveGitHubFetchOptions();
@@ -404,6 +427,9 @@ export async function processAnalyzePullRequestJob(
       createGitHubAppJwtFn: dependencies.createGitHubAppJwtFn,
       exchangeInstallationAccessTokenFn: dependencies.exchangeInstallationAccessTokenFn,
       fetchPullRequestFilesWithRetryFn: dependencies.fetchPullRequestFilesWithRetryFn,
+      logWarn: warnLogger,
+      logInfo: infoLogger,
+      logError: errorLogger,
     },
   );
 
@@ -531,6 +557,9 @@ async function buildAnalysisContextFromGitHub(
     readonly createGitHubAppJwtFn?: typeof createGitHubAppJwt;
     readonly exchangeInstallationAccessTokenFn?: typeof exchangeInstallationAccessToken;
     readonly fetchPullRequestFilesWithRetryFn?: typeof fetchPullRequestFilesWithRetry;
+    readonly logWarn?: (message: string) => void;
+    readonly logInfo?: (message: string) => void;
+    readonly logError?: (message: string) => void;
   },
 ): Promise<AnalysisContext> {
   if (job.installation_id === null) {
@@ -575,6 +604,13 @@ async function buildAnalysisContextFromGitHub(
     },
     githubFetchOptions.githubFetchRetries,
     githubFetchOptions.githubRetryDelayMs,
+    {
+      fetchPullRequestFiles,
+      sleep: defaultSleep,
+      logWarn: dependencies.logWarn,
+      logInfo: dependencies.logInfo,
+      logError: dependencies.logError,
+    },
   );
 
   const mappedDiffs = mapGitHubPullRequestFilesToDiffs(fetchedFiles);
