@@ -28,10 +28,16 @@ export interface MergewiseGatingConfigV1 {
 export interface MergewiseRulesConfigV1 {
   /**
    * Rule identifiers explicitly enabled for analysis.
+   *
+   * @remarks
+   * Values are normalized by trimming surrounding whitespace during load.
    */
   include: string[];
   /**
    * Rule identifiers explicitly disabled for analysis.
+   *
+   * @remarks
+   * Values are normalized by trimming surrounding whitespace during load.
    */
   exclude: string[];
 }
@@ -316,6 +322,8 @@ function normalizeConfig(rawValue: unknown, filePath: string): MergewiseConfig {
  *
  * @remarks
  * When the config file does not exist, defaults are returned.
+ * Rule identifiers in `rules.include` and `rules.exclude` are normalized by
+ * trimming surrounding whitespace.
  * Parse and schema errors throw explicit typed errors.
  *
  * @param options - Optional location overrides.
