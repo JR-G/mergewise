@@ -222,6 +222,72 @@ export interface PreparedFindingComment {
 }
 
 /**
+ * Metadata for one successfully posted finding comment.
+ */
+export interface PostedFindingCommentSuccess {
+  /**
+   * Index of the prepared comment in the input list.
+   */
+  readonly index: number;
+  /**
+   * Prepared comment that was posted.
+   */
+  readonly preparedComment: PreparedFindingComment;
+  /**
+   * Request payload used to post this comment.
+   */
+  readonly requestOptions: PostPullRequestSummaryCommentOptions;
+  /**
+   * Created GitHub issue comment response.
+   */
+  readonly createdComment: {
+    readonly id: number;
+    readonly html_url: string;
+    readonly body: string;
+  };
+}
+
+/**
+ * Metadata for one failed finding comment post attempt.
+ */
+export interface PostedFindingCommentFailure {
+  /**
+   * Index of the prepared comment in the input list.
+   */
+  readonly index: number;
+  /**
+   * Prepared comment that failed to post.
+   */
+  readonly preparedComment: PreparedFindingComment;
+  /**
+   * Request payload used for the failed post attempt.
+   */
+  readonly requestOptions: PostPullRequestSummaryCommentOptions;
+  /**
+   * Error message for the failed post attempt.
+   */
+  readonly errorMessage: string;
+}
+
+/**
+ * Result summary for prepared finding comment posting.
+ */
+export interface PostPreparedFindingCommentsResult {
+  /**
+   * Number of successful comment posts.
+   */
+  readonly postedCount: number;
+  /**
+   * Successful post entries in call order.
+   */
+  readonly successes: readonly PostedFindingCommentSuccess[];
+  /**
+   * Failed post entries in call order.
+   */
+  readonly failures: readonly PostedFindingCommentFailure[];
+}
+
+/**
  * Deterministic finding selection and formatting result.
  */
 export interface PreparedFindingDelivery {
@@ -553,7 +619,7 @@ export function buildWorkerCheckOutput(
  *
  * @param options - Repository coordinates, token, and prepared comments.
  * @param dependencies - API posting dependency override.
- * @returns Number of posted comments.
+ * @returns Structured summary of successful and failed post attempts.
  */
 export async function postPreparedFindingComments(
   options: {
@@ -569,13 +635,14 @@ export async function postPreparedFindingComments(
       options: PostPullRequestSummaryCommentOptions,
     ) => Promise<{ id: number; html_url: string; body: string }>;
   } = {},
-): Promise<number> {
+): Promise<PostPreparedFindingCommentsResult> {
   const postPullRequestSummaryCommentFn =
     dependencies.postPullRequestSummaryCommentFn ?? postPullRequestSummaryComment;
 
-  let postedCount = 0;
-  for (const preparedComment of options.comments) {
-    await postPullRequestSummaryCommentFn({
+  const successes: PostedFindingCommentSuccess[] = [];
+  const failures: PostedFindingCommentFailure[] = [];
+  for (const [index, preparedComment] of options.comments.entries()) {
+    const requestOptions: PostPullRequestSummaryCommentOptions = {
       owner: options.owner,
       repository: options.repository,
       pullRequestNumber: options.pullRequestNumber,
@@ -584,11 +651,31 @@ export async function postPreparedFindingComments(
       apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
       userAgent: options.githubFetchOptions.githubUserAgent,
       requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
-    });
-    postedCount += 1;
+    };
+
+    try {
+      const createdComment = await postPullRequestSummaryCommentFn(requestOptions);
+      successes.push({
+        index,
+        preparedComment,
+        requestOptions,
+        createdComment,
+      });
+    } catch (error) {
+      failures.push({
+        index,
+        preparedComment,
+        requestOptions,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
-  return postedCount;
+  return {
+    postedCount: successes.length,
+    successes,
+    failures,
+  };
 }
 
 /**
@@ -753,7 +840,7 @@ export async function processAnalyzePullRequestJob(
 
   let postedCommentCount = 0;
   if (dependencies.deliveryMode === "github" && delivery.comments.length > 0) {
-    postedCommentCount = await postPreparedFindingComments(
+    const postingResult = await postPreparedFindingComments(
       {
         owner: githubAnalysisContext.owner,
         repository: githubAnalysisContext.repository,
@@ -766,6 +853,7 @@ export async function processAnalyzePullRequestJob(
         postPullRequestSummaryCommentFn: dependencies.postPullRequestSummaryCommentFn,
       },
     );
+    postedCommentCount = postingResult.postedCount;
   }
 
   const summary = buildJobSummary(

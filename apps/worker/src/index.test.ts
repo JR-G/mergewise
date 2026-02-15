@@ -140,6 +140,46 @@ describe("buildFindingDedupeKey", () => {
     expect(buildFindingDedupeKey(finding)).toBe("acme/widget#42:r1:file:1");
     expect(buildFindingDedupeKey(finding)).toBe("acme/widget#42:r1:file:1");
   });
+
+  test("builds fallback key from ruleId:filePath:line when findingId is empty", () => {
+    const finding = {
+      findingId: "",
+      installationId: 1,
+      repo: "acme/widget",
+      prNumber: 42,
+      language: "typescript",
+      ruleId: "rule-1",
+      category: "safety" as const,
+      filePath: "src/index.ts",
+      line: 10,
+      evidence: "const value: any = input;",
+      recommendation: "Use an explicit type.",
+      confidence: 0.95,
+      status: "posted" as const,
+    };
+
+    expect(buildFindingDedupeKey(finding)).toBe("acme/widget#42:rule-1:src/index.ts:10");
+  });
+
+  test("builds fallback key when findingId is whitespace-only", () => {
+    const finding = {
+      findingId: "   ",
+      installationId: 1,
+      repo: "acme/widget",
+      prNumber: 42,
+      language: "typescript",
+      ruleId: "rule-1",
+      category: "safety" as const,
+      filePath: "src/index.ts",
+      line: 10,
+      evidence: "const value: any = input;",
+      recommendation: "Use an explicit type.",
+      confidence: 0.95,
+      status: "posted" as const,
+    };
+
+    expect(buildFindingDedupeKey(finding)).toBe("acme/widget#42:rule-1:src/index.ts:10");
+  });
 });
 
 describe("trackProcessedKey", () => {
@@ -965,7 +1005,7 @@ describe("finding delivery", () => {
     );
 
     const postedBodies: string[] = [];
-    const postedCount = await postPreparedFindingComments(
+    const postingResult = await postPreparedFindingComments(
       {
         owner: "acme",
         repository: "widget",
@@ -986,9 +1026,74 @@ describe("finding delivery", () => {
       },
     );
 
-    expect(postedCount).toBe(1);
+    expect(postingResult.postedCount).toBe(1);
+    expect(postingResult.successes).toHaveLength(1);
+    expect(postingResult.failures).toHaveLength(0);
     expect(postedBodies).toHaveLength(1);
     expect(postedBodies[0]!).toContain("\"dedupeKey\": \"acme/widget#3:one\"");
+  });
+
+  test("postPreparedFindingComments reports partial failures without throwing", async () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "one",
+          ruleId: "rule/a",
+          filePath: "src/a.ts",
+          line: 1,
+          evidence: "const a: any = source;",
+          recommendation: "Use a typed value.",
+          confidence: 0.9,
+        },
+        {
+          ...baseFinding,
+          findingId: "two",
+          ruleId: "rule/b",
+          filePath: "src/b.ts",
+          line: 1,
+          evidence: "const b: any = source;",
+          recommendation: "Use a typed value.",
+          confidence: 0.89,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 2,
+      },
+    );
+
+    const postingResult = await postPreparedFindingComments(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 3,
+        installationAccessToken: "token",
+        githubFetchOptions: workerFetchOptions,
+        comments: delivery.comments,
+      },
+      {
+        postPullRequestSummaryCommentFn: async (options) => {
+          if (options.body.includes("\"dedupeKey\": \"acme/widget#3:two\"")) {
+            throw new Error("secondary post failed");
+          }
+
+          return {
+            id: 1,
+            html_url: "https://github.com/acme/widget/pull/3#issuecomment-1",
+            body: options.body,
+          };
+        },
+      },
+    );
+
+    expect(postingResult.postedCount).toBe(1);
+    expect(postingResult.successes).toHaveLength(1);
+    expect(postingResult.failures).toHaveLength(1);
+    expect(postingResult.successes[0]!.index).toBe(0);
+    expect(postingResult.failures[0]!.index).toBe(1);
+    expect(postingResult.failures[0]!.errorMessage).toBe("secondary post failed");
+    expect(postingResult.failures[0]!.preparedComment.dedupeKey).toBe("acme/widget#3:two");
   });
 
   test("buildWorkerCheckOutput includes structured skip counters", () => {
