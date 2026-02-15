@@ -6,12 +6,16 @@ import type { Finding, FindingCategory, Rule } from "@mergewise/shared-types";
 import {
   applyFindingGates,
   buildAnalysisContext,
+  buildFindingDedupeKey,
   buildJobSummary,
+  buildWorkerCheckOutput,
   buildIdempotencyKey,
   createProcessedKeyState,
   fetchPullRequestFilesWithRetry,
   loadConfig,
   parseRepositoryFullName,
+  postPreparedFindingComments,
+  prepareFindingDelivery,
   processAnalyzePullRequestJob,
   runPollCycleWithInFlightGuard,
   trackProcessedKey,
@@ -112,6 +116,69 @@ describe("buildIdempotencyKey", () => {
     const keyA = buildIdempotencyKey({ ...base, head_sha: "aaa" });
     const keyB = buildIdempotencyKey({ ...base, head_sha: "bbb" });
     expect(keyA).not.toBe(keyB);
+  });
+});
+
+describe("buildFindingDedupeKey", () => {
+  test("builds stable key from findingId", () => {
+    const finding = {
+      findingId: "r1:file:1",
+      installationId: 1,
+      repo: "acme/widget",
+      prNumber: 42,
+      language: "typescript",
+      ruleId: "rule-1",
+      category: "safety" as const,
+      filePath: "src/index.ts",
+      line: 1,
+      evidence: "const value: any = input;",
+      recommendation: "Use an explicit type.",
+      confidence: 0.95,
+      status: "posted" as const,
+    };
+
+    expect(buildFindingDedupeKey(finding)).toBe("acme/widget#42:r1:file:1");
+    expect(buildFindingDedupeKey(finding)).toBe("acme/widget#42:r1:file:1");
+  });
+
+  test("builds fallback key from ruleId:filePath:line when findingId is empty", () => {
+    const finding = {
+      findingId: "",
+      installationId: 1,
+      repo: "acme/widget",
+      prNumber: 42,
+      language: "typescript",
+      ruleId: "rule-1",
+      category: "safety" as const,
+      filePath: "src/index.ts",
+      line: 10,
+      evidence: "const value: any = input;",
+      recommendation: "Use an explicit type.",
+      confidence: 0.95,
+      status: "posted" as const,
+    };
+
+    expect(buildFindingDedupeKey(finding)).toBe("acme/widget#42:rule-1:src/index.ts:10");
+  });
+
+  test("builds fallback key when findingId is whitespace-only", () => {
+    const finding = {
+      findingId: "   ",
+      installationId: 1,
+      repo: "acme/widget",
+      prNumber: 42,
+      language: "typescript",
+      ruleId: "rule-1",
+      category: "safety" as const,
+      filePath: "src/index.ts",
+      line: 10,
+      evidence: "const value: any = input;",
+      recommendation: "Use an explicit type.",
+      confidence: 0.95,
+      status: "posted" as const,
+    };
+
+    expect(buildFindingDedupeKey(finding)).toBe("acme/widget#42:rule-1:src/index.ts:10");
   });
 });
 
@@ -440,6 +507,11 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.jobId).toBe("job-2");
     expect(summary.idempotencyKey).toBe("acme/widget#50@def456");
     expect(summary.processedAt).toBe("2026-01-02T03:04:05.000Z");
+    expect(summary.postedCommentCount).toBe(0);
+    expect(summary.skippedByCap).toBe(0);
+    expect(summary.skippedByDeduplication).toBe(0);
+    expect(summary.skippedByConfidence).toBe(0);
+    expect(summary.checkOutput?.title).toContain("Mergewise Findings");
   });
 
   test("non-retryable GitHub fetch failure is surfaced", async () => {
@@ -620,7 +692,7 @@ describe("processAnalyzePullRequestJob", () => {
     expect(capturedRuleIds).toEqual([["rule-a"]]);
   });
 
-  test("applies confidence and max-comments gates to execution summary", async () => {
+  test("applies confidence gating to execution summary and delivery cap separately", async () => {
     process.env.GITHUB_APP_ID = "123";
     process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
 
@@ -676,27 +748,31 @@ describe("processAnalyzePullRequestJob", () => {
       },
     );
 
-    expect(summary.totalFindings).toBe(2);
+    expect(summary.totalFindings).toBe(3);
     expect(summary.findingsByCategory).toEqual({
       clean: 0,
       perf: 1,
-      safety: 0,
+      safety: 1,
       idiomatic: 1,
     });
+    expect(summary.postedCommentCount).toBe(0);
+    expect(summary.skippedByConfidence).toBe(1);
+    expect(summary.skippedByCap).toBe(1);
+    expect(summary.checkOutput?.title).toContain("0 posted of 3");
   });
 });
 
 describe("applyFindingGates", () => {
-  test("drops an earlier low-confidence finding when a later higher-confidence finding competes for capped slots", () => {
+  test("drops below-threshold findings and preserves highest-confidence-first ordering", () => {
     const executionResult = createExecutionResultWithFindings([
-      createFinding("finding-early-low", 0.51, "clean"),
+      createFinding("finding-below-threshold", 0.49, "clean"),
       createFinding("finding-middle", 0.7, "perf"),
       createFinding("finding-late-high", 0.99, "safety"),
     ]);
 
     const gatedResult = applyFindingGates(executionResult, {
       gating: {
-        confidenceThreshold: 0,
+        confidenceThreshold: 0.5,
         maxComments: 2,
       },
       rules: {
@@ -709,9 +785,10 @@ describe("applyFindingGates", () => {
       "finding-late-high",
       "finding-middle",
     ]);
+    expect(gatedResult.summary.totalFindings).toBe(2);
   });
 
-  test("keeps highest-confidence findings when max-comments truncates", () => {
+  test("does not apply max-comments truncation inside confidence gating", () => {
     const executionResult = createExecutionResultWithFindings([
       createFinding("finding-low", 0.8, "clean"),
       createFinding("finding-top", 0.99, "perf"),
@@ -733,7 +810,10 @@ describe("applyFindingGates", () => {
     expect(gatedResult.findings.map((finding) => finding.findingId)).toEqual([
       "finding-top",
       "finding-mid",
+      "finding-lower",
+      "finding-low",
     ]);
+    expect(gatedResult.summary.totalFindings).toBe(4);
   });
 
   test("uses deterministic tie ordering for equal-confidence findings", () => {
@@ -757,7 +837,334 @@ describe("applyFindingGates", () => {
     expect(gatedResult.findings.map((finding) => finding.findingId)).toEqual([
       "a-finding",
       "m-finding",
+      "z-finding",
     ]);
+  });
+});
+
+describe("finding delivery", () => {
+  const baseFinding = {
+    installationId: 1,
+    repo: "acme/widget",
+    prNumber: 3,
+    language: "typescript",
+    category: "safety" as const,
+    status: "posted" as const,
+  };
+
+  test("prepareFindingDelivery deduplicates by stable key and applies bounded cap", () => {
+    const findings = [
+      {
+        ...baseFinding,
+        findingId: "same-key",
+        ruleId: "rule/a",
+        filePath: "src/a.ts",
+        line: 1,
+        evidence: "const a: any = source;",
+        recommendation: "Use a typed value.",
+        confidence: 0.9,
+      },
+      {
+        ...baseFinding,
+        findingId: "same-key",
+        ruleId: "rule/a",
+        filePath: "src/a.ts",
+        line: 1,
+        evidence: "const a: any = source;",
+        recommendation: "Use a typed value.",
+        confidence: 0.88,
+      },
+      {
+        ...baseFinding,
+        findingId: "cap-1",
+        ruleId: "rule/b",
+        filePath: "src/b.ts",
+        line: 2,
+        evidence: "const b: any = source;",
+        recommendation: "Use a typed value.",
+        confidence: 0.87,
+      },
+      {
+        ...baseFinding,
+        findingId: "cap-2",
+        ruleId: "rule/c",
+        filePath: "src/c.ts",
+        line: 3,
+        evidence: "const c: any = source;",
+        recommendation: "Use a typed value.",
+        confidence: 0.86,
+      },
+      {
+        ...baseFinding,
+        findingId: "below-threshold",
+        ruleId: "rule/d",
+        filePath: "src/d.ts",
+        line: 4,
+        evidence: "const d: any = source;",
+        recommendation: "Use a typed value.",
+        confidence: 0.4,
+      },
+    ];
+
+    const delivery = prepareFindingDelivery(findings, {
+      confidenceThreshold: 0.8,
+      maxComments: 2,
+    });
+
+    expect(delivery.comments).toHaveLength(2);
+    expect(delivery.skippedByConfidence).toBe(1);
+    expect(delivery.skippedByDeduplication).toBe(1);
+    expect(delivery.skippedByCap).toBe(1);
+    expect(delivery.comments[0]!.dedupeKey).toBe("acme/widget#3:same-key");
+    expect(delivery.comments[1]!.dedupeKey).toBe("acme/widget#3:cap-1");
+  });
+
+  test("prepareFindingDelivery ordering is deterministic across input permutations", () => {
+    const findings = [
+      {
+        ...baseFinding,
+        findingId: "same-key",
+        ruleId: "rule/a",
+        filePath: "src/a.ts",
+        line: 1,
+        evidence: "const a: any = source;",
+        recommendation: "Use a typed value.",
+        confidence: 0.9,
+      },
+      {
+        ...baseFinding,
+        findingId: "same-key",
+        ruleId: "rule/a",
+        filePath: "src/a.ts",
+        line: 1,
+        evidence: "const a: any = source;",
+        recommendation: "Use a typed value.",
+        confidence: 0.88,
+      },
+      {
+        ...baseFinding,
+        findingId: "cap-1",
+        ruleId: "rule/b",
+        filePath: "src/b.ts",
+        line: 2,
+        evidence: "const b: any = source;",
+        recommendation: "Use a typed value.",
+        confidence: 0.87,
+      },
+      {
+        ...baseFinding,
+        findingId: "cap-2",
+        ruleId: "rule/c",
+        filePath: "src/c.ts",
+        line: 3,
+        evidence: "const c: any = source;",
+        recommendation: "Use a typed value.",
+        confidence: 0.86,
+      },
+    ];
+
+    const forwardOrderDelivery = prepareFindingDelivery(findings, {
+      confidenceThreshold: 0.8,
+      maxComments: 2,
+    });
+    const reverseOrderDelivery = prepareFindingDelivery([...findings].reverse(), {
+      confidenceThreshold: 0.8,
+      maxComments: 2,
+    });
+
+    expect(forwardOrderDelivery.comments.map((comment) => comment.dedupeKey)).toEqual([
+      "acme/widget#3:same-key",
+      "acme/widget#3:cap-1",
+    ]);
+    expect(reverseOrderDelivery.comments.map((comment) => comment.dedupeKey)).toEqual([
+      "acme/widget#3:same-key",
+      "acme/widget#3:cap-1",
+    ]);
+    expect(reverseOrderDelivery).toEqual(forwardOrderDelivery);
+  });
+
+  test("postPreparedFindingComments only posts prepared bounded payload", async () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "one",
+          ruleId: "rule/a",
+          filePath: "src/a.ts",
+          line: 1,
+          evidence: "const a: any = source;",
+          recommendation: "Use a typed value.",
+          confidence: 0.9,
+        },
+        {
+          ...baseFinding,
+          findingId: "two",
+          ruleId: "rule/b",
+          filePath: "src/b.ts",
+          line: 1,
+          evidence: "const b: any = source;",
+          recommendation: "Use a typed value.",
+          confidence: 0.89,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 1,
+      },
+    );
+
+    const postedBodies: string[] = [];
+    const postingResult = await postPreparedFindingComments(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 3,
+        installationAccessToken: "token",
+        githubFetchOptions: workerFetchOptions,
+        comments: delivery.comments,
+      },
+      {
+        postPullRequestSummaryCommentFn: async (options) => {
+          postedBodies.push(options.body);
+          return {
+            id: 1,
+            html_url: "https://github.com/acme/widget/pull/3#issuecomment-1",
+            body: options.body,
+          };
+        },
+      },
+    );
+
+    expect(postingResult.postedCount).toBe(1);
+    expect(postingResult.successes).toHaveLength(1);
+    expect(postingResult.failures).toHaveLength(0);
+    expect(postedBodies).toHaveLength(1);
+    expect(postedBodies[0]!).toContain("\"dedupeKey\": \"acme/widget#3:one\"");
+    expect(postingResult.successes[0]!.requestOptions.installationAccessToken).toBe("[REDACTED]");
+  });
+
+  test("postPreparedFindingComments reports partial failures without throwing", async () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "one",
+          ruleId: "rule/a",
+          filePath: "src/a.ts",
+          line: 1,
+          evidence: "const a: any = source;",
+          recommendation: "Use a typed value.",
+          confidence: 0.9,
+        },
+        {
+          ...baseFinding,
+          findingId: "two",
+          ruleId: "rule/b",
+          filePath: "src/b.ts",
+          line: 1,
+          evidence: "const b: any = source;",
+          recommendation: "Use a typed value.",
+          confidence: 0.89,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 2,
+      },
+    );
+
+    const loggedErrors: string[] = [];
+    const originalConsoleError = console.error;
+    console.error = (value?: unknown): void => {
+      loggedErrors.push(String(value));
+    };
+
+    try {
+      const postingResult = await postPreparedFindingComments(
+        {
+          owner: "acme",
+          repository: "widget",
+          pullRequestNumber: 3,
+          installationAccessToken: "token",
+          githubFetchOptions: workerFetchOptions,
+          comments: delivery.comments,
+        },
+        {
+          postPullRequestSummaryCommentFn: async (options) => {
+            if (options.body.includes("\"dedupeKey\": \"acme/widget#3:two\"")) {
+              throw new Error("secondary post failed");
+            }
+
+            return {
+              id: 1,
+              html_url: "https://github.com/acme/widget/pull/3#issuecomment-1",
+              body: options.body,
+            };
+          },
+        },
+      );
+
+      expect(postingResult.postedCount).toBe(1);
+      expect(postingResult.successes).toHaveLength(1);
+      expect(postingResult.failures).toHaveLength(1);
+      expect(postingResult.successes[0]!.index).toBe(0);
+      expect(postingResult.failures[0]!.index).toBe(1);
+      expect(postingResult.failures[0]!.errorMessage).toBe("secondary post failed");
+      expect(postingResult.failures[0]!.preparedComment.dedupeKey).toBe("acme/widget#3:two");
+      expect(postingResult.failures[0]!.requestOptions.installationAccessToken).toBe("[REDACTED]");
+      expect(loggedErrors).toHaveLength(1);
+      expect(loggedErrors[0]!).toContain("acme/widget#3:two");
+      expect(loggedErrors[0]!).toContain("[REDACTED]");
+      expect(loggedErrors[0]!).not.toContain("\"installationAccessToken\":\"token\"");
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+
+  test("buildWorkerCheckOutput includes structured skip counters", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "one",
+          ruleId: "rule/a",
+          filePath: "src/a.ts",
+          line: 1,
+          evidence: "const a: any = source;",
+          recommendation: "Use a typed value.",
+          confidence: 0.6,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 20,
+      },
+    );
+
+    const checkOutput = buildWorkerCheckOutput(
+      {
+        findings: [],
+        summary: {
+          totalRules: 3,
+          successfulRules: 3,
+          failedRules: 0,
+          totalFindings: 1,
+          findingsByCategory: {
+            clean: 0,
+            perf: 0,
+            safety: 1,
+            idiomatic: 0,
+          },
+        },
+        failedRuleIds: [],
+      },
+      delivery,
+      0,
+    );
+
+    expect(checkOutput.title).toContain("0 posted of 1");
+    expect(checkOutput.summary).toContain("Rules=3/3");
+    expect(checkOutput.text).toContain("skipped_by_confidence=1");
   });
 });
 
@@ -776,6 +1183,8 @@ describe("loadConfig", () => {
     delete process.env.WORKER_GITHUB_REQUEST_TIMEOUT_MS;
     delete process.env.WORKER_GITHUB_FETCH_RETRIES;
     delete process.env.WORKER_GITHUB_RETRY_DELAY_MS;
+    delete process.env.WORKER_FINDING_CONFIDENCE_THRESHOLD;
+    delete process.env.WORKER_FINDING_MAX_COMMENTS;
 
     const config = loadConfig();
 
@@ -786,6 +1195,8 @@ describe("loadConfig", () => {
     expect(config.githubRequestTimeoutMs).toBe(10000);
     expect(config.githubFetchRetries).toBe(2);
     expect(config.githubRetryDelayMs).toBe(250);
+    expect(config.confidenceThreshold).toBe(0.78);
+    expect(config.maxComments).toBe(20);
   });
 
   test("throws for below-minimum poll interval", () => {
@@ -812,5 +1223,15 @@ describe("loadConfig", () => {
   test("throws for timeout below minimum", () => {
     process.env.WORKER_GITHUB_REQUEST_TIMEOUT_MS = "50";
     expect(() => loadConfig()).toThrow("Invalid WORKER_GITHUB_REQUEST_TIMEOUT_MS value");
+  });
+
+  test("throws for invalid confidence threshold", () => {
+    process.env.WORKER_FINDING_CONFIDENCE_THRESHOLD = "2";
+    expect(() => loadConfig()).toThrow("Invalid WORKER_FINDING_CONFIDENCE_THRESHOLD value");
+  });
+
+  test("throws for invalid max comments", () => {
+    process.env.WORKER_FINDING_MAX_COMMENTS = "0";
+    expect(() => loadConfig()).toThrow("Invalid WORKER_FINDING_MAX_COMMENTS value");
   });
 });

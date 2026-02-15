@@ -43,6 +43,11 @@ async function pollAndProcessJobs(): Promise<void> {
 
       try {
         await processAnalyzePullRequestJob(queuedJob, {
+          deliveryMode: "github",
+          findingDeliveryOptions: {
+            confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
+            maxComments: mergewiseConfig.gating.maxComments,
+          },
           mergewiseConfig,
           githubFetchOptions: {
             githubApiBaseUrl: config.githubApiBaseUrl,
