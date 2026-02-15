@@ -662,20 +662,23 @@ export async function postPreparedFindingComments(
         createdComment,
       });
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorDetail = error instanceof Error ? error.stack ?? error.message : String(error);
       console.error(
         "[worker] failed to post finding comment index=" +
           String(index) +
-          " pr=" +
-          String(options.pullRequestNumber) +
-          ": " +
-          detail,
+          " dedupeKey=" +
+          preparedComment.dedupeKey +
+          " requestOptions=" +
+          JSON.stringify(requestOptions) +
+          " error=" +
+          errorDetail,
       );
       failures.push({
         index,
         preparedComment,
         requestOptions,
-        errorMessage: detail,
+        errorMessage,
       });
     }
   }
@@ -1170,6 +1173,17 @@ async function buildAnalysisContextFromGitHub(
   };
 }
 
+/**
+ * Builds a Markdown pull request comment for one finding with human-readable context and a collapsible structured payload.
+ *
+ * @param finding - The finding object used to populate rule, location, evidence, recommendation, and payload fields.
+ * @param dedupeKey - Unique deduplication key included in the structured payload.
+ * @returns The full Markdown comment string posted to the pull request.
+ *
+ * @remarks
+ * Stringifies a subset of finding fields with 2-space indentation, includes evidence and recommendation sections,
+ * and embeds the payload inside a collapsible `<details>` block.
+ */
 function buildStructuredFindingComment(finding: Finding, dedupeKey: string): string {
   const structuredPayload = JSON.stringify(
     {
