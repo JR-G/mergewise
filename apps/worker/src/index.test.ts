@@ -692,7 +692,7 @@ describe("processAnalyzePullRequestJob", () => {
     expect(capturedRuleIds).toEqual([["rule-a"]]);
   });
 
-  test("applies confidence and max-comments gates to execution summary", async () => {
+  test("applies confidence gating to execution summary and delivery cap separately", async () => {
     process.env.GITHUB_APP_ID = "123";
     process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
 
@@ -748,27 +748,31 @@ describe("processAnalyzePullRequestJob", () => {
       },
     );
 
-    expect(summary.totalFindings).toBe(2);
+    expect(summary.totalFindings).toBe(3);
     expect(summary.findingsByCategory).toEqual({
       clean: 0,
       perf: 1,
-      safety: 0,
+      safety: 1,
       idiomatic: 1,
     });
+    expect(summary.postedCommentCount).toBe(0);
+    expect(summary.skippedByConfidence).toBe(1);
+    expect(summary.skippedByCap).toBe(1);
+    expect(summary.checkOutput?.title).toContain("2 posted of 3");
   });
 });
 
 describe("applyFindingGates", () => {
-  test("drops an earlier low-confidence finding when a later higher-confidence finding competes for capped slots", () => {
+  test("drops below-threshold findings and preserves highest-confidence-first ordering", () => {
     const executionResult = createExecutionResultWithFindings([
-      createFinding("finding-early-low", 0.51, "clean"),
+      createFinding("finding-below-threshold", 0.49, "clean"),
       createFinding("finding-middle", 0.7, "perf"),
       createFinding("finding-late-high", 0.99, "safety"),
     ]);
 
     const gatedResult = applyFindingGates(executionResult, {
       gating: {
-        confidenceThreshold: 0,
+        confidenceThreshold: 0.5,
         maxComments: 2,
       },
       rules: {
@@ -781,9 +785,10 @@ describe("applyFindingGates", () => {
       "finding-late-high",
       "finding-middle",
     ]);
+    expect(gatedResult.summary.totalFindings).toBe(2);
   });
 
-  test("keeps highest-confidence findings when max-comments truncates", () => {
+  test("does not apply max-comments truncation inside confidence gating", () => {
     const executionResult = createExecutionResultWithFindings([
       createFinding("finding-low", 0.8, "clean"),
       createFinding("finding-top", 0.99, "perf"),
@@ -805,7 +810,10 @@ describe("applyFindingGates", () => {
     expect(gatedResult.findings.map((finding) => finding.findingId)).toEqual([
       "finding-top",
       "finding-mid",
+      "finding-lower",
+      "finding-low",
     ]);
+    expect(gatedResult.summary.totalFindings).toBe(4);
   });
 
   test("uses deterministic tie ordering for equal-confidence findings", () => {
@@ -829,6 +837,7 @@ describe("applyFindingGates", () => {
     expect(gatedResult.findings.map((finding) => finding.findingId)).toEqual([
       "a-finding",
       "m-finding",
+      "z-finding",
     ]);
   });
 });
@@ -1063,37 +1072,51 @@ describe("finding delivery", () => {
       },
     );
 
-    const postingResult = await postPreparedFindingComments(
-      {
-        owner: "acme",
-        repository: "widget",
-        pullRequestNumber: 3,
-        installationAccessToken: "token",
-        githubFetchOptions: workerFetchOptions,
-        comments: delivery.comments,
-      },
-      {
-        postPullRequestSummaryCommentFn: async (options) => {
-          if (options.body.includes("\"dedupeKey\": \"acme/widget#3:two\"")) {
-            throw new Error("secondary post failed");
-          }
+    const loggedErrors: string[] = [];
+    const originalConsoleError = console.error;
+    console.error = (value?: unknown): void => {
+      loggedErrors.push(String(value));
+    };
 
-          return {
-            id: 1,
-            html_url: "https://github.com/acme/widget/pull/3#issuecomment-1",
-            body: options.body,
-          };
+    try {
+      const postingResult = await postPreparedFindingComments(
+        {
+          owner: "acme",
+          repository: "widget",
+          pullRequestNumber: 3,
+          installationAccessToken: "token",
+          githubFetchOptions: workerFetchOptions,
+          comments: delivery.comments,
         },
-      },
-    );
+        {
+          postPullRequestSummaryCommentFn: async (options) => {
+            if (options.body.includes("\"dedupeKey\": \"acme/widget#3:two\"")) {
+              throw new Error("secondary post failed");
+            }
 
-    expect(postingResult.postedCount).toBe(1);
-    expect(postingResult.successes).toHaveLength(1);
-    expect(postingResult.failures).toHaveLength(1);
-    expect(postingResult.successes[0]!.index).toBe(0);
-    expect(postingResult.failures[0]!.index).toBe(1);
-    expect(postingResult.failures[0]!.errorMessage).toBe("secondary post failed");
-    expect(postingResult.failures[0]!.preparedComment.dedupeKey).toBe("acme/widget#3:two");
+            return {
+              id: 1,
+              html_url: "https://github.com/acme/widget/pull/3#issuecomment-1",
+              body: options.body,
+            };
+          },
+        },
+      );
+
+      expect(postingResult.postedCount).toBe(1);
+      expect(postingResult.successes).toHaveLength(1);
+      expect(postingResult.failures).toHaveLength(1);
+      expect(postingResult.successes[0]!.index).toBe(0);
+      expect(postingResult.failures[0]!.index).toBe(1);
+      expect(postingResult.failures[0]!.errorMessage).toBe("secondary post failed");
+      expect(postingResult.failures[0]!.preparedComment.dedupeKey).toBe("acme/widget#3:two");
+      expect(loggedErrors).toHaveLength(1);
+      expect(loggedErrors[0]!).toContain("acme/widget#3:two");
+      expect(loggedErrors[0]!).toContain("[REDACTED]");
+      expect(loggedErrors[0]!).not.toContain("\"installationAccessToken\":\"token\"");
+    } finally {
+      console.error = originalConsoleError;
+    }
   });
 
   test("buildWorkerCheckOutput includes structured skip counters", () => {

@@ -664,13 +664,14 @@ export async function postPreparedFindingComments(
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorDetail = error instanceof Error ? error.stack ?? error.message : String(error);
+      const sanitizedRequestOptions = sanitizePostCommentRequestOptionsForLogging(requestOptions);
       console.error(
         "[worker] failed to post finding comment index=" +
           String(index) +
           " dedupeKey=" +
           preparedComment.dedupeKey +
           " requestOptions=" +
-          JSON.stringify(requestOptions) +
+          JSON.stringify(sanitizedRequestOptions) +
           " error=" +
           errorDetail,
       );
@@ -687,6 +688,21 @@ export async function postPreparedFindingComments(
     postedCount: successes.length,
     successes,
     failures,
+  };
+}
+
+/**
+ * Builds a redacted logging payload for one PR comment post request.
+ *
+ * @param requestOptions - Raw post request options containing the installation token.
+ * @returns Safe request options for logs with token removed.
+ */
+function sanitizePostCommentRequestOptionsForLogging(
+  requestOptions: PostPullRequestSummaryCommentOptions,
+): PostPullRequestSummaryCommentOptions {
+  return {
+    ...requestOptions,
+    installationAccessToken: "[REDACTED]",
   };
 }
 
@@ -846,8 +862,7 @@ export async function processAnalyzePullRequestJob(
     },
   });
   const gatedExecutionResult = applyFindingGates(executionResult, mergewiseConfig);
-
-  const delivery = prepareFindingDelivery(gatedExecutionResult.findings, findingDeliveryOptions);
+  const delivery = prepareFindingDelivery(executionResult.findings, findingDeliveryOptions);
   const checkOutput = buildWorkerCheckOutput(gatedExecutionResult, delivery);
 
   let postedCommentCount = 0;
@@ -1018,23 +1033,21 @@ export function selectRulesForExecution(
 }
 
 /**
- * Applies confidence and max-comment gating to findings.
+ * Applies confidence gating to findings.
  *
  * @param executionResult - Rule-engine output before worker gating.
  * @param mergewiseConfig - Runtime gating thresholds and caps.
- * @returns Execution result with gated findings and recomputed summary counts.
+ * @returns Execution result with confidence-gated findings and recomputed summary counts.
  */
 export function applyFindingGates(
   executionResult: RuleExecutionResult,
   mergewiseConfig: MergewiseConfig,
 ): RuleExecutionResult {
   const confidenceThreshold = mergewiseConfig.gating.confidenceThreshold;
-  const maxComments = mergewiseConfig.gating.maxComments;
   const confidenceFilteredFindings = executionResult.findings.filter(
     (finding) => finding.confidence >= confidenceThreshold,
   );
   const sortedFindings = [...confidenceFilteredFindings].sort(compareFindingsForGating);
-  const gatedFindings = sortedFindings.slice(0, maxComments);
   const findingsByCategory = {
     clean: 0,
     perf: 0,
@@ -1042,15 +1055,15 @@ export function applyFindingGates(
     idiomatic: 0,
   };
 
-  for (const finding of gatedFindings) {
+  for (const finding of sortedFindings) {
     findingsByCategory[finding.category] += 1;
   }
 
   return {
-    findings: gatedFindings,
+    findings: sortedFindings,
     summary: {
       ...executionResult.summary,
-      totalFindings: gatedFindings.length,
+      totalFindings: sortedFindings.length,
       findingsByCategory,
     },
     failedRuleIds: executionResult.failedRuleIds,
