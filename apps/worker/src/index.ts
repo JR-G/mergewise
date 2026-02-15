@@ -8,6 +8,10 @@ import {
   type GitHubPullRequestFile,
   type PostPullRequestSummaryCommentOptions,
 } from "@mergewise/github-client";
+import {
+  DEFAULT_MERGEWISE_CONFIG,
+  type MergewiseConfig,
+} from "@mergewise/config-loader";
 import type { RuleExecutionResult } from "@mergewise/rule-engine";
 import { executeRules } from "@mergewise/rule-engine";
 import { tsReactRules } from "@mergewise/rule-ts-react";
@@ -331,6 +335,10 @@ export interface WorkerProcessingDependencies {
   readonly postPullRequestSummaryCommentFn?: (
     options: PostPullRequestSummaryCommentOptions,
   ) => Promise<{ id: number; html_url: string; body: string }>;
+  /**
+   * Runtime rule selection and gating config.
+   */
+  readonly mergewiseConfig?: MergewiseConfig;
 }
 
 /**
@@ -702,15 +710,17 @@ export async function processAnalyzePullRequestJob(
   const errorLogger = dependencies.logError ?? console.error;
   const warnLogger = dependencies.logWarn ?? infoLogger ?? errorLogger;
   const rules = dependencies.rules ?? tsReactRules;
+  const mergewiseConfig = dependencies.mergewiseConfig ?? DEFAULT_MERGEWISE_CONFIG;
+  const selectedRules = selectRulesForExecution(rules, mergewiseConfig);
   const executeRulesFn = dependencies.executeRulesFn ?? executeRules;
   const githubFetchOptions = dependencies.githubFetchOptions ?? resolveGitHubFetchOptions();
   const findingDeliveryOptions = dependencies.findingDeliveryOptions ?? {
-    confidenceThreshold: 0.78,
-    maxComments: 20,
+    confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
+    maxComments: mergewiseConfig.gating.maxComments,
   };
 
   infoLogger(
-    `[worker] processing job=${job.job_id} key=${key} installation=${job.installation_id ?? "none"} rules=${rules.length}`,
+    `[worker] processing job=${job.job_id} key=${key} installation=${job.installation_id ?? "none"} rules=${selectedRules.length}`,
   );
 
   const githubAnalysisContext = await buildAnalysisContextFromGitHub(
@@ -728,7 +738,7 @@ export async function processAnalyzePullRequestJob(
 
   const executionResult = await executeRulesFn({
     context: githubAnalysisContext.analysisContext,
-    rules,
+    rules: selectedRules,
     onRuleExecutionError: (rule, error) => {
       const detail = error instanceof Error ? error.stack ?? error.message : String(error);
       errorLogger(
@@ -736,9 +746,10 @@ export async function processAnalyzePullRequestJob(
       );
     },
   });
+  const gatedExecutionResult = applyFindingGates(executionResult, mergewiseConfig);
 
-  const delivery = prepareFindingDelivery(executionResult.findings, findingDeliveryOptions);
-  const checkOutput = buildWorkerCheckOutput(executionResult, delivery);
+  const delivery = prepareFindingDelivery(gatedExecutionResult.findings, findingDeliveryOptions);
+  const checkOutput = buildWorkerCheckOutput(gatedExecutionResult, delivery);
 
   let postedCommentCount = 0;
   if (dependencies.deliveryMode === "github" && delivery.comments.length > 0) {
@@ -760,7 +771,7 @@ export async function processAnalyzePullRequestJob(
   const summary = buildJobSummary(
     job,
     key,
-    executionResult,
+    gatedExecutionResult,
     (dependencies.now ?? (() => new Date()))().toISOString(),
   );
   infoLogger(
@@ -871,6 +882,118 @@ export function buildJobSummary(
     failedRuleIds: executionResult.failedRuleIds,
     processedAt,
   };
+}
+
+/**
+ * Filters rule list based on config include/exclude selectors.
+ *
+ * @remarks
+ * `include` acts as an allowlist when non-empty; `exclude` always removes ids.
+ * Output order is stable and follows the original rule order.
+ *
+ * @param rules - Candidate rules available to the worker.
+ * @param mergewiseConfig - Runtime include/exclude settings.
+ * @returns Rule list that should be executed.
+ */
+export function selectRulesForExecution(
+  rules: readonly Rule[],
+  mergewiseConfig: MergewiseConfig,
+): readonly Rule[] {
+  const includeSet = new Set(mergewiseConfig.rules.include);
+  const excludeSet = new Set(mergewiseConfig.rules.exclude);
+  const shouldApplyInclude = includeSet.size > 0;
+
+  return rules.filter((rule) => {
+    const ruleId = rule.metadata.ruleId;
+    if (excludeSet.has(ruleId)) {
+      return false;
+    }
+
+    if (!shouldApplyInclude) {
+      return true;
+    }
+
+    return includeSet.has(ruleId);
+  });
+}
+
+/**
+ * Applies confidence and max-comment gating to findings.
+ *
+ * @param executionResult - Rule-engine output before worker gating.
+ * @param mergewiseConfig - Runtime gating thresholds and caps.
+ * @returns Execution result with gated findings and recomputed summary counts.
+ */
+export function applyFindingGates(
+  executionResult: RuleExecutionResult,
+  mergewiseConfig: MergewiseConfig,
+): RuleExecutionResult {
+  const confidenceThreshold = mergewiseConfig.gating.confidenceThreshold;
+  const maxComments = mergewiseConfig.gating.maxComments;
+  const confidenceFilteredFindings = executionResult.findings.filter(
+    (finding) => finding.confidence >= confidenceThreshold,
+  );
+  const sortedFindings = [...confidenceFilteredFindings].sort(compareFindingsForGating);
+  const gatedFindings = sortedFindings.slice(0, maxComments);
+  const findingsByCategory = {
+    clean: 0,
+    perf: 0,
+    safety: 0,
+    idiomatic: 0,
+  };
+
+  for (const finding of gatedFindings) {
+    findingsByCategory[finding.category] += 1;
+  }
+
+  return {
+    findings: gatedFindings,
+    summary: {
+      ...executionResult.summary,
+      totalFindings: gatedFindings.length,
+      findingsByCategory,
+    },
+    failedRuleIds: executionResult.failedRuleIds,
+  };
+}
+
+function compareFindingsForGating(
+  leftFinding: {
+    readonly confidence: number;
+    readonly findingId: string;
+    readonly ruleId: string;
+    readonly filePath: string;
+    readonly line: number;
+  },
+  rightFinding: {
+    readonly confidence: number;
+    readonly findingId: string;
+    readonly ruleId: string;
+    readonly filePath: string;
+    readonly line: number;
+  },
+): number {
+  const confidenceDifference = rightFinding.confidence - leftFinding.confidence;
+  if (confidenceDifference !== 0) {
+    return confidenceDifference;
+  }
+
+  const findingIdComparison = leftFinding.findingId.localeCompare(rightFinding.findingId);
+  if (findingIdComparison !== 0) {
+    return findingIdComparison;
+  }
+
+  const ruleIdComparison = leftFinding.ruleId.localeCompare(rightFinding.ruleId);
+  if (ruleIdComparison !== 0) {
+    return ruleIdComparison;
+  }
+
+  const filePathComparison = leftFinding.filePath.localeCompare(rightFinding.filePath);
+  if (filePathComparison !== 0) {
+    return filePathComparison;
+  }
+
+  return leftFinding.line - rightFinding.line;
 }
 
 async function buildAnalysisContextFromGitHub(

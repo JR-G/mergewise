@@ -2,6 +2,7 @@ import {
   DEFAULT_JOB_FILE_PATH,
   readAllAnalyzePullRequestJobs,
 } from "@mergewise/job-store";
+import { loadMergewiseConfig } from "@mergewise/config-loader";
 import type { AnalyzePullRequestJob } from "@mergewise/shared-types";
 
 import {
@@ -14,6 +15,7 @@ import {
 } from "./index";
 
 const config = loadConfig();
+const mergewiseConfig = loadMergewiseConfig();
 const processedKeyState = createProcessedKeyState();
 const pollCycleState = { isPollInFlight: false };
 const errorLogger = console.error;
@@ -43,9 +45,10 @@ async function pollAndProcessJobs(): Promise<void> {
         await processAnalyzePullRequestJob(queuedJob, {
           deliveryMode: "github",
           findingDeliveryOptions: {
-            confidenceThreshold: config.confidenceThreshold,
-            maxComments: config.maxComments,
+            confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
+            maxComments: mergewiseConfig.gating.maxComments,
           },
+          mergewiseConfig,
           githubFetchOptions: {
             githubApiBaseUrl: config.githubApiBaseUrl,
             githubUserAgent: config.githubUserAgent,
