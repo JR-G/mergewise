@@ -203,7 +203,7 @@ function toRuleList(value: unknown, fieldPath: string, filePath: string): string
       );
     }
 
-    return entry;
+    return entry.trim();
   });
 
   return normalizedRules;
