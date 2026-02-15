@@ -56,6 +56,10 @@ export const unsafeAnyUsageRule: StatelessRule = {
         addedLine.evidence,
         addedLine.sanitizedContent,
       );
+      const patchPreview =
+        suggestedReplacement === null
+          ? undefined
+          : buildPatchPreview(addedLine.hunkHeader, addedLine.evidence, suggestedReplacement);
 
       findings.push(
         buildFinding(context, {
@@ -65,6 +69,7 @@ export const unsafeAnyUsageRule: StatelessRule = {
           line: addedLine.lineNumber,
           evidence: addedLine.evidence,
           recommendation: buildUnsafeAnyRecommendation(suggestedReplacement),
+          patchPreview,
           confidence: 0.95,
         }),
       );
