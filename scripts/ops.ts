@@ -870,29 +870,33 @@ function findPullRequestByHead(branchName: string): PullRequestReference | null 
   try {
     const rawResult = execFileSync(
       "gh",
-      ["pr", "view", "--head", branchName, "--json", "number,url"],
+      ["pr", "list", "--state", "open", "--head", branchName, "--json", "number,url", "--limit", "1"],
       {
         cwd: repositoryRoot,
         encoding: "utf8",
       },
     );
 
-    const parsedResult = JSON.parse(rawResult) as Partial<PullRequestReference>;
+    const parsedResult = JSON.parse(rawResult) as Array<Partial<PullRequestReference>>;
+    const firstPullRequest = parsedResult[0];
     if (
-      typeof parsedResult.number === "number" &&
-      typeof parsedResult.url === "string"
+      firstPullRequest &&
+      typeof firstPullRequest.number === "number" &&
+      typeof firstPullRequest.url === "string"
     ) {
       return {
-        number: parsedResult.number,
-        url: parsedResult.url,
+        number: firstPullRequest.number,
+        url: firstPullRequest.url,
       };
     }
 
     return null;
   } catch (caughtError) {
     const errorText = formatError(caughtError);
-    if (errorText.includes("no pull requests found")) {
-      return null;
+    if (errorText.includes("error connecting to api.github.com")) {
+      throw new Error(
+        `findPullRequestByHead(${branchName}) failed in ${repositoryRoot}: GitHub API is unreachable`,
+      );
     }
 
     throw new Error(
@@ -910,6 +914,7 @@ function openPullRequestForTask(taskIdentifier: string): void {
   reviewTaskReadiness(taskIdentifier);
   const boardEntry = resolveTaskBoardEntry(taskIdentifier);
   const branchName = boardEntry.branchName;
+  const worktreePath = resolveWorktreePath(branchName);
   const changedPaths = listChangedPathsAgainstMain(branchName);
   const pullRequestTitle = buildPullRequestTitle(boardEntry);
   const pullRequestBody = buildPullRequestBody(boardEntry, changedPaths);
@@ -964,6 +969,16 @@ function openPullRequestForTask(taskIdentifier: string): void {
       },
     );
   } catch (caughtError) {
+    const errorText = formatError(caughtError);
+    if (errorText.includes("error connecting to api.github.com")) {
+      fail(
+        `openPullRequestForTask(${taskIdentifier}) failed: GitHub API is unreachable. ` +
+        `Retry later or run manually:\n` +
+        `git -C ${worktreePath} push -u origin ${branchName}\n` +
+        `gh pr create --base main --head ${branchName} --title ${JSON.stringify(pullRequestTitle)} --body-file ${pullRequestBodyFilePath}`,
+      );
+    }
+
     fail(`openPullRequestForTask(${taskIdentifier}) failed: ${formatError(caughtError)}`);
   }
 }
