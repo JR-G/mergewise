@@ -662,11 +662,20 @@ export async function postPreparedFindingComments(
         createdComment,
       });
     } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(
+        "[worker] failed to post finding comment index=" +
+          String(index) +
+          " pr=" +
+          String(options.pullRequestNumber) +
+          ": " +
+          detail,
+      );
       failures.push({
         index,
         preparedComment,
         requestOptions,
-        errorMessage: error instanceof Error ? error.message : String(error),
+        errorMessage: detail,
       });
     }
   }
