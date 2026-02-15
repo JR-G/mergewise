@@ -10,6 +10,7 @@ import {
   isWebhookSignatureValid,
   loadConfig,
   logWebhookFailure,
+  readWebhookRequestBody,
   SUPPORTED_PULL_REQUEST_ACTIONS,
 } from "./index";
 
@@ -221,6 +222,80 @@ describe("createWebhookErrorResponse", () => {
         message: "Invalid signature",
       },
     });
+  });
+});
+
+describe("readWebhookRequestBody", () => {
+  test("returns raw body when request text succeeds", async () => {
+    const request = new Request("http://localhost/webhook", {
+      method: "POST",
+      body: '{"ok":true}',
+    });
+
+    const result = await readWebhookRequestBody(
+      request,
+      "request-100",
+      "pull_request",
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      rawBody: '{"ok":true}',
+    });
+  });
+
+  test("returns typed error response when request body read fails", async () => {
+    const originalConsoleError = console.error;
+    const capturedLogs: unknown[] = [];
+    console.error = (value?: unknown): void => {
+      capturedLogs.push(value);
+    };
+
+    const failingRequest = {
+      text: async (): Promise<string> => {
+        throw new Error("body stream failed");
+      },
+    } as unknown as Request;
+
+    try {
+      const result = await readWebhookRequestBody(
+        failingRequest,
+        "request-101",
+        "pull_request",
+      );
+
+      expect(result.ok).toBe(false);
+      if (result.ok) {
+        throw new Error("Expected request body read to fail");
+      }
+
+      expect(result.response.status).toBe(400);
+      expect(result.response.headers.get("x-request-id")).toBe("request-101");
+      expect(await result.response.json()).toEqual({
+        status: "error",
+        request_id: "request-101",
+        error: {
+          code: "request_body_read_failed",
+          message: "Failed to read request body",
+        },
+      });
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    expect(capturedLogs).toHaveLength(1);
+    const loggedPayload = JSON.parse(String(capturedLogs[0])) as {
+      error_code: string;
+      message: string;
+      request_id: string;
+      github_event: string;
+      cause: string;
+    };
+    expect(loggedPayload.error_code).toBe("request_body_read_failed");
+    expect(loggedPayload.message).toBe("Failed to read request body");
+    expect(loggedPayload.request_id).toBe("request-101");
+    expect(loggedPayload.github_event).toBe("pull_request");
+    expect(loggedPayload.cause).toContain("body stream failed");
   });
 });
 
