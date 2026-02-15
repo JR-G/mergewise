@@ -10,6 +10,7 @@ import {
   isWebhookSignatureValid,
   loadConfig,
   logWebhookFailure,
+  readWebhookRequestBody,
 } from "./index";
 
 const config = loadConfig();
@@ -55,7 +56,12 @@ Bun.serve({
       );
     }
 
-    const rawBody = await request.text();
+    const bodyReadResult = await readWebhookRequestBody(request, requestId, eventName);
+    if (!bodyReadResult.ok) {
+      return bodyReadResult.response;
+    }
+
+    const rawBody = bodyReadResult.rawBody;
     const signatureHeader = request.headers.get("x-hub-signature-256");
     if (!isWebhookSignatureValid(rawBody, signatureHeader, config.webhookSecret)) {
       logWebhookFailure({

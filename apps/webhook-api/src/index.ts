@@ -39,6 +39,7 @@ export interface WebhookErrorEnvelope {
 export type WebhookErrorCode =
   | "method_not_allowed"
   | "invalid_signature"
+  | "request_body_read_failed"
   | "invalid_json_payload"
   | "unsupported_pull_request_payload"
   | "queue_enqueue_failed";
@@ -175,6 +176,31 @@ export function createWebhookErrorResponse(
 }
 
 /**
+ * Result of reading an incoming webhook request body.
+ */
+export type WebhookRequestBodyReadResult =
+  | {
+      /**
+       * Indicates request body read succeeded.
+       */
+      ok: true;
+      /**
+       * Raw request body text.
+       */
+      rawBody: string;
+    }
+  | {
+      /**
+       * Indicates request body read failed.
+       */
+      ok: false;
+      /**
+       * Prebuilt API error response for request body read failures.
+       */
+      response: Response;
+    };
+
+/**
  * Emits a structured webhook failure log for operational debugging.
  *
  * @param logEvent - Structured failure event payload.
@@ -194,6 +220,46 @@ export function logWebhookFailure(
   };
 
   console.error(JSON.stringify(serializedLogEvent));
+}
+
+/**
+ * Reads request text and maps body stream failures to stable API errors.
+ *
+ * @param request - Incoming HTTP request.
+ * @param requestId - Correlation request id.
+ * @param githubEvent - Optional GitHub event header value.
+ * @returns Success payload with raw body, or a prebuilt error response.
+ */
+export async function readWebhookRequestBody(
+  request: Request,
+  requestId: string,
+  githubEvent: string | null,
+): Promise<WebhookRequestBodyReadResult> {
+  try {
+    const rawBody = await request.text();
+    return { ok: true, rawBody };
+  } catch (error) {
+    const cause = error instanceof Error ? error.stack ?? error.message : String(error);
+    logWebhookFailure({
+      event: "webhook_request_failed",
+      request_id: requestId,
+      http_status: 400,
+      error_code: "request_body_read_failed",
+      message: "Failed to read request body",
+      github_event: githubEvent,
+      cause,
+    });
+
+    return {
+      ok: false,
+      response: createWebhookErrorResponse(
+        "request_body_read_failed",
+        "Failed to read request body",
+        400,
+        requestId,
+      ),
+    };
+  }
 }
 
 /**
