@@ -454,6 +454,50 @@ export interface PollCycleState {
 }
 
 /**
+ * Timer handle type used by worker polling lifecycle controls.
+ */
+export type WorkerPollingTimerHandle = ReturnType<typeof setInterval>;
+
+/**
+ * Dependency overrides for polling loop interval lifecycle.
+ */
+export interface PollingLoopDependencies {
+  /**
+   * Interval scheduler implementation.
+   */
+  readonly setIntervalFn?: (
+    callback: () => void,
+    delayMs: number,
+  ) => WorkerPollingTimerHandle;
+  /**
+   * Interval cancellation implementation.
+   */
+  readonly clearIntervalFn?: (timerHandle: WorkerPollingTimerHandle) => void;
+  /**
+   * Error logger for poll lifecycle failures.
+   */
+  readonly logError?: (message: string) => void;
+}
+
+/**
+ * Lifecycle controller for worker polling intervals.
+ */
+export interface PollingLoopController {
+  /**
+   * Starts periodic polling when not already running.
+   */
+  start: () => void;
+  /**
+   * Stops periodic polling and waits for in-flight poll completion.
+   */
+  stop: () => Promise<void>;
+  /**
+   * Indicates whether the interval is currently active.
+   */
+  isRunning: () => boolean;
+}
+
+/**
  * Loads worker runtime configuration from environment variables.
  *
  * @returns Validated worker configuration.
@@ -951,6 +995,93 @@ export async function runPollCycleWithInFlightGuard(
   } finally {
     state.isPollInFlight = false;
   }
+}
+
+/**
+ * Creates an interval-backed polling loop with graceful stop semantics.
+ *
+ * @remarks
+ * `stop` clears the interval first and then waits for one in-flight cycle to finish.
+ * Repeated stop requests while shutdown is in progress reuse the same promise.
+ *
+ * @param pollIntervalMs - Interval duration in milliseconds.
+ * @param pollCycle - Poll cycle callback to execute on each tick.
+ * @param dependencies - Optional interval and logging overrides for tests.
+ * @returns Polling loop lifecycle controller.
+ */
+export function createPollingLoopController(
+  pollIntervalMs: number,
+  pollCycle: () => Promise<void>,
+  dependencies: PollingLoopDependencies = {},
+): PollingLoopController {
+  const setIntervalFn: NonNullable<PollingLoopDependencies["setIntervalFn"]> =
+    dependencies.setIntervalFn ??
+    ((callback, delayMs) => setInterval(callback, delayMs) as WorkerPollingTimerHandle);
+  const clearIntervalFn: NonNullable<PollingLoopDependencies["clearIntervalFn"]> =
+    dependencies.clearIntervalFn ??
+    ((timerHandle) => clearInterval(timerHandle as ReturnType<typeof setInterval>));
+  const errorLogger = dependencies.logError ?? console.error;
+
+  let timerHandle: WorkerPollingTimerHandle | null = null;
+  let inFlightPollPromise: Promise<void> | null = null;
+  let shutdownPromise: Promise<void> | null = null;
+  let isShutdownRequested = false;
+
+  const runPollCycle = (): void => {
+    if (isShutdownRequested) {
+      return;
+    }
+
+    const pendingPollPromise = pollCycle().catch((error) => {
+      const details = error instanceof Error ? error.stack ?? error.message : String(error);
+      errorLogger(`[worker] poll cycle failed: ${details}`);
+    });
+    inFlightPollPromise = pendingPollPromise.finally(() => {
+      if (inFlightPollPromise === pendingPollPromise) {
+        inFlightPollPromise = null;
+      }
+    });
+  };
+
+  const start = (): void => {
+    if (timerHandle !== null || shutdownPromise !== null) {
+      return;
+    }
+
+    isShutdownRequested = false;
+    timerHandle = setIntervalFn(() => {
+      runPollCycle();
+    }, pollIntervalMs);
+  };
+
+  const stop = async (): Promise<void> => {
+    if (shutdownPromise !== null) {
+      await shutdownPromise;
+      return;
+    }
+
+    shutdownPromise = (async () => {
+      isShutdownRequested = true;
+      if (timerHandle !== null) {
+        clearIntervalFn(timerHandle);
+        timerHandle = null;
+      }
+
+      if (inFlightPollPromise !== null) {
+        await inFlightPollPromise;
+      }
+    })();
+
+    try {
+      await shutdownPromise;
+    } finally {
+      shutdownPromise = null;
+    }
+  };
+
+  const isRunning = (): boolean => timerHandle !== null;
+
+  return { start, stop, isRunning };
 }
 
 /**
