@@ -13,6 +13,10 @@ import {
   processAnalyzePullRequestJob,
   runPollCycleWithInFlightGuard,
   trackProcessedKey,
+  type PollingLoopController,
+  type WorkerConfig,
+  type WorkerFindingDeliveryOptions,
+  type WorkerGitHubFetchOptions,
 } from "./index";
 
 /**
@@ -40,6 +44,65 @@ export interface WorkerShutdownSignalHandlerDependencies {
    * Error logger for shutdown failures.
    */
   readonly logError?: (message: string) => void;
+}
+
+/**
+ * Dependencies for worker process startup wiring.
+ */
+export interface StartWorkerProcessDependencies {
+  /**
+   * Worker runtime configuration loader.
+   */
+  readonly loadConfigFn?: () => WorkerConfig;
+  /**
+   * Mergewise runtime config loader.
+   */
+  readonly loadMergewiseConfigFn?: typeof loadMergewiseConfig;
+  /**
+   * Queue reader implementation.
+   */
+  readonly readAllAnalyzePullRequestJobsFn?: typeof readAllAnalyzePullRequestJobs;
+  /**
+   * Job processing implementation.
+   */
+  readonly processAnalyzePullRequestJobFn?: typeof processAnalyzePullRequestJob;
+  /**
+   * Polling loop constructor.
+   */
+  readonly createPollingLoopControllerFn?: (
+    pollIntervalMs: number,
+    pollCycle: () => Promise<void>,
+    dependencies: { readonly logError?: (message: string) => void },
+  ) => PollingLoopController;
+  /**
+   * Signal registration implementation.
+   */
+  readonly registerSignalHandlerFn?: (
+    signal: WorkerShutdownSignal,
+    listener: (signal: WorkerShutdownSignal) => void,
+  ) => void;
+  /**
+   * Info logger for startup and lifecycle events.
+   */
+  readonly logInfo?: (message: string) => void;
+  /**
+   * Error logger for runtime failures.
+   */
+  readonly logError?: (message: string) => void;
+}
+
+/**
+ * Runtime handles returned by worker startup.
+ */
+export interface StartedWorkerProcess {
+  /**
+   * Graceful shutdown hook for tests and orchestration.
+   */
+  readonly shutdown: () => Promise<void>;
+  /**
+   * Signal entrypoint used for graceful termination.
+   */
+  readonly handleSignal: (signal: WorkerShutdownSignal) => void;
 }
 
 /**
@@ -81,23 +144,50 @@ export function createShutdownSignalHandler(
 /**
  * Starts the worker polling process and installs graceful shutdown handlers.
  */
-export function startWorkerProcess(): void {
-  const config = loadConfig();
-  const mergewiseConfig = loadMergewiseConfig();
+export function startWorkerProcess(
+  dependencies: StartWorkerProcessDependencies = {},
+): StartedWorkerProcess {
+  const loadConfigFn = dependencies.loadConfigFn ?? loadConfig;
+  const loadMergewiseConfigFn = dependencies.loadMergewiseConfigFn ?? loadMergewiseConfig;
+  const readAllAnalyzePullRequestJobsFn =
+    dependencies.readAllAnalyzePullRequestJobsFn ?? readAllAnalyzePullRequestJobs;
+  const processAnalyzePullRequestJobFn =
+    dependencies.processAnalyzePullRequestJobFn ?? processAnalyzePullRequestJob;
+  const createPollingLoopControllerFn =
+    dependencies.createPollingLoopControllerFn ?? createPollingLoopController;
+  const registerSignalHandlerFn =
+    dependencies.registerSignalHandlerFn ??
+    ((signal, listener) => process.on(signal, listener));
+  const infoLogger = dependencies.logInfo ?? console.log;
+  const errorLogger = dependencies.logError ?? console.error;
+
+  const config = loadConfigFn();
+  const mergewiseConfig = loadMergewiseConfigFn();
   const processedKeyState = createProcessedKeyState();
   const pollCycleState = { isPollInFlight: false };
-  const errorLogger = console.error;
 
   const pollAndProcessJobs = async (): Promise<void> => {
     const didRun = await runPollCycleWithInFlightGuard(pollCycleState, async () => {
       let queuedJobs: AnalyzePullRequestJob[];
       try {
-        queuedJobs = readAllAnalyzePullRequestJobs();
+        queuedJobs = readAllAnalyzePullRequestJobsFn();
       } catch (error) {
         const details = error instanceof Error ? error.stack ?? error.message : String(error);
         errorLogger(`[worker] failed to read queued jobs: ${details}`);
         return;
       }
+
+      const findingDeliveryOptions: WorkerFindingDeliveryOptions = {
+        confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
+        maxComments: mergewiseConfig.gating.maxComments,
+      };
+      const githubFetchOptions: WorkerGitHubFetchOptions = {
+        githubApiBaseUrl: config.githubApiBaseUrl,
+        githubUserAgent: config.githubUserAgent,
+        githubRequestTimeoutMs: config.githubRequestTimeoutMs,
+        githubFetchRetries: config.githubFetchRetries,
+        githubRetryDelayMs: config.githubRetryDelayMs,
+      };
 
       for (const queuedJob of queuedJobs) {
         const idempotencyKey = buildIdempotencyKey(queuedJob);
@@ -106,20 +196,11 @@ export function startWorkerProcess(): void {
         }
 
         try {
-          await processAnalyzePullRequestJob(queuedJob, {
+          await processAnalyzePullRequestJobFn(queuedJob, {
             deliveryMode: "github",
-            findingDeliveryOptions: {
-              confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
-              maxComments: mergewiseConfig.gating.maxComments,
-            },
+            findingDeliveryOptions,
             mergewiseConfig,
-            githubFetchOptions: {
-              githubApiBaseUrl: config.githubApiBaseUrl,
-              githubUserAgent: config.githubUserAgent,
-              githubRequestTimeoutMs: config.githubRequestTimeoutMs,
-              githubFetchRetries: config.githubFetchRetries,
-              githubRetryDelayMs: config.githubRetryDelayMs,
-            },
+            githubFetchOptions,
           });
           trackProcessedKey(idempotencyKey, processedKeyState, config.maxProcessedKeys);
         } catch (error) {
@@ -130,25 +211,30 @@ export function startWorkerProcess(): void {
     });
 
     if (!didRun) {
-      console.log("[worker] poll skipped: previous cycle still in flight");
+      infoLogger("[worker] poll skipped: previous cycle still in flight");
     }
   };
 
-  const pollingLoop = createPollingLoopController(config.pollIntervalMs, pollAndProcessJobs, {
+  const pollingLoop = createPollingLoopControllerFn(config.pollIntervalMs, pollAndProcessJobs, {
     logError: errorLogger,
   });
   const shutdownSignalHandler = createShutdownSignalHandler({
     shutdown: () => pollingLoop.stop(),
-    logInfo: console.log,
+    logInfo: infoLogger,
     logError: errorLogger,
   });
 
-  console.log(
+  infoLogger(
     `[worker] started (poll=${config.pollIntervalMs}ms, max_keys=${config.maxProcessedKeys}, source=${DEFAULT_JOB_FILE_PATH})`,
   );
   pollingLoop.start();
-  process.on("SIGTERM", shutdownSignalHandler);
-  process.on("SIGINT", shutdownSignalHandler);
+  registerSignalHandlerFn("SIGTERM", shutdownSignalHandler);
+  registerSignalHandlerFn("SIGINT", shutdownSignalHandler);
+
+  return {
+    shutdown: () => pollingLoop.stop(),
+    handleSignal: shutdownSignalHandler,
+  };
 }
 
 if (import.meta.main) {
