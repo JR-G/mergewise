@@ -133,3 +133,26 @@ bun run ops:open-pr -- <task-id>
 - `ops:open-pr` runs review-ready checks before creating the PR.
 - `ops:review-ready` runs `quality:gates`, lint, typecheck, test, and build in the task worktree.
 - `ops:open-pr` auto-generates a compliant PR body and updates an existing PR for the branch when one already exists.
+
+## New Chat Kickoff Contract
+
+Use this when starting a brand new assistant chat so orchestration stays deterministic:
+
+```text
+Act as tech lead. Follow docs-only session kickoff. Use only the canonical flow:
+1) start batch session
+2) verify board/worktrees
+3) output exactly one launch command per agent window
+4) enforce completion via bun run ops:finish -- <task-id>
+If any step fails, stop and fix tooling before giving me more commands.
+```
+
+Required tech lead verification before launching agents:
+
+```bash
+bun run ops:start-batch -- <session-id> <task-id> [task-id...]
+bun run ops:status
+git worktree list
+```
+
+If verification fails, fix the tooling or runtime state first. Do not provide fallback multi-path instructions to the user.
