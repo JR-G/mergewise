@@ -11,6 +11,7 @@ import {
   buildWorkerCheckOutput,
   buildIdempotencyKey,
   createProcessedKeyState,
+  createPollingLoopController,
   fetchPullRequestFilesWithRetry,
   loadConfig,
   parseRepositoryFullName,
@@ -19,6 +20,7 @@ import {
   processAnalyzePullRequestJob,
   runPollCycleWithInFlightGuard,
   trackProcessedKey,
+  type WorkerPollingTimerHandle,
   type WorkerGitHubFetchOptions,
 } from "./index";
 
@@ -264,6 +266,82 @@ describe("runPollCycleWithInFlightGuard", () => {
 
     expect(firstRunResult).toBe(true);
     expect(state.isPollInFlight).toBe(false);
+  });
+});
+
+describe("createPollingLoopController", () => {
+  test("starts interval once and clears it on stop", async () => {
+    const scheduledCallbacks: Array<() => void> = [];
+    const clearedTimers: WorkerPollingTimerHandle[] = [];
+    const timerHandle = {} as WorkerPollingTimerHandle;
+    let runCount = 0;
+
+    const controller = createPollingLoopController(
+      250,
+      async () => {
+        runCount += 1;
+      },
+      {
+        setIntervalFn: (callback) => {
+          scheduledCallbacks.push(callback);
+          return timerHandle;
+        },
+        clearIntervalFn: (receivedTimerHandle) => {
+          clearedTimers.push(receivedTimerHandle);
+        },
+      },
+    );
+
+    controller.start();
+    controller.start();
+    expect(controller.isRunning()).toBe(true);
+    expect(scheduledCallbacks).toHaveLength(1);
+
+    const [scheduledCallback] = scheduledCallbacks;
+    await scheduledCallback?.();
+    expect(runCount).toBe(1);
+
+    await controller.stop();
+    expect(controller.isRunning()).toBe(false);
+    expect(clearedTimers).toEqual([timerHandle]);
+  });
+
+  test("stop waits for in-flight poll cycle completion", async () => {
+    const scheduledCallbacks: Array<() => void> = [];
+    let releasePollCycle: () => void = () => {};
+    const pollCycleStarted = new Promise<void>((resolve) => {
+      releasePollCycle = resolve;
+    });
+    const timerHandle = {} as WorkerPollingTimerHandle;
+
+    const controller = createPollingLoopController(
+      250,
+      async () => {
+        await pollCycleStarted;
+      },
+      {
+        setIntervalFn: (callback) => {
+          scheduledCallbacks.push(callback);
+          return timerHandle;
+        },
+        clearIntervalFn: () => {},
+      },
+    );
+
+    controller.start();
+    const [scheduledCallback] = scheduledCallbacks;
+    const runningPollCycle = scheduledCallback?.();
+    let didStopResolve = false;
+    const stopPromise = controller.stop().then(() => {
+      didStopResolve = true;
+    });
+    await Promise.resolve();
+    expect(didStopResolve).toBe(false);
+
+    releasePollCycle();
+    await runningPollCycle;
+    await stopPromise;
+    expect(didStopResolve).toBe(true);
   });
 });
 
