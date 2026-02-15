@@ -222,6 +222,28 @@ export interface PreparedFindingComment {
 }
 
 /**
+ * Redacted request payload retained for posting telemetry.
+ */
+export interface PostedCommentRequestOptions {
+  /** Repository owner. */
+  readonly owner: string;
+  /** Repository name. */
+  readonly repository: string;
+  /** Pull request number. */
+  readonly pullRequestNumber: number;
+  /** Redacted installation access token marker. */
+  readonly installationAccessToken: string;
+  /** Markdown body sent to GitHub. */
+  readonly body: string;
+  /** GitHub API base URL. */
+  readonly apiBaseUrl?: string;
+  /** GitHub API user agent. */
+  readonly userAgent?: string;
+  /** Request timeout in milliseconds. */
+  readonly requestTimeoutMs?: number;
+}
+
+/**
  * Metadata for one successfully posted finding comment.
  */
 export interface PostedFindingCommentSuccess {
@@ -236,7 +258,7 @@ export interface PostedFindingCommentSuccess {
   /**
    * Request payload used to post this comment.
    */
-  readonly requestOptions: PostPullRequestSummaryCommentOptions;
+  readonly requestOptions: PostedCommentRequestOptions;
   /**
    * Created GitHub issue comment response.
    */
@@ -262,7 +284,7 @@ export interface PostedFindingCommentFailure {
   /**
    * Request payload used for the failed post attempt.
    */
-  readonly requestOptions: PostPullRequestSummaryCommentOptions;
+  readonly requestOptions: PostedCommentRequestOptions;
   /**
    * Error message for the failed post attempt.
    */
@@ -594,13 +616,14 @@ export function prepareFindingDelivery(
  *
  * @param executionResult - Rule execution result.
  * @param delivery - Prepared delivery output.
+ * @param postedCount - Number of comments that were actually posted.
  * @returns Structured check output payload.
  */
 export function buildWorkerCheckOutput(
   executionResult: RuleExecutionResult,
   delivery: PreparedFindingDelivery,
+  postedCount: number,
 ): WorkerCheckOutput {
-  const postedCount = delivery.comments.length;
   const totalFindings = executionResult.summary.totalFindings;
   return {
     title: `Mergewise Findings (${postedCount} posted of ${totalFindings})`,
@@ -652,19 +675,19 @@ export async function postPreparedFindingComments(
       userAgent: options.githubFetchOptions.githubUserAgent,
       requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
     };
+    const sanitizedRequestOptions = sanitizePostCommentRequestOptionsForLogging(requestOptions);
 
     try {
       const createdComment = await postPullRequestSummaryCommentFn(requestOptions);
       successes.push({
         index,
         preparedComment,
-        requestOptions,
+        requestOptions: sanitizedRequestOptions,
         createdComment,
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorDetail = error instanceof Error ? error.stack ?? error.message : String(error);
-      const sanitizedRequestOptions = sanitizePostCommentRequestOptionsForLogging(requestOptions);
       console.error(
         "[worker] failed to post finding comment index=" +
           String(index) +
@@ -678,7 +701,7 @@ export async function postPreparedFindingComments(
       failures.push({
         index,
         preparedComment,
-        requestOptions,
+        requestOptions: sanitizedRequestOptions,
         errorMessage,
       });
     }
@@ -699,7 +722,7 @@ export async function postPreparedFindingComments(
  */
 function sanitizePostCommentRequestOptionsForLogging(
   requestOptions: PostPullRequestSummaryCommentOptions,
-): PostPullRequestSummaryCommentOptions {
+): PostedCommentRequestOptions {
   return {
     ...requestOptions,
     installationAccessToken: "[REDACTED]",
@@ -863,7 +886,6 @@ export async function processAnalyzePullRequestJob(
   });
   const gatedExecutionResult = applyFindingGates(executionResult, mergewiseConfig);
   const delivery = prepareFindingDelivery(executionResult.findings, findingDeliveryOptions);
-  const checkOutput = buildWorkerCheckOutput(gatedExecutionResult, delivery);
 
   let postedCommentCount = 0;
   if (dependencies.deliveryMode === "github" && delivery.comments.length > 0) {
@@ -882,6 +904,7 @@ export async function processAnalyzePullRequestJob(
     );
     postedCommentCount = postingResult.postedCount;
   }
+  const checkOutput = buildWorkerCheckOutput(gatedExecutionResult, delivery, postedCommentCount);
 
   const summary = buildJobSummary(
     job,
@@ -1036,7 +1059,7 @@ export function selectRulesForExecution(
  * Applies confidence gating to findings.
  *
  * @param executionResult - Rule-engine output before worker gating.
- * @param mergewiseConfig - Runtime gating thresholds and caps.
+ * @param mergewiseConfig - Runtime gating thresholds/limits used to filter findings by confidence.
  * @returns Execution result with confidence-gated findings and recomputed summary counts.
  */
 export function applyFindingGates(

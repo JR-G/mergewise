@@ -758,7 +758,7 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.postedCommentCount).toBe(0);
     expect(summary.skippedByConfidence).toBe(1);
     expect(summary.skippedByCap).toBe(1);
-    expect(summary.checkOutput?.title).toContain("2 posted of 3");
+    expect(summary.checkOutput?.title).toContain("0 posted of 3");
   });
 });
 
@@ -1040,6 +1040,7 @@ describe("finding delivery", () => {
     expect(postingResult.failures).toHaveLength(0);
     expect(postedBodies).toHaveLength(1);
     expect(postedBodies[0]!).toContain("\"dedupeKey\": \"acme/widget#3:one\"");
+    expect(postingResult.successes[0]!.requestOptions.installationAccessToken).toBe("[REDACTED]");
   });
 
   test("postPreparedFindingComments reports partial failures without throwing", async () => {
@@ -1110,6 +1111,7 @@ describe("finding delivery", () => {
       expect(postingResult.failures[0]!.index).toBe(1);
       expect(postingResult.failures[0]!.errorMessage).toBe("secondary post failed");
       expect(postingResult.failures[0]!.preparedComment.dedupeKey).toBe("acme/widget#3:two");
+      expect(postingResult.failures[0]!.requestOptions.installationAccessToken).toBe("[REDACTED]");
       expect(loggedErrors).toHaveLength(1);
       expect(loggedErrors[0]!).toContain("acme/widget#3:two");
       expect(loggedErrors[0]!).toContain("[REDACTED]");
@@ -1157,6 +1159,7 @@ describe("finding delivery", () => {
         failedRuleIds: [],
       },
       delivery,
+      0,
     );
 
     expect(checkOutput.title).toContain("0 posted of 1");
