@@ -28,10 +28,16 @@ export interface MergewiseGatingConfigV1 {
 export interface MergewiseRulesConfigV1 {
   /**
    * Rule identifiers explicitly enabled for analysis.
+   *
+   * @remarks
+   * Entries are trimmed for leading and trailing whitespace during config load.
    */
   include: string[];
   /**
    * Rule identifiers explicitly disabled for analysis.
+   *
+   * @remarks
+   * Entries are trimmed for leading and trailing whitespace during config load.
    */
   exclude: string[];
 }
@@ -203,7 +209,7 @@ function toRuleList(value: unknown, fieldPath: string, filePath: string): string
       );
     }
 
-    return entry;
+    return entry.trim();
   });
 
   return normalizedRules;

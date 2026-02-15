@@ -129,4 +129,23 @@ describe("config-loader", () => {
       expect((error as Error).message).toContain("rules.include[1]");
     }
   });
+
+  test("trims whitespace around rule identifiers", () => {
+    const filePath = join(tempDirectory, ".mergewise.yml");
+    writeFileSync(
+      filePath,
+      [
+        "rules:",
+        "  include:",
+        "    - '  ts-react/exhaustive-deps-missing  '",
+        "  exclude:",
+        "    - '  ts-react/no-debugger  '",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const config = loadMergewiseConfig({ workingDirectory: tempDirectory });
+    expect(config.rules.include).toEqual(["ts-react/exhaustive-deps-missing"]);
+    expect(config.rules.exclude).toEqual(["ts-react/no-debugger"]);
+  });
 });
