@@ -223,9 +223,10 @@ export const tsReactRules: readonly StatelessRule[] = [
  * @param filePattern - Pattern used to select relevant files.
  * @returns Added line records with line numbers and sanitized content.
  */
-function collectAddedLines(context: AnalysisContext, filePattern: RegExp): readonly AddedLine[] {
-  const addedLines: AddedLine[] = [];
-
+function* collectAddedLines(
+  context: AnalysisContext,
+  filePattern: RegExp,
+): IterableIterator<AddedLine> {
   for (const fileDiff of context.diffs) {
     if (!filePattern.test(fileDiff.filePath)) {
       continue;
@@ -243,25 +244,24 @@ function collectAddedLines(context: AnalysisContext, filePattern: RegExp): reado
       for (const line of hunk.lines) {
         if (line.startsWith("+") && !line.startsWith("+++")) {
           const evidence = line.slice(1);
-          addedLines.push({
+          yield {
             filePath: fileDiff.filePath,
             lineNumber: currentLineNumber,
             evidence,
             sanitizedContent: stripNonCodeContent(evidence, lineScanState),
             hunkHeader: hunk.header,
-          });
+          };
           currentLineNumber += 1;
           continue;
         }
 
         if (line.startsWith(" ")) {
+          stripNonCodeContent(line.slice(1), lineScanState);
           currentLineNumber += 1;
         }
       }
     }
   }
-
-  return addedLines;
 }
 
 /**

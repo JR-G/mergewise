@@ -121,6 +121,24 @@ describe("rule-ts-react unsafe any usage", () => {
     expect(findings[0]!.filePath).toBe("src/second.ts");
     expect(findings[0]!.line).toBe(1);
   });
+
+  test("tracks block comments from context lines before added lines", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/example.ts", [
+        makeDiffHunk("@@ -10,2 +10,3 @@", [
+          " const value = 1;",
+          " /* existing block comment start",
+          "+const payload: any = fetchData();",
+          "+*/",
+          "+const safe: unknown = payload;",
+        ]),
+      ]),
+    ]);
+
+    const findings = await unsafeAnyUsageRule.analyse(context);
+
+    expect(findings).toEqual([]);
+  });
 });
 
 describe("rule-ts-react non-null assertion", () => {
