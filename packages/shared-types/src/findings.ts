@@ -21,6 +21,15 @@ export interface PatchPreview {
 }
 
 /**
+ * Patch suggestion policy for one finding.
+ *
+ * @remarks
+ * `manual-only` findings must not carry an auto-apply patch preview.
+ * `safe-patch` findings are eligible for automated patch suggestions.
+ */
+export type PatchSuggestionPolicy = "manual-only" | "safe-patch";
+
+/**
  * A single review finding produced by a rule against a pull request.
  *
  * @remarks
@@ -52,6 +61,13 @@ export interface Finding {
   readonly recommendation: string;
   /** Optional structured patch preview for inline suggestions. */
   readonly patchPreview?: PatchPreview;
+  /**
+   * Optional patch suggestion policy set by rule authors.
+   *
+   * @remarks
+   * When omitted, the runner derives a policy from `patchPreview`.
+   */
+  readonly patchSuggestionPolicy?: PatchSuggestionPolicy;
   /** Confidence score between 0 and 1 inclusive. */
   readonly confidence: number;
   /** Current lifecycle status of the finding. */

@@ -8,6 +8,7 @@ import type {
   FindingCategory,
   FindingStatus,
   PatchPreview,
+  PatchSuggestionPolicy,
   PullRequestMetadata,
   Rule,
   RuleMetadata,
@@ -117,7 +118,10 @@ export async function executeRules(
         options.context,
         options.codebaseContext,
       );
-      findings.push(...ruleFindings);
+      const validatedFindings = ruleFindings.map((finding) =>
+        enforcePatchSuggestionPolicy(finding)
+      );
+      findings.push(...validatedFindings);
     } catch (error) {
       failedRuleIds.push(rule.metadata.ruleId);
       onRuleExecutionError(rule, error);
@@ -162,6 +166,38 @@ async function executeSingleRule(
   return rule.analyse(context);
 }
 
+function enforcePatchSuggestionPolicy(finding: Finding): Finding {
+  const patchSuggestionPolicy =
+    finding.patchSuggestionPolicy ?? derivePatchSuggestionPolicy(finding.patchPreview);
+
+  if (patchSuggestionPolicy === "manual-only" && finding.patchPreview) {
+    throw new Error(
+      `Finding ${finding.findingId} has patchSuggestionPolicy=manual-only but includes patchPreview.`,
+    );
+  }
+
+  if (patchSuggestionPolicy === "safe-patch" && !finding.patchPreview) {
+    throw new Error(
+      `Finding ${finding.findingId} has patchSuggestionPolicy=safe-patch but patchPreview is missing.`,
+    );
+  }
+
+  return {
+    ...finding,
+    patchSuggestionPolicy,
+  };
+}
+
+function derivePatchSuggestionPolicy(
+  patchPreview: PatchPreview | undefined,
+): PatchSuggestionPolicy {
+  if (patchPreview) {
+    return "safe-patch";
+  }
+
+  return "manual-only";
+}
+
 function createFindingCategoryMap(
   findings: readonly Finding[],
 ): Readonly<Record<FindingCategory, number>> {
@@ -193,6 +229,7 @@ export type {
   Finding,
   FindingCategory,
   FindingStatus,
+  PatchSuggestionPolicy,
   PatchPreview,
   PullRequestMetadata,
   Rule,

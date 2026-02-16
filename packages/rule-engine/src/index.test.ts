@@ -5,6 +5,7 @@ import type {
   CodebaseAwareRule,
   CodebaseContext,
   Finding,
+  PatchPreview,
   StatelessRule,
 } from "@mergewise/shared-types";
 
@@ -26,7 +27,14 @@ const CODEBASE_CONTEXT: CodebaseContext = {
   readFile: async () => null,
 };
 
-function buildFinding(ruleId: string, category: Finding["category"]): Finding {
+function buildFinding(
+  ruleId: string,
+  category: Finding["category"],
+  options?: {
+    patchPreview?: PatchPreview;
+    patchSuggestionPolicy?: Finding["patchSuggestionPolicy"];
+  },
+): Finding {
   return {
     findingId: `${ruleId}-finding`,
     installationId: 9,
@@ -39,6 +47,8 @@ function buildFinding(ruleId: string, category: Finding["category"]): Finding {
     line: 1,
     evidence: "const value: any = input;",
     recommendation: "Replace any with a concrete type.",
+    patchPreview: options?.patchPreview,
+    patchSuggestionPolicy: options?.patchSuggestionPolicy,
     confidence: 0.95,
     status: "posted",
   };
@@ -95,6 +105,8 @@ describe("executeRules", () => {
     expect(result.summary.findingsByCategory.perf).toBe(1);
     expect(result.summary.findingsByCategory.safety).toBe(1);
     expect(result.summary.findingsByCategory.idiomatic).toBe(0);
+    expect(result.findings[0]?.patchSuggestionPolicy).toBe("manual-only");
+    expect(result.findings[1]?.patchSuggestionPolicy).toBe("manual-only");
   });
 
   test("isolates failed rules and invokes error callback", async () => {
@@ -207,5 +219,138 @@ describe("executeRules", () => {
       "[rule-engine] rule failed: stateless/default-log:",
     );
     expect(loggedMessages.join(" ")).toContain("default logger failure");
+  });
+
+  test("derives safe-patch policy when patch preview is present", async () => {
+    const safePatchPreview: PatchPreview = {
+      removedLines: ["const output = oldCall();"],
+      addedLines: ["const output = safeCall();"],
+      hunkHeader: "@@ -10,1 +10,1 @@",
+    };
+
+    const rule: StatelessRule = {
+      kind: "stateless",
+      metadata: {
+        ruleId: "stateless/safe-patch-derived",
+        name: "safe patch derived",
+        category: "clean",
+        languages: ["typescript"],
+        description: "safe patch derived",
+      },
+      analyse: async () => [
+        buildFinding("stateless/safe-patch-derived", "clean", {
+          patchPreview: safePatchPreview,
+        }),
+      ],
+    };
+
+    const result = await executeRules({
+      context: ANALYSIS_CONTEXT,
+      rules: [rule],
+    });
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]?.patchSuggestionPolicy).toBe("safe-patch");
+    expect(result.summary.failedRules).toBe(0);
+  });
+
+  test("fails a rule when finding declares manual-only with patch preview", async () => {
+    const rule: StatelessRule = {
+      kind: "stateless",
+      metadata: {
+        ruleId: "stateless/manual-with-patch",
+        name: "manual with patch",
+        category: "clean",
+        languages: ["typescript"],
+        description: "manual with patch",
+      },
+      analyse: async () => [
+        buildFinding("stateless/manual-with-patch", "clean", {
+          patchSuggestionPolicy: "manual-only",
+          patchPreview: {
+            removedLines: ["const value = old();"],
+            addedLines: ["const value = next();"],
+            hunkHeader: "@@ -1,1 +1,1 @@",
+          },
+        }),
+      ],
+    };
+
+    const capturedErrors: string[] = [];
+    const result = await executeRules({
+      context: ANALYSIS_CONTEXT,
+      rules: [rule],
+      onRuleExecutionError: (failedRule, error) => {
+        const detail = error instanceof Error ? error.message : String(error);
+        capturedErrors.push(`${failedRule.metadata.ruleId}:${detail}`);
+      },
+    });
+
+    expect(result.findings).toEqual([]);
+    expect(result.summary.failedRules).toBe(1);
+    expect(result.failedRuleIds).toEqual(["stateless/manual-with-patch"]);
+    expect(capturedErrors[0]).toContain("manual-only");
+  });
+
+  test("fails a rule when finding declares safe-patch without patch preview", async () => {
+    const rule: StatelessRule = {
+      kind: "stateless",
+      metadata: {
+        ruleId: "stateless/safe-without-patch",
+        name: "safe without patch",
+        category: "clean",
+        languages: ["typescript"],
+        description: "safe without patch",
+      },
+      analyse: async () => [
+        buildFinding("stateless/safe-without-patch", "clean", {
+          patchSuggestionPolicy: "safe-patch",
+        }),
+      ],
+    };
+
+    const capturedErrors: string[] = [];
+    const result = await executeRules({
+      context: ANALYSIS_CONTEXT,
+      rules: [rule],
+      onRuleExecutionError: (failedRule, error) => {
+        const detail = error instanceof Error ? error.message : String(error);
+        capturedErrors.push(`${failedRule.metadata.ruleId}:${detail}`);
+      },
+    });
+
+    expect(result.findings).toEqual([]);
+    expect(result.summary.failedRules).toBe(1);
+    expect(result.failedRuleIds).toEqual(["stateless/safe-without-patch"]);
+    expect(capturedErrors[0]).toContain("safe-patch");
+  });
+
+  test("does not keep partial findings when policy enforcement fails mid-rule", async () => {
+    const rule: StatelessRule = {
+      kind: "stateless",
+      metadata: {
+        ruleId: "stateless/partial-enforcement-failure",
+        name: "partial enforcement failure",
+        category: "clean",
+        languages: ["typescript"],
+        description: "partial enforcement failure",
+      },
+      analyse: async () => [
+        buildFinding("stateless/partial-enforcement-failure", "clean"),
+        buildFinding("stateless/partial-enforcement-failure", "clean", {
+          patchSuggestionPolicy: "safe-patch",
+        }),
+      ],
+    };
+
+    const result = await executeRules({
+      context: ANALYSIS_CONTEXT,
+      rules: [rule],
+    });
+
+    expect(result.findings).toEqual([]);
+    expect(result.summary.totalFindings).toBe(0);
+    expect(result.summary.failedRules).toBe(1);
+    expect(result.failedRuleIds).toEqual(["stateless/partial-enforcement-failure"]);
   });
 });
