@@ -23,6 +23,10 @@ export interface AnalyzePullRequestJob {
    */
   head_sha: string;
   /**
+   * Optional end-to-end trace identifier propagated from webhook intake.
+   */
+  trace_id?: string;
+  /**
    * ISO timestamp indicating when the job was queued.
    */
   queued_at: string;

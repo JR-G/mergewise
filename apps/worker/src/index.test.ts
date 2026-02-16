@@ -18,6 +18,7 @@ import {
   postPreparedFindingComments,
   prepareFindingDelivery,
   processAnalyzePullRequestJob,
+  resolveJobTraceId,
   runPollCycleWithInFlightGuard,
   trackProcessedKey,
   type WorkerPollingTimerHandle,
@@ -118,6 +119,35 @@ describe("buildIdempotencyKey", () => {
     const keyA = buildIdempotencyKey({ ...base, head_sha: "aaa" });
     const keyB = buildIdempotencyKey({ ...base, head_sha: "bbb" });
     expect(keyA).not.toBe(keyB);
+  });
+});
+
+describe("resolveJobTraceId", () => {
+  test("uses explicit job trace_id when provided", () => {
+    const traceId = resolveJobTraceId({
+      job_id: "job-1",
+      installation_id: 1,
+      repo_full_name: "acme/widget",
+      pr_number: 42,
+      head_sha: "abc123",
+      trace_id: "trace-123",
+      queued_at: "2025-01-01T00:00:00Z",
+    });
+
+    expect(traceId).toBe("trace-123");
+  });
+
+  test("falls back to job_id when trace_id is missing", () => {
+    const traceId = resolveJobTraceId({
+      job_id: "job-2",
+      installation_id: 1,
+      repo_full_name: "acme/widget",
+      pr_number: 42,
+      head_sha: "abc123",
+      queued_at: "2025-01-01T00:00:00Z",
+    });
+
+    expect(traceId).toBe("job-2");
   });
 });
 
@@ -498,6 +528,7 @@ describe("buildJobSummary", () => {
     expect(summary.idempotencyKey).toBe("acme/widget#42@abc123");
     expect(summary.repository).toBe("acme/widget");
     expect(summary.pullRequestNumber).toBe(42);
+    expect(summary.traceId).toBe("job-1");
     expect(summary.totalFindings).toBe(0);
     expect(summary.totalRules).toBe(1);
     expect(summary.successfulRules).toBe(1);
@@ -584,6 +615,7 @@ describe("processAnalyzePullRequestJob", () => {
     ]);
     expect(summary.jobId).toBe("job-2");
     expect(summary.idempotencyKey).toBe("acme/widget#50@def456");
+    expect(summary.traceId).toBe("job-2");
     expect(summary.processedAt).toBe("2026-01-02T03:04:05.000Z");
     expect(summary.postedCommentCount).toBe(0);
     expect(summary.skippedByCap).toBe(0);
@@ -664,6 +696,7 @@ describe("processAnalyzePullRequestJob", () => {
     );
 
     expect(summary.jobId).toBe("job-legacy-key");
+    expect(summary.traceId).toBe("job-legacy-key");
   });
 
   test("invalid GITHUB_APP_ID surfaces explicit error", async () => {
@@ -836,6 +869,7 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.postedCommentCount).toBe(0);
     expect(summary.skippedByConfidence).toBe(1);
     expect(summary.skippedByCap).toBe(1);
+    expect(summary.traceId).toBe("job-gating");
     expect(summary.checkOutput?.title).toContain("0 posted of 3");
   });
 });
@@ -1098,6 +1132,7 @@ describe("finding delivery", () => {
         repository: "widget",
         pullRequestNumber: 3,
         installationAccessToken: "token",
+        traceId: "trace-post-1",
         githubFetchOptions: workerFetchOptions,
         comments: delivery.comments,
       },
@@ -1119,6 +1154,7 @@ describe("finding delivery", () => {
     expect(postedBodies).toHaveLength(1);
     expect(postedBodies[0]!).toContain("\"dedupeKey\": \"acme/widget#3:one\"");
     expect(postingResult.successes[0]!.requestOptions.installationAccessToken).toBe("[REDACTED]");
+    expect(postingResult.successes[0]!.requestOptions.traceId).toBe("trace-post-1");
   });
 
   test("postPreparedFindingComments reports partial failures without throwing", async () => {
@@ -1164,6 +1200,7 @@ describe("finding delivery", () => {
           repository: "widget",
           pullRequestNumber: 3,
           installationAccessToken: "token",
+          traceId: "trace-post-2",
           githubFetchOptions: workerFetchOptions,
           comments: delivery.comments,
         },
@@ -1190,6 +1227,7 @@ describe("finding delivery", () => {
       expect(postingResult.failures[0]!.errorMessage).toBe("secondary post failed");
       expect(postingResult.failures[0]!.preparedComment.dedupeKey).toBe("acme/widget#3:two");
       expect(postingResult.failures[0]!.requestOptions.installationAccessToken).toBe("[REDACTED]");
+      expect(postingResult.failures[0]!.requestOptions.traceId).toBe("trace-post-2");
       expect(loggedErrors).toHaveLength(1);
       expect(loggedErrors[0]!).toContain("acme/widget#3:two");
       expect(loggedErrors[0]!).toContain("[REDACTED]");

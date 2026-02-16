@@ -11,6 +11,7 @@ import {
   createProcessedKeyState,
   loadConfig,
   processAnalyzePullRequestJob,
+  resolveJobTraceId,
   runPollCycleWithInFlightGuard,
   trackProcessedKey,
   type PollingLoopController,
@@ -205,7 +206,10 @@ export function startWorkerProcess(
           trackProcessedKey(idempotencyKey, processedKeyState, config.maxProcessedKeys);
         } catch (error) {
           const details = error instanceof Error ? error.stack ?? error.message : String(error);
-          errorLogger(`[worker] failed to process job=${queuedJob.job_id}: ${details}`);
+          const traceId = resolveJobTraceId(queuedJob);
+          errorLogger(
+            `[worker] failed to process trace=${traceId} job=${queuedJob.job_id}: ${details}`,
+          );
         }
       }
     });

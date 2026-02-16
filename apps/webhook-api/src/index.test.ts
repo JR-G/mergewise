@@ -100,15 +100,16 @@ describe("buildAnalyzePullRequestJob", () => {
   };
 
   test("maps fields from webhook event", () => {
-    const job = buildAnalyzePullRequestJob(payload);
+    const job = buildAnalyzePullRequestJob(payload, "trace-123");
     expect(job.repo_full_name).toBe("acme/widget");
     expect(job.pr_number).toBe(5);
     expect(job.head_sha).toBe("def456");
     expect(job.installation_id).toBe(99);
+    expect(job.trace_id).toBe("trace-123");
   });
 
   test("produces valid UUID for job_id", () => {
-    const job = buildAnalyzePullRequestJob(payload);
+    const job = buildAnalyzePullRequestJob(payload, "trace-123");
     expect(job.job_id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
@@ -116,7 +117,7 @@ describe("buildAnalyzePullRequestJob", () => {
 
   test("handles null installation_id", () => {
     const { installation: _, ...noInstall } = payload;
-    const job = buildAnalyzePullRequestJob(noInstall);
+    const job = buildAnalyzePullRequestJob(noInstall, "trace-123");
     expect(job.installation_id).toBeNull();
   });
 });

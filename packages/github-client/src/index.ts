@@ -40,6 +40,10 @@ export interface GitHubApiOptions {
    * @defaultValue `10000`
    */
   requestTimeoutMs?: number;
+  /**
+   * Optional trace identifier propagated across API calls for log stitching.
+   */
+  traceId?: string;
 }
 
 /**
@@ -267,6 +271,7 @@ export async function exchangeInstallationAccessToken(
     headers: buildHeaders({
       authorization: `Bearer ${appJwt}`,
       userAgent: options.userAgent,
+      traceId: options.traceId,
     }),
     signal: AbortSignal.timeout(requestTimeoutMs),
   });
@@ -308,6 +313,7 @@ export async function fetchPullRequestFiles(
       headers: buildHeaders({
         authorization: `Bearer ${options.installationAccessToken}`,
         userAgent: options.userAgent,
+        traceId: options.traceId,
       }),
       signal: AbortSignal.timeout(requestTimeoutMs),
     });
@@ -351,6 +357,7 @@ export async function postPullRequestSummaryComment(
       authorization: `Bearer ${options.installationAccessToken}`,
       userAgent: options.userAgent,
       contentType: "application/json",
+      traceId: options.traceId,
     }),
     body: JSON.stringify({ body: options.body }),
     signal: AbortSignal.timeout(requestTimeoutMs),
@@ -367,6 +374,7 @@ type HeaderBuildOptions = {
   authorization: string;
   userAgent?: string;
   contentType?: string;
+  traceId?: string;
 };
 
 function buildHeaders(options: HeaderBuildOptions): Record<string, string> {
@@ -379,6 +387,9 @@ function buildHeaders(options: HeaderBuildOptions): Record<string, string> {
 
   if (options.contentType) {
     headers["Content-Type"] = options.contentType;
+  }
+  if (options.traceId) {
+    headers["X-Mergewise-Trace-Id"] = options.traceId;
   }
 
   return headers;

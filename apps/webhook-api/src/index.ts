@@ -391,10 +391,12 @@ export function isPullRequestWebhookEvent(
  * Converts a pull request webhook event into a queue job payload.
  *
  * @param payload - Parsed and validated pull request webhook event.
+ * @param traceId - Optional end-to-end trace identifier sourced from request handling.
  * @returns Local queue job payload.
  */
 export function buildAnalyzePullRequestJob(
   payload: GitHubPullRequestWebhookEvent,
+  traceId?: string,
 ): AnalyzePullRequestJob {
   return {
     job_id: randomUUID(),
@@ -402,6 +404,7 @@ export function buildAnalyzePullRequestJob(
     repo_full_name: payload.repository.full_name,
     pr_number: payload.pull_request.number,
     head_sha: payload.pull_request.head.sha,
+    trace_id: traceId,
     queued_at: new Date().toISOString(),
   };
 }

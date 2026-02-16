@@ -125,7 +125,7 @@ Bun.serve({
       );
     }
 
-    const job = buildAnalyzePullRequestJob(payload);
+    const job = buildAnalyzePullRequestJob(payload, requestId);
     try {
       enqueueAnalyzePullRequestJob(job);
     } catch (error) {
@@ -154,6 +154,7 @@ Bun.serve({
       JSON.stringify({
         event: "webhook_job_queued",
         request_id: requestId,
+        trace_id: job.trace_id,
         job_id: job.job_id,
         repo_full_name: job.repo_full_name,
         pr_number: job.pr_number,
