@@ -545,7 +545,10 @@ function renderTaskFileBody(
  * @returns Whether the file should be regenerated from template.
  */
 function hasPlaceholderGoal(taskFileContents: string): boolean {
-  return taskFileContents.includes("Describe exactly what this task must deliver.");
+  return (
+    taskFileContents.includes("Describe exactly what this task must deliver.") ||
+    taskFileContents.includes("<goal>")
+  );
 }
 
 /**
