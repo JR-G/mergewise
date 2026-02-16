@@ -23,8 +23,7 @@
       "@mergewise/rule-ts-react": ["packages/rule-ts-react/src/index.ts"],
       "@mergewise/rule-engine": ["packages/rule-engine/src/index.ts"],
       "@mergewise/shared-types": ["packages/shared-types/src/index.ts"],
-      "@mergewise/webhook-api": ["apps/webhook-api/src/index.ts"],
-      "@mergewise/worker": ["apps/worker/src/index.ts"]
+      "@mergewise/webhook-api": ["apps/webhook-api/src/index.ts"]
     },
 
     // Best practices

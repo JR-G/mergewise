@@ -2,16 +2,15 @@
 
 ## Branch
 
-`feat/<area>-<short-description>` or `fix/<area>-<short-description>`
+`<branch-name>`
 
 ## Goal
 
-Describe exactly what this task must deliver.
+<goal>
 
 ## Allowed Paths
 
-- `packages/...`
-- `apps/...`
+<allowed-paths>
 
 ## Definition Of Done
 
