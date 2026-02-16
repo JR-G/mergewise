@@ -129,4 +129,23 @@ describe("config-loader", () => {
       expect((error as Error).message).toContain("rules.include[1]");
     }
   });
+
+  test("trims rule identifiers in include and exclude lists", () => {
+    const filePath = join(tempDirectory, ".mergewise.yml");
+    writeFileSync(
+      filePath,
+      [
+        "rules:",
+        "  include:",
+        "    - '  ts-react/no-debugger  '",
+        "  exclude:",
+        "    - '  ts-react/no-array-index-key  '",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const config = loadMergewiseConfig({ workingDirectory: tempDirectory });
+    expect(config.rules.include).toEqual(["ts-react/no-debugger"]);
+    expect(config.rules.exclude).toEqual(["ts-react/no-array-index-key"]);
+  });
 });
