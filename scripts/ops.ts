@@ -113,6 +113,7 @@ function usage(): void {
   bun run ops:start -- <task-id> <branch-name> <owner> <scope>
   bun run ops:start-session -- <session-id> <task-id> [owner] [scope] [branch-kind]
   bun run ops:start-batch -- <session-id> <task-id> [task-id...]
+  bun run ops:validate-session -- <session-id>
   bun run ops:launch-agent -- <task-id>
   bun run ops:agent -- <session-id> <task-id> [owner] [scope] [branch-kind]
   bun run ops:prompt -- <task-id>
@@ -124,6 +125,7 @@ Examples:
   bun run ops:start -- github-client feat/agent-github-client alice packages/github-client
   bun run ops:start-session -- s01 github-client
   bun run ops:start-batch -- s01 mw-003 mw-004 mw-006
+  bun run ops:validate-session -- s01
   bun run ops:launch-agent -- mw-003
   bun run ops:agent -- s01 github-client
   bun run ops:start-session -- s01 github-client agent-1 packages/github-client fix
@@ -131,6 +133,16 @@ Examples:
   bun run ops:finish -- github-client
   bun run ops:review-ready -- github-client
   bun run ops:open-pr -- github-client`);
+}
+
+/**
+ * Returns true when a task identifier is managed by the local backlog contract.
+ *
+ * @param taskIdentifier - Candidate task identifier.
+ * @returns Whether the identifier uses the `mw-###` format.
+ */
+function isManagedTaskIdentifier(taskIdentifier: string): boolean {
+  return /^mw-\d+$/i.test(taskIdentifier.trim());
 }
 
 /**
@@ -276,13 +288,24 @@ function resolveSessionStartOptions(
 
   const ownershipEntries = loadOwnershipEntries();
   const inferredScopeName = inferScopeName(taskIdentifier, ownershipEntries);
+  const scopeContract = resolveTaskScopeContract(taskIdentifier, inferredScopeName);
   const ownershipEntryForScope = ownershipEntries.find((ownershipEntry) =>
-    ownershipEntry.scopeName === inferredScopeName
+    ownershipEntry.scopeName === scopeContract.scopeName
   );
   const inferredOwnerName = ownershipEntryForScope?.ownerName ?? "agent-unassigned";
 
   const ownerName = positionalArgumentsWithoutBranchKind[0] ?? inferredOwnerName;
-  const scopeName = positionalArgumentsWithoutBranchKind[1] ?? inferredScopeName;
+  const scopeName = positionalArgumentsWithoutBranchKind[1] ?? scopeContract.scopeName;
+  if (isManagedTaskIdentifier(taskIdentifier)) {
+    const normalizedProvidedScopeName = normalizeScopeName(scopeName);
+    const normalizedContractScopeName = normalizeScopeName(scopeContract.scopeName);
+    if (normalizedProvidedScopeName !== normalizedContractScopeName) {
+      fail(
+        `scope override is not allowed for managed task ${taskIdentifier}: ` +
+        `provided=${normalizedProvidedScopeName} contract=${normalizedContractScopeName}`,
+      );
+    }
+  }
 
   return { ownerName, scopeName, branchKind };
 }
@@ -382,6 +405,24 @@ function resolveBacklogEntry(taskIdentifier: string): BacklogEntry | null {
 }
 
 /**
+ * Resolves one backlog row and fails for managed task identifiers when missing.
+ *
+ * @param taskIdentifier - Unique task identifier.
+ * @returns Matching backlog row or null for unmanaged tasks.
+ */
+function resolveRequiredBacklogEntry(taskIdentifier: string): BacklogEntry | null {
+  const backlogEntry = resolveBacklogEntry(taskIdentifier);
+  if (isManagedTaskIdentifier(taskIdentifier) && !backlogEntry) {
+    fail(
+      `missing backlog contract for ${taskIdentifier} in ${backlogFilePath}; ` +
+      "add the item before starting a session task",
+    );
+  }
+
+  return backlogEntry;
+}
+
+/**
  * Splits a backlog scope string into path prefixes.
  *
  * @param scopeValue - Backlog scope column value.
@@ -390,8 +431,43 @@ function resolveBacklogEntry(taskIdentifier: string): BacklogEntry | null {
 function parseScopePaths(scopeValue: string): string[] {
   return scopeValue
     .split(",")
-    .map((scopeSegment) => scopeSegment.trim())
+    .map((scopeSegment) => scopeSegment.trim().replace(/\/\.\.\.$/, "").replace(/\/$/, ""))
     .filter((scopeSegment) => scopeSegment.length > 0);
+}
+
+/**
+ * Resolves concrete scope paths for one task.
+ *
+ * @param taskIdentifier - Unique task identifier.
+ * @param fallbackScopeName - Fallback scope when no backlog contract is required.
+ * @returns Scope paths and the string persisted in board/task metadata.
+ */
+function resolveTaskScopeContract(
+  taskIdentifier: string,
+  fallbackScopeName: string,
+): { scopePaths: string[]; scopeName: string } {
+  const backlogEntry = resolveRequiredBacklogEntry(taskIdentifier);
+  if (backlogEntry) {
+    const scopePaths = parseScopePaths(backlogEntry.scope);
+    if (scopePaths.length === 0) {
+      fail(`invalid backlog scope for ${taskIdentifier}: ${backlogEntry.scope}`);
+    }
+
+    return {
+      scopePaths,
+      scopeName: scopePaths.join(", "),
+    };
+  }
+
+  const fallbackScopePaths = parseScopePaths(fallbackScopeName);
+  if (fallbackScopePaths.length === 0) {
+    fail(`missing scope contract for ${taskIdentifier}`);
+  }
+
+  return {
+    scopePaths: fallbackScopePaths,
+    scopeName: fallbackScopePaths.join(", "),
+  };
 }
 
 /**
@@ -416,6 +492,10 @@ function buildAllowedPathBullets(pathPrefixes: readonly string[]): string {
  * @returns Concrete delivery goal text.
  */
 function buildTaskGoal(taskIdentifier: string, backlogEntry: BacklogEntry | null): string {
+  if (!backlogEntry && isManagedTaskIdentifier(taskIdentifier)) {
+    fail(`missing concrete goal contract for ${taskIdentifier} in ${backlogFilePath}`);
+  }
+
   if (!backlogEntry) {
     return `Deliver task ${taskIdentifier} end-to-end within the declared scope, with tests and passing quality checks.`;
   }
@@ -479,12 +559,13 @@ function resolveTaskOptions(taskIdentifier: string): StartCommandOptions {
   );
   const ownershipEntries = loadOwnershipEntries();
   const inferredScopeName = boardEntry?.scopeName ?? inferScopeName(taskIdentifier, ownershipEntries);
+  const scopeContract = resolveTaskScopeContract(taskIdentifier, inferredScopeName);
 
   return {
     taskIdentifier,
     branchName: boardEntry?.branchName ?? `feat/${taskIdentifier}`,
     ownerName: boardEntry?.ownerName ?? "agent-unassigned",
-    scopeName: inferredScopeName,
+    scopeName: scopeContract.scopeName,
   };
 }
 
@@ -798,6 +879,16 @@ function resolveTaskBoardEntry(taskIdentifier: string): TaskBoardEntry {
 }
 
 /**
+ * Normalizes a comma-separated scope string for deterministic comparisons.
+ *
+ * @param scopeName - Scope value from board or backlog.
+ * @returns Normalized scope string.
+ */
+function normalizeScopeName(scopeName: string): string {
+  return parseScopePaths(scopeName).join(", ");
+}
+
+/**
  * Returns changed file paths between `main` and the provided branch.
  *
  * @param branchName - Branch name to compare.
@@ -929,12 +1020,42 @@ function assertScopeBoundaries(
     );
   }
 
-  const outOfScopePaths = changedPaths.filter((changedPath) =>
-    !isPathWithinScope(changedPath, boardEntry.scopeName)
-  );
+  const allowedScopePaths = parseScopePaths(boardEntry.scopeName);
+  if (allowedScopePaths.length === 0) {
+    fail(`scope check failed for ${boardEntry.taskIdentifier}: empty scope contract`);
+  }
+
+  const outOfScopePaths = changedPaths.filter((changedPath) => {
+    return !allowedScopePaths.some((scopePath) => isPathWithinScope(changedPath, scopePath));
+  });
   if (outOfScopePaths.length > 0) {
     fail(
       `scope check failed for ${boardEntry.taskIdentifier}: changed files outside scope ${boardEntry.scopeName}: ${outOfScopePaths.join(", ")}`,
+    );
+  }
+}
+
+/**
+ * Validates that managed tasks are scoped to backlog-defined path prefixes.
+ *
+ * @param boardEntry - Task row details.
+ */
+function assertManagedTaskScopeContract(boardEntry: TaskBoardEntry): void {
+  if (!isManagedTaskIdentifier(boardEntry.taskIdentifier)) {
+    return;
+  }
+
+  const backlogEntry = resolveRequiredBacklogEntry(boardEntry.taskIdentifier);
+  if (!backlogEntry) {
+    fail(`managed task ${boardEntry.taskIdentifier} is missing a backlog entry`);
+  }
+
+  const expectedScopeName = normalizeScopeName(backlogEntry.scope);
+  const boardScopeName = normalizeScopeName(boardEntry.scopeName);
+  if (boardScopeName !== expectedScopeName) {
+    fail(
+      `scope contract mismatch for ${boardEntry.taskIdentifier}: ` +
+      `board=${boardScopeName} backlog=${expectedScopeName}`,
     );
   }
 }
@@ -972,6 +1093,7 @@ function reviewTaskReadiness(taskIdentifier: string): void {
   loadTaskFile(taskIdentifier);
   const boardEntry = resolveTaskBoardEntry(taskIdentifier);
   assertTaskBranchAlignment(boardEntry);
+  assertManagedTaskScopeContract(boardEntry);
   assertBranchHasCommittedChanges(boardEntry);
   assertWorktreeClean(boardEntry);
 
@@ -1045,7 +1167,8 @@ function printPrompt(taskIdentifier: string): void {
  * @returns Conventional pull request title.
  */
 function buildPullRequestTitle(boardEntry: TaskBoardEntry): string {
-  const scopeLabel = getLastPathSegment(boardEntry.scopeName);
+  const [primaryScopePath] = parseScopePaths(boardEntry.scopeName);
+  const scopeLabel = getLastPathSegment(primaryScopePath ?? boardEntry.scopeName);
   return `task(${scopeLabel}): ${boardEntry.taskIdentifier}`;
 }
 
@@ -1239,11 +1362,12 @@ function startTask(argumentsList: string[]): void {
     fail("missing required arguments for ops:start");
   }
 
+  const scopeContract = resolveTaskScopeContract(taskIdentifier, scopeName);
   const options: StartCommandOptions = {
     taskIdentifier,
     branchName,
     ownerName,
-    scopeName,
+    scopeName: scopeContract.scopeName,
   };
 
   const taskFilePath = ensureTaskFile(options);
@@ -1281,7 +1405,8 @@ function startBatchSession(argumentsList: string[]): void {
     validateSegment(taskIdentifier, "task-id");
 
     const ownerName = `agent-${taskIndex + 1}`;
-    const scopeName = inferScopeName(taskIdentifier, ownershipEntries);
+    const inferredScopeName = inferScopeName(taskIdentifier, ownershipEntries);
+    const scopeContract = resolveTaskScopeContract(taskIdentifier, inferredScopeName);
     const branchName = buildSessionBranchName(
       sessionIdentifier,
       taskIdentifier,
@@ -1292,7 +1417,7 @@ function startBatchSession(argumentsList: string[]): void {
       taskIdentifier,
       branchName,
       ownerName,
-      scopeName,
+      scopeName: scopeContract.scopeName,
     };
 
     ensureTaskFile(options);
@@ -1307,12 +1432,13 @@ function startBatchSession(argumentsList: string[]): void {
   console.log("\nAgent Terminal Commands:");
   for (const createdOption of createdOptions) {
     console.log(
-      `- ${createdOption.ownerName}: bun --cwd ${JSON.stringify(sharedRepositoryRoot)} run ops:launch-agent -- ${createdOption.taskIdentifier}`,
+      `- ${createdOption.ownerName}: cd ${JSON.stringify(sharedRepositoryRoot)} && bun run ops:launch-agent -- ${createdOption.taskIdentifier}`,
     );
   }
 
   console.log("\nTech Lead Commands:");
   console.log("- bun run ops:status");
+  console.log(`- bun run ops:validate-session -- ${sessionIdentifier}`);
   for (const createdOption of createdOptions) {
     console.log(
       `- bun run ops:review-ready -- ${createdOption.taskIdentifier} && bun run ops:open-pr -- ${createdOption.taskIdentifier}`,
@@ -1328,12 +1454,13 @@ function startBatchSession(argumentsList: string[]): void {
  */
 function launchAgent(taskIdentifier: string): void {
   const boardEntry = resolveTaskBoardEntry(taskIdentifier);
+  assertManagedTaskScopeContract(boardEntry);
   const worktreePath = resolveWorktreePath(boardEntry.branchName);
   if (!existsSync(worktreePath)) {
     fail(`launchAgent(${taskIdentifier}) failed: missing worktree path ${worktreePath}`);
   }
 
-  const taskFilePath = resolve(tasksDirectoryPath, `${taskIdentifier}.md`);
+  const taskFilePath = loadTaskFile(taskIdentifier);
   const launchPrompt =
     `Read ${taskFilePath} and execute. ` +
     `Finish with: bun run ops:finish -- ${taskIdentifier}`;
@@ -1343,7 +1470,7 @@ function launchAgent(taskIdentifier: string): void {
       "codex",
       ["--cd", worktreePath, launchPrompt],
       {
-        cwd: repositoryRoot,
+        cwd: sharedRepositoryRoot,
         stdio: "inherit",
       },
     );
@@ -1375,6 +1502,45 @@ function startSessionTask(argumentsList: string[]): void {
   );
 
   startTask([taskIdentifier, branchName, ownerName, scopeName]);
+}
+
+/**
+ * Validates one session board/worktree/task contract before launching agents.
+ *
+ * @param argumentsList - Positional CLI args passed after `validate-session`.
+ */
+function validateSession(argumentsList: string[]): void {
+  const [sessionIdentifier] = argumentsList;
+  if (!sessionIdentifier) {
+    usage();
+    fail("missing session-id for ops:validate-session");
+  }
+
+  validateSegment(sessionIdentifier, "session-id");
+  const sessionMarker = `/${sessionIdentifier}-`;
+  const sessionEntries = loadTaskBoardEntries().filter((boardEntry) =>
+    boardEntry.branchName.includes(sessionMarker)
+  );
+  if (sessionEntries.length === 0) {
+    fail(`ops:validate-session found no board rows for session ${sessionIdentifier}`);
+  }
+
+  for (const sessionEntry of sessionEntries) {
+    assertTaskBranchAlignment(sessionEntry);
+    assertManagedTaskScopeContract(sessionEntry);
+    loadTaskFile(sessionEntry.taskIdentifier);
+
+    const worktreePath = resolveWorktreePath(sessionEntry.branchName);
+    if (!existsSync(worktreePath)) {
+      fail(
+        `ops:validate-session failed for ${sessionEntry.taskIdentifier}: missing worktree path ${worktreePath}`,
+      );
+    }
+  }
+
+  console.log(
+    `validate-session passed for ${sessionIdentifier} with ${sessionEntries.length} task(s)`,
+  );
 }
 
 /**
@@ -1442,6 +1608,11 @@ function main(): void {
 
   if (commandName === "start-batch") {
     startBatchSession(argumentsList);
+    return;
+  }
+
+  if (commandName === "validate-session") {
+    validateSession(argumentsList);
     return;
   }
 

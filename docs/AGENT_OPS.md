@@ -79,7 +79,8 @@ bun run ops:start-batch -- s03 mw-003 mw-004 mw-006
 This command:
 
 - Creates task files when missing.
-- Hydrates task goal/scope from `.mergewise-runtime/backlog.md` when available.
+- Hydrates task goal/scope from `.mergewise-runtime/backlog.md`.
+- Fails fast for `mw-*` tasks when no backlog contract exists.
 - Ensures one `In Progress` board row per task id (no duplicates).
 - Creates one worktree per task branch.
 - Assigns deterministic owners (`agent-1`, `agent-2`, ...).
@@ -102,7 +103,7 @@ This opens Codex in the mapped worktree and preloads the task instruction automa
 From any directory (including inside a worktree), prefer:
 
 ```bash
-bun --cwd /absolute/path/to/mergewise run ops:launch-agent -- <task-id>
+cd /absolute/path/to/mergewise && bun run ops:launch-agent -- <task-id>
 ```
 
 Notes:
@@ -113,8 +114,16 @@ Notes:
 Default inference behavior:
 
 - Owner inferred from `ops/ownership.yml` entry for the inferred scope
-- Scope inferred from task id and `ops/ownership.yml` (fallback `packages/<task-id>`)
+- Scope inferred from task id and `ops/ownership.yml` only for unmanaged tasks
 - Branch kind defaults to `feat` (optional `fix`)
+
+Session preflight before launching agents:
+
+```bash
+bun run ops:validate-session -- <session-id>
+```
+
+`ops:validate-session` checks board/worktree/task/backlog alignment for all tasks in that session.
 
 Session teardown after merges:
 
@@ -171,6 +180,7 @@ Required tech lead verification before launching agents:
 
 ```bash
 bun run ops:start-batch -- <session-id> <task-id> [task-id...]
+bun run ops:validate-session -- <session-id>
 bun run ops:status
 git worktree list
 ```
