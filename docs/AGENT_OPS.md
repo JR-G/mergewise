@@ -79,6 +79,7 @@ bun run ops:start-batch -- s03 mw-003 mw-004 mw-006
 This command:
 
 - Creates task files when missing.
+- Hydrates task goal/scope from `.mergewise-runtime/backlog.md` when available.
 - Ensures one `In Progress` board row per task id (no duplicates).
 - Creates one worktree per task branch.
 - Assigns deterministic owners (`agent-1`, `agent-2`, ...).
@@ -89,6 +90,25 @@ One-command agent launcher (start + prompt + shell in worktree):
 ```bash
 bun run ops:agent -- <session-id> <task-id> [owner] [scope] [branch-kind]
 ```
+
+One-command task launch in an existing session board/worktree:
+
+```bash
+bun run ops:launch-agent -- <task-id>
+```
+
+This opens Codex in the mapped worktree and preloads the task instruction automatically.
+
+From any directory (including inside a worktree), prefer:
+
+```bash
+bun --cwd /absolute/path/to/mergewise run ops:launch-agent -- <task-id>
+```
+
+Notes:
+
+- `ops:*` commands resolve runtime state from the shared repo root, so they can be run from main or any session worktree.
+- Do not copy `.mergewise-runtime` into worktrees manually.
 
 Default inference behavior:
 

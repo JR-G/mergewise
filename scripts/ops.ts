@@ -11,19 +11,31 @@ interface StartCommandOptions {
   scopeName: string;
 }
 
+interface BacklogEntry {
+  taskIdentifier: string;
+  initiative: string;
+  scope: string;
+  status: string;
+  exitCriteria: string;
+}
+
 const scriptPath = process.argv[1];
 if (!scriptPath) {
   fail("unable to resolve script path");
 }
 
 const repositoryRoot = resolve(dirname(scriptPath), "..");
-const runtimeDirectoryPath = resolve(repositoryRoot, ".mergewise-runtime");
+const gitCommonDirectoryPath = resolveGitCommonDirectory(repositoryRoot);
+const sharedRepositoryRoot = dirname(gitCommonDirectoryPath);
+const runtimeDirectoryPath = resolve(sharedRepositoryRoot, ".mergewise-runtime");
 const runtimeOpsDirectoryPath = resolve(runtimeDirectoryPath, "ops");
 const boardFilePath = resolve(runtimeOpsDirectoryPath, "board.md");
+const backlogFilePath = resolve(runtimeDirectoryPath, "backlog.md");
 const tasksDirectoryPath = resolve(runtimeOpsDirectoryPath, "tasks");
 const taskTemplatePath = resolve(repositoryRoot, "ops/tasks/TEMPLATE.md");
 const ownershipFilePath = resolve(repositoryRoot, "ops/ownership.yml");
-const worktreeRootPath = process.env.WORKTREE_ROOT ?? resolve(repositoryRoot, "../mergewise-worktrees");
+const worktreeRootPath =
+  process.env.WORKTREE_ROOT ?? resolve(sharedRepositoryRoot, "../mergewise-worktrees");
 
 interface OwnershipEntry {
   ownerName: string;
@@ -67,6 +79,33 @@ function formatError(caughtError: unknown): string {
 }
 
 /**
+ * Resolves the shared `.git` common directory for the current repository.
+ *
+ * @param rootPath - Repository root inferred from the executing script.
+ * @returns Absolute path to the git common directory.
+ */
+function resolveGitCommonDirectory(rootPath: string): string {
+  try {
+    const commonDirectoryPath = execFileSync(
+      "git",
+      ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+      {
+        cwd: rootPath,
+        encoding: "utf8",
+      },
+    ).trim();
+
+    if (!commonDirectoryPath) {
+      return resolve(rootPath, ".git");
+    }
+
+    return commonDirectoryPath;
+  } catch {
+    return resolve(rootPath, ".git");
+  }
+}
+
+/**
  * Prints CLI usage examples.
  */
 function usage(): void {
@@ -74,6 +113,7 @@ function usage(): void {
   bun run ops:start -- <task-id> <branch-name> <owner> <scope>
   bun run ops:start-session -- <session-id> <task-id> [owner] [scope] [branch-kind]
   bun run ops:start-batch -- <session-id> <task-id> [task-id...]
+  bun run ops:launch-agent -- <task-id>
   bun run ops:agent -- <session-id> <task-id> [owner] [scope] [branch-kind]
   bun run ops:prompt -- <task-id>
   bun run ops:finish -- <task-id>
@@ -84,6 +124,7 @@ Examples:
   bun run ops:start -- github-client feat/agent-github-client alice packages/github-client
   bun run ops:start-session -- s01 github-client
   bun run ops:start-batch -- s01 mw-003 mw-004 mw-006
+  bun run ops:launch-agent -- mw-003
   bun run ops:agent -- s01 github-client
   bun run ops:start-session -- s01 github-client agent-1 packages/github-client fix
   bun run ops:prompt -- github-client
@@ -269,6 +310,185 @@ function buildSessionBranchName(
 }
 
 /**
+ * Returns a normalized task identifier for case-insensitive matching.
+ *
+ * @param taskIdentifier - Raw task identifier.
+ * @returns Lower-cased identifier.
+ */
+function normalizeTaskIdentifier(taskIdentifier: string): string {
+  return taskIdentifier.trim().toLowerCase();
+}
+
+/**
+ * Parses backlog table rows from `.mergewise-runtime/backlog.md`.
+ *
+ * @returns Parsed backlog entries.
+ */
+function loadBacklogEntries(): BacklogEntry[] {
+  if (!existsSync(backlogFilePath)) {
+    return [];
+  }
+
+  try {
+    const backlogContents = readFileSync(backlogFilePath, "utf8");
+    const parsedEntries: BacklogEntry[] = [];
+    const tableLinePattern = /^\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|$/;
+
+    for (const backlogLine of backlogContents.split("\n")) {
+      const parsedLine = backlogLine.match(tableLinePattern);
+      if (!parsedLine) {
+        continue;
+      }
+
+      const taskIdentifier = (parsedLine[1] ?? "").trim();
+      const initiative = (parsedLine[3] ?? "").trim();
+      const scope = (parsedLine[4] ?? "").trim();
+      const status = (parsedLine[5] ?? "").trim();
+      const exitCriteria = (parsedLine[6] ?? "").trim();
+      if (taskIdentifier === "ID" || taskIdentifier === "---") {
+        continue;
+      }
+
+      if (!taskIdentifier || !scope || !exitCriteria) {
+        continue;
+      }
+
+      parsedEntries.push({
+        taskIdentifier,
+        initiative,
+        scope,
+        status,
+        exitCriteria,
+      });
+    }
+
+    return parsedEntries;
+  } catch (caughtError) {
+    fail(`loadBacklogEntries failed: ${formatError(caughtError)}`);
+  }
+}
+
+/**
+ * Resolves one backlog row by task identifier.
+ *
+ * @param taskIdentifier - Unique task identifier.
+ * @returns Matching backlog entry if present.
+ */
+function resolveBacklogEntry(taskIdentifier: string): BacklogEntry | null {
+  const normalizedTaskIdentifier = normalizeTaskIdentifier(taskIdentifier);
+  return loadBacklogEntries().find((backlogEntry) =>
+    normalizeTaskIdentifier(backlogEntry.taskIdentifier) === normalizedTaskIdentifier
+  ) ?? null;
+}
+
+/**
+ * Splits a backlog scope string into path prefixes.
+ *
+ * @param scopeValue - Backlog scope column value.
+ * @returns Path prefixes from scope.
+ */
+function parseScopePaths(scopeValue: string): string[] {
+  return scopeValue
+    .split(",")
+    .map((scopeSegment) => scopeSegment.trim())
+    .filter((scopeSegment) => scopeSegment.length > 0);
+}
+
+/**
+ * Builds task-file path bullets from scope paths.
+ *
+ * @param pathPrefixes - Path prefixes to render.
+ * @returns Markdown bullet lines.
+ */
+function buildAllowedPathBullets(pathPrefixes: readonly string[]): string {
+  if (pathPrefixes.length === 0) {
+    return "- `packages/...`\n- `apps/...`";
+  }
+
+  return pathPrefixes.map((pathPrefix) => `- \`${pathPrefix}/...\``).join("\n");
+}
+
+/**
+ * Renders goal text from task and backlog metadata.
+ *
+ * @param taskIdentifier - Task identifier.
+ * @param backlogEntry - Optional backlog row for the task.
+ * @returns Concrete delivery goal text.
+ */
+function buildTaskGoal(taskIdentifier: string, backlogEntry: BacklogEntry | null): string {
+  if (!backlogEntry) {
+    return `Deliver task ${taskIdentifier} end-to-end within the declared scope, with tests and passing quality checks.`;
+  }
+
+  if (!backlogEntry.initiative) {
+    return backlogEntry.exitCriteria;
+  }
+
+  return `${backlogEntry.initiative}. Exit criteria: ${backlogEntry.exitCriteria}`;
+}
+
+/**
+ * Populates template placeholders for one task file.
+ *
+ * @param templateBody - Task template markdown.
+ * @param options - Task metadata.
+ * @param backlogEntry - Optional backlog row for this task.
+ * @returns Hydrated task file body.
+ */
+function renderTaskFileBody(
+  templateBody: string,
+  options: StartCommandOptions,
+  backlogEntry: BacklogEntry | null,
+): string {
+  const allowedPathBullets = buildAllowedPathBullets(
+    parseScopePaths(backlogEntry?.scope ?? options.scopeName),
+  );
+  const taskGoal = buildTaskGoal(options.taskIdentifier, backlogEntry);
+  const backlogStatus = backlogEntry?.status ?? "in_progress";
+
+  return templateBody
+    .replaceAll("<task-id>", options.taskIdentifier)
+    .replaceAll("<branch-name>", options.branchName)
+    .replaceAll("<goal>", taskGoal)
+    .replaceAll("<allowed-paths>", allowedPathBullets)
+    .replaceAll("<scope-prefixes>", allowedPathBullets)
+    .replaceAll("<board-state>", backlogStatus)
+    .replaceAll("YYYY-MM-DD", new Date().toISOString().slice(0, 10));
+}
+
+/**
+ * Returns true when a task file still contains generic placeholder goal text.
+ *
+ * @param taskFileContents - Existing task markdown.
+ * @returns Whether the file should be regenerated from template.
+ */
+function hasPlaceholderGoal(taskFileContents: string): boolean {
+  return taskFileContents.includes("Describe exactly what this task must deliver.");
+}
+
+/**
+ * Resolves task metadata required to hydrate a task file.
+ *
+ * @param taskIdentifier - Unique task identifier.
+ * @returns Task options suitable for task-file rendering.
+ */
+function resolveTaskOptions(taskIdentifier: string): StartCommandOptions {
+  const normalizedTaskIdentifier = normalizeTaskIdentifier(taskIdentifier);
+  const boardEntry = loadTaskBoardEntries().find((candidateBoardEntry) =>
+    normalizeTaskIdentifier(candidateBoardEntry.taskIdentifier) === normalizedTaskIdentifier
+  );
+  const ownershipEntries = loadOwnershipEntries();
+  const inferredScopeName = boardEntry?.scopeName ?? inferScopeName(taskIdentifier, ownershipEntries);
+
+  return {
+    taskIdentifier,
+    branchName: boardEntry?.branchName ?? `feat/${taskIdentifier}`,
+    ownerName: boardEntry?.ownerName ?? "agent-unassigned",
+    scopeName: inferredScopeName,
+  };
+}
+
+/**
  * Ensures a task file exists for the provided task options.
  *
  * @param options - Inputs used to resolve and create the task file.
@@ -283,15 +503,18 @@ function ensureTaskFile(options: StartCommandOptions): string {
     mkdirSync(runtimeOpsDirectoryPath, { recursive: true });
     mkdirSync(tasksDirectoryPath, { recursive: true });
     const taskFilePath = resolve(tasksDirectoryPath, `${options.taskIdentifier}.md`);
+    const templateBody = readFileSync(taskTemplatePath, "utf8");
+    const backlogEntry = resolveBacklogEntry(options.taskIdentifier);
 
     if (!existsSync(taskFilePath)) {
-      const templateBody = readFileSync(taskTemplatePath, "utf8");
-      const preparedBody = templateBody
-        .replace("<task-id>", options.taskIdentifier)
-        .replace(
-          "`feat/<area>-<short-description>` or `fix/<area>-<short-description>`",
-          `\`${options.branchName}\``,
-        );
+      const preparedBody = renderTaskFileBody(templateBody, options, backlogEntry);
+      writeFileSync(taskFilePath, preparedBody, "utf8");
+      return taskFilePath;
+    }
+
+    const existingTaskBody = readFileSync(taskFilePath, "utf8");
+    if (hasPlaceholderGoal(existingTaskBody)) {
+      const preparedBody = renderTaskFileBody(templateBody, options, backlogEntry);
       writeFileSync(taskFilePath, preparedBody, "utf8");
     }
 
@@ -459,9 +682,21 @@ function openShellInWorktree(branchName: string): void {
  */
 function loadTaskFile(taskIdentifier: string): string {
   try {
+    const taskOptions = resolveTaskOptions(taskIdentifier);
     const taskFilePath = resolve(tasksDirectoryPath, `${taskIdentifier}.md`);
     if (!existsSync(taskFilePath)) {
-      fail(`loadTaskFile(${taskIdentifier}) failed: task file not found at ${taskFilePath}`);
+      ensureTaskFile(taskOptions);
+    } else {
+      const existingTaskBody = readFileSync(taskFilePath, "utf8");
+      if (hasPlaceholderGoal(existingTaskBody)) {
+        ensureTaskFile(taskOptions);
+      }
+    }
+
+    if (!existsSync(taskFilePath)) {
+      fail(
+        `loadTaskFile(${taskIdentifier}) failed: task file not found after hydration at ${taskFilePath}`,
+      );
     }
 
     return taskFilePath;
@@ -1071,9 +1306,8 @@ function startBatchSession(argumentsList: string[]): void {
   console.log(`Tasks: ${createdOptions.length}`);
   console.log("\nAgent Terminal Commands:");
   for (const createdOption of createdOptions) {
-    const worktreePath = resolveWorktreePath(createdOption.branchName);
     console.log(
-      `- ${createdOption.ownerName}: cd ${worktreePath} && bun run ops:prompt -- ${createdOption.taskIdentifier}`,
+      `- ${createdOption.ownerName}: bun --cwd ${JSON.stringify(sharedRepositoryRoot)} run ops:launch-agent -- ${createdOption.taskIdentifier}`,
     );
   }
 
@@ -1085,6 +1319,37 @@ function startBatchSession(argumentsList: string[]): void {
     );
   }
   console.log(`- bun run wt:cleanup:session ${sessionIdentifier}`);
+}
+
+/**
+ * Launches Codex in the task worktree with a preloaded execution instruction.
+ *
+ * @param taskIdentifier - Unique task identifier.
+ */
+function launchAgent(taskIdentifier: string): void {
+  const boardEntry = resolveTaskBoardEntry(taskIdentifier);
+  const worktreePath = resolveWorktreePath(boardEntry.branchName);
+  if (!existsSync(worktreePath)) {
+    fail(`launchAgent(${taskIdentifier}) failed: missing worktree path ${worktreePath}`);
+  }
+
+  const taskFilePath = resolve(tasksDirectoryPath, `${taskIdentifier}.md`);
+  const launchPrompt =
+    `Read ${taskFilePath} and execute. ` +
+    `Finish with: bun run ops:finish -- ${taskIdentifier}`;
+
+  try {
+    execFileSync(
+      "codex",
+      ["--cd", worktreePath, launchPrompt],
+      {
+        cwd: repositoryRoot,
+        stdio: "inherit",
+      },
+    );
+  } catch (caughtError) {
+    fail(`launchAgent(${taskIdentifier}) failed: ${formatError(caughtError)}`);
+  }
 }
 
 /**
@@ -1182,6 +1447,17 @@ function main(): void {
 
   if (commandName === "agent") {
     startAgentSession(argumentsList);
+    return;
+  }
+
+  if (commandName === "launch-agent") {
+    const [taskIdentifier] = argumentsList;
+    if (!taskIdentifier) {
+      usage();
+      fail("missing task-id for ops:launch-agent");
+    }
+
+    launchAgent(taskIdentifier);
     return;
   }
 
