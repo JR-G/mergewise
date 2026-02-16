@@ -174,6 +174,7 @@ describe("github-client", () => {
       installationAccessToken: "installation-token",
       body: "summary",
       apiBaseUrl: "https://api.github.com",
+      traceId: "trace-321",
     });
 
     expect(result.id).toBe(99);
@@ -181,6 +182,8 @@ describe("github-client", () => {
     expect(calls[0]!.init?.method).toBe("POST");
     expect(calls[0]!.init?.body).toBe(JSON.stringify({ body: "summary" }));
     expect(calls[0]!.init?.signal).toBeDefined();
+    const requestHeaders = calls[0]!.init?.headers as Record<string, string>;
+    expect(requestHeaders["X-Mergewise-Trace-Id"]).toBe("trace-321");
     expect(String(calls[0]!.input)).toBe(
       "https://api.github.com/repos/acme/widget/issues/3/comments",
     );

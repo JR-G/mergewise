@@ -186,6 +186,7 @@ describe("startWorkerProcess", () => {
           failedRules: 0,
           failedRuleIds: [],
           processedAt: "2026-02-01T00:00:00.000Z",
+          traceId: job.trace_id ?? job.job_id,
         };
       },
       createPollingLoopControllerFn: (pollIntervalMs, pollCycle, dependencies) => {
@@ -343,9 +344,11 @@ describe("startWorkerProcess", () => {
     expect(
       infoLogs.some((message) => message.includes("poll skipped: previous cycle still in flight")),
     ).toBe(true);
-    expect(errorLogs.some((message) => message.includes("failed to process job=job-1"))).toBe(
-      true,
-    );
+    expect(
+      errorLogs.some((message) =>
+        message.includes("failed to process trace=job-1 job=job-1"),
+      ),
+    ).toBe(true);
 
     await workerHandle.shutdown();
   });

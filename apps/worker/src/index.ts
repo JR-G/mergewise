@@ -122,6 +122,10 @@ export interface AnalyzePullRequestJobSummary {
    */
   readonly headSha: string;
   /**
+   * End-to-end trace identifier stitched from webhook intake to worker processing.
+   */
+  readonly traceId: string;
+  /**
    * Number of findings emitted by successful rules.
    */
   readonly totalFindings: number;
@@ -241,6 +245,8 @@ export interface PostedCommentRequestOptions {
   readonly userAgent?: string;
   /** Request timeout in milliseconds. */
   readonly requestTimeoutMs?: number;
+  /** Optional end-to-end trace identifier for observability. */
+  readonly traceId?: string;
 }
 
 /**
@@ -694,6 +700,7 @@ export async function postPreparedFindingComments(
     readonly repository: string;
     readonly pullRequestNumber: number;
     readonly installationAccessToken: string;
+    readonly traceId: string;
     readonly githubFetchOptions: WorkerGitHubFetchOptions;
     readonly comments: readonly PreparedFindingComment[];
   },
@@ -718,6 +725,7 @@ export async function postPreparedFindingComments(
       apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
       userAgent: options.githubFetchOptions.githubUserAgent,
       requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
+      traceId: options.traceId,
     };
     const sanitizedRequestOptions = sanitizePostCommentRequestOptionsForLogging(requestOptions);
 
@@ -781,6 +789,21 @@ function sanitizePostCommentRequestOptionsForLogging(
  */
 export function buildIdempotencyKey(job: AnalyzePullRequestJob): string {
   return `${job.repo_full_name}#${job.pr_number}@${job.head_sha}`;
+}
+
+/**
+ * Resolves a stable trace identifier for worker job processing logs and API calls.
+ *
+ * @param job - Pull request analysis job payload.
+ * @returns Job-provided trace id, or job id as a backward-compatible fallback.
+ */
+export function resolveJobTraceId(job: AnalyzePullRequestJob): string {
+  const candidateTraceId = job.trace_id?.trim();
+  if (candidateTraceId) {
+    return candidateTraceId;
+  }
+
+  return job.job_id;
 }
 
 /**
@@ -888,6 +911,7 @@ export async function processAnalyzePullRequestJob(
   dependencies: WorkerProcessingDependencies = {},
 ): Promise<AnalyzePullRequestJobSummary> {
   const key = buildIdempotencyKey(job);
+  const traceId = resolveJobTraceId(job);
   const infoLogger = dependencies.logInfo ?? console.log;
   const errorLogger = dependencies.logError ?? console.error;
   const warnLogger = dependencies.logWarn ?? infoLogger ?? errorLogger;
@@ -902,7 +926,7 @@ export async function processAnalyzePullRequestJob(
   };
 
   infoLogger(
-    `[worker] processing job=${job.job_id} key=${key} installation=${job.installation_id ?? "none"} rules=${selectedRules.length}`,
+    `[worker] processing trace=${traceId} job=${job.job_id} key=${key} installation=${job.installation_id ?? "none"} rules=${selectedRules.length}`,
   );
 
   const githubAnalysisContext = await buildAnalysisContextFromGitHub(
@@ -924,7 +948,7 @@ export async function processAnalyzePullRequestJob(
     onRuleExecutionError: (rule, error) => {
       const detail = error instanceof Error ? error.stack ?? error.message : String(error);
       errorLogger(
-        `[worker] rule failure job=${job.job_id} rule=${rule.metadata.ruleId}: ${detail}`,
+        `[worker] rule failure trace=${traceId} job=${job.job_id} rule=${rule.metadata.ruleId}: ${detail}`,
       );
     },
   });
@@ -939,6 +963,7 @@ export async function processAnalyzePullRequestJob(
         repository: githubAnalysisContext.repository,
         pullRequestNumber: job.pr_number,
         installationAccessToken: githubAnalysisContext.installationAccessToken,
+        traceId,
         githubFetchOptions,
         comments: delivery.comments,
       },
@@ -957,10 +982,10 @@ export async function processAnalyzePullRequestJob(
     (dependencies.now ?? (() => new Date()))().toISOString(),
   );
   infoLogger(
-    `[worker] summary job=${summary.jobId} findings=${summary.totalFindings} rules_ok=${summary.successfulRules}/${summary.totalRules}`,
+    `[worker] summary trace=${summary.traceId} job=${summary.jobId} findings=${summary.totalFindings} rules_ok=${summary.successfulRules}/${summary.totalRules}`,
   );
   infoLogger(
-    `[worker] check_output job=${summary.jobId} payload=${JSON.stringify(checkOutput)}`,
+    `[worker] check_output trace=${summary.traceId} job=${summary.jobId} payload=${JSON.stringify(checkOutput)}`,
   );
 
   return {
@@ -1137,12 +1162,14 @@ export function buildJobSummary(
   executionResult: RuleExecutionResult,
   processedAt: string,
 ): AnalyzePullRequestJobSummary {
+  const traceId = resolveJobTraceId(job);
   return {
     jobId: job.job_id,
     idempotencyKey,
     repository: job.repo_full_name,
     pullRequestNumber: job.pr_number,
     headSha: job.head_sha,
+    traceId,
     totalFindings: executionResult.summary.totalFindings,
     findingsByCategory: executionResult.summary.findingsByCategory,
     totalRules: executionResult.summary.totalRules,

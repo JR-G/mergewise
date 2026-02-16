@@ -54,6 +54,7 @@ function isAnalyzePullRequestJob(value: unknown): value is AnalyzePullRequestJob
     typeof candidate.repo_full_name === "string" &&
     typeof candidate.pr_number === "number" &&
     typeof candidate.head_sha === "string" &&
+    (candidate.trace_id === undefined || typeof candidate.trace_id === "string") &&
     typeof candidate.queued_at === "string"
   );
 }
