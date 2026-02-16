@@ -113,6 +113,7 @@ function usage(): void {
   bun run ops:start -- <task-id> <branch-name> <owner> <scope>
   bun run ops:start-session -- <session-id> <task-id> [owner] [scope] [branch-kind]
   bun run ops:start-batch -- <session-id> <task-id> [task-id...]
+  bun run ops:tmux-batch -- <session-id> <task-id> [task-id...]
   bun run ops:validate-session -- <session-id>
   bun run ops:launch-agent -- <task-id>
   bun run ops:agent -- <session-id> <task-id> [owner] [scope] [branch-kind]
@@ -125,6 +126,7 @@ Examples:
   bun run ops:start -- github-client feat/agent-github-client alice packages/github-client
   bun run ops:start-session -- s01 github-client
   bun run ops:start-batch -- s01 mw-003 mw-004 mw-006
+  bun run ops:tmux-batch -- s01 mw-003 mw-004 mw-006
   bun run ops:validate-session -- s01
   bun run ops:launch-agent -- mw-003
   bun run ops:agent -- s01 github-client
@@ -1544,6 +1546,113 @@ function validateSession(argumentsList: string[]): void {
 }
 
 /**
+ * Returns true when a tmux session with the given name exists.
+ *
+ * @param sessionName - Candidate tmux session name.
+ * @returns Whether the session exists.
+ */
+function tmuxSessionExists(sessionName: string): boolean {
+  try {
+    execFileSync("tmux", ["has-session", "-t", sessionName], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Launches one tmux session with one window per task and starts Codex in each window.
+ *
+ * @param argumentsList - Positional CLI args passed after `tmux-batch`.
+ */
+function startTmuxBatch(argumentsList: string[]): void {
+  const [sessionIdentifier, ...taskIdentifiers] = argumentsList;
+  if (!sessionIdentifier || taskIdentifiers.length === 0) {
+    usage();
+    fail("missing required arguments for ops:tmux-batch");
+  }
+
+  startBatchSession(argumentsList);
+  validateSession([sessionIdentifier]);
+
+  const tmuxSessionName = `mergewise-${sessionIdentifier}`;
+  if (tmuxSessionExists(tmuxSessionName)) {
+    fail(
+      `ops:tmux-batch failed: tmux session ${tmuxSessionName} already exists; ` +
+      "attach to it or kill it first",
+    );
+  }
+
+  const buildWindowCommand = (taskIdentifier: string): string => {
+    const launchCommand =
+      `cd ${JSON.stringify(sharedRepositoryRoot)} && ` +
+      `bun run ops:launch-agent -- ${taskIdentifier}`;
+    return `zsh -lc ${JSON.stringify(launchCommand)}`;
+  };
+
+  const [firstTaskIdentifier, ...remainingTaskIdentifiers] = taskIdentifiers;
+  if (!firstTaskIdentifier) {
+    fail("ops:tmux-batch failed: missing first task identifier");
+  }
+
+  try {
+    execFileSync(
+      "tmux",
+      [
+        "new-session",
+        "-d",
+        "-s",
+        tmuxSessionName,
+        "-n",
+        "agent-1",
+        buildWindowCommand(firstTaskIdentifier),
+      ],
+      { stdio: "inherit" },
+    );
+
+    for (const [taskIndex, taskIdentifier] of remainingTaskIdentifiers.entries()) {
+      const windowName = `agent-${taskIndex + 2}`;
+      execFileSync(
+        "tmux",
+        [
+          "new-window",
+          "-t",
+          tmuxSessionName,
+          "-n",
+          windowName,
+          buildWindowCommand(taskIdentifier),
+        ],
+        { stdio: "inherit" },
+      );
+    }
+
+    const monitorWindowCommand =
+      `cd ${JSON.stringify(sharedRepositoryRoot)} && ` +
+      `echo \"Tech Lead Monitor\" && ` +
+      `echo \"- bun run ops:status\" && ` +
+      `echo \"- bun run ops:review-ready -- <task-id> && bun run ops:open-pr -- <task-id>\" && ` +
+      `exec zsh -l`;
+    execFileSync(
+      "tmux",
+      [
+        "new-window",
+        "-t",
+        tmuxSessionName,
+        "-n",
+        "tech-lead",
+        `zsh -lc ${JSON.stringify(monitorWindowCommand)}`,
+      ],
+      { stdio: "inherit" },
+    );
+
+    console.log(`\nTmux session ready: ${tmuxSessionName}`);
+    console.log(`Attach: tmux attach -t ${tmuxSessionName}`);
+  } catch (caughtError) {
+    fail(`ops:tmux-batch failed: ${formatError(caughtError)}`);
+  }
+}
+
+/**
  * Starts one session task, prints the prompt, and opens a shell in the task worktree.
  *
  * @param argumentsList - Positional CLI args passed after `agent`.
@@ -1608,6 +1717,11 @@ function main(): void {
 
   if (commandName === "start-batch") {
     startBatchSession(argumentsList);
+    return;
+  }
+
+  if (commandName === "tmux-batch") {
+    startTmuxBatch(argumentsList);
     return;
   }
 
