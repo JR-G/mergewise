@@ -324,4 +324,33 @@ describe("executeRules", () => {
     expect(result.failedRuleIds).toEqual(["stateless/safe-without-patch"]);
     expect(capturedErrors[0]).toContain("safe-patch");
   });
+
+  test("does not keep partial findings when policy enforcement fails mid-rule", async () => {
+    const rule: StatelessRule = {
+      kind: "stateless",
+      metadata: {
+        ruleId: "stateless/partial-enforcement-failure",
+        name: "partial enforcement failure",
+        category: "clean",
+        languages: ["typescript"],
+        description: "partial enforcement failure",
+      },
+      analyse: async () => [
+        buildFinding("stateless/partial-enforcement-failure", "clean"),
+        buildFinding("stateless/partial-enforcement-failure", "clean", {
+          patchSuggestionPolicy: "safe-patch",
+        }),
+      ],
+    };
+
+    const result = await executeRules({
+      context: ANALYSIS_CONTEXT,
+      rules: [rule],
+    });
+
+    expect(result.findings).toEqual([]);
+    expect(result.summary.totalFindings).toBe(0);
+    expect(result.summary.failedRules).toBe(1);
+    expect(result.failedRuleIds).toEqual(["stateless/partial-enforcement-failure"]);
+  });
 });

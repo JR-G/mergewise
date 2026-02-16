@@ -118,9 +118,10 @@ export async function executeRules(
         options.context,
         options.codebaseContext,
       );
-      for (const finding of ruleFindings) {
-        findings.push(enforcePatchSuggestionPolicy(finding));
-      }
+      const validatedFindings = ruleFindings.map((finding) =>
+        enforcePatchSuggestionPolicy(finding)
+      );
+      findings.push(...validatedFindings);
     } catch (error) {
       failedRuleIds.push(rule.metadata.ruleId);
       onRuleExecutionError(rule, error);
