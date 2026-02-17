@@ -679,6 +679,7 @@ export function prepareFindingDelivery(
  * @param executionResult - Rule execution result.
  * @param delivery - Prepared delivery output.
  * @param postedCount - Number of comments that were actually posted.
+ * @param reviewerSummaryOptions - Optional `WorkerReviewerSummaryOptions` used to build reviewer summary evidence links with repository/head context and link limits; when omitted, reviewer summary falls back to plain location labels.
  * @returns Structured check output payload.
  */
 export function buildWorkerCheckOutput(
