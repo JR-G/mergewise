@@ -801,38 +801,44 @@ function getLastPathSegment(pathValue: string): string {
  * @returns Parsed task rows.
  */
 function loadTaskBoardEntries(): TaskBoardEntry[] {
-  ensureBoardFile();
-  const boardContents = readFileSync(boardFilePath, "utf8");
-  const tableLinePattern = /^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$/;
-  const boardEntries: TaskBoardEntry[] = [];
+  try {
+    ensureBoardFile();
+    const boardContents = readFileSync(boardFilePath, "utf8");
+    const tableLinePattern = /^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$/;
+    const boardEntries: TaskBoardEntry[] = [];
 
-  for (const boardLine of boardContents.split("\n")) {
-    const parsedLine = boardLine.match(tableLinePattern);
-    if (!parsedLine) {
-      continue;
+    for (const boardLine of boardContents.split("\n")) {
+      const parsedLine = boardLine.match(tableLinePattern);
+      if (!parsedLine) {
+        continue;
+      }
+
+      const taskIdentifier = (parsedLine[1] ?? "").trim();
+      const branchName = (parsedLine[2] ?? "").trim();
+      const ownerName = (parsedLine[3] ?? "").trim();
+      const scopeName = (parsedLine[4] ?? "").trim();
+      if (taskIdentifier === "Task ID" || taskIdentifier === "---") {
+        continue;
+      }
+
+      if (!taskIdentifier || !branchName || !scopeName) {
+        continue;
+      }
+
+      boardEntries.push({
+        taskIdentifier,
+        branchName,
+        ownerName,
+        scopeName,
+      });
     }
 
-    const taskIdentifier = (parsedLine[1] ?? "").trim();
-    const branchName = (parsedLine[2] ?? "").trim();
-    const ownerName = (parsedLine[3] ?? "").trim();
-    const scopeName = (parsedLine[4] ?? "").trim();
-    if (taskIdentifier === "Task ID" || taskIdentifier === "---") {
-      continue;
-    }
-
-    if (!taskIdentifier || !branchName || !scopeName) {
-      continue;
-    }
-
-    boardEntries.push({
-      taskIdentifier,
-      branchName,
-      ownerName,
-      scopeName,
-    });
+    return boardEntries;
+  } catch (caughtError) {
+    throw new Error(
+      `loadTaskBoardEntries failed to read board file ${boardFilePath}: ${formatError(caughtError)}`,
+    );
   }
-
-  return boardEntries;
 }
 
 /**
@@ -1177,10 +1183,16 @@ function buildPullRequestBody(
   boardEntry: TaskBoardEntry,
   changedPaths: readonly string[],
 ): string {
-  const taskFilePath = loadTaskFile(boardEntry.taskIdentifier);
-  const taskFileContents = readFileSync(taskFilePath, "utf8");
-  const taskGoal = extractTaskGoal(taskFileContents) ??
-    `deliver task \`${boardEntry.taskIdentifier}\` in scope \`${boardEntry.scopeName}\``;
+  let taskGoal = `deliver task \`${boardEntry.taskIdentifier}\` in scope \`${boardEntry.scopeName}\``;
+  try {
+    const taskFilePath = loadTaskFile(boardEntry.taskIdentifier);
+    const taskFileContents = readFileSync(taskFilePath, "utf8");
+    taskGoal = extractTaskGoal(taskFileContents) ?? taskGoal;
+  } catch (caughtError) {
+    throw new Error(
+      `Failed to read task file for ${boardEntry.taskIdentifier} (${boardEntry.scopeName}): ${formatError(caughtError)}`,
+    );
+  }
   const changedPathList = changedPaths
     .map((changedPath) => `- \`${changedPath}\``)
     .join("\n");
@@ -1278,9 +1290,9 @@ function openPullRequestForTask(taskIdentifier: string): void {
     runtimeOpsDirectoryPath,
     `pr-body-${taskIdentifier}.md`,
   );
-  const existingPullRequest = findPullRequestByHead(branchName);
 
   try {
+    const existingPullRequest = findPullRequestByHead(branchName);
     pushTaskBranch(boardEntry);
     writeFileSync(pullRequestBodyFilePath, pullRequestBody, "utf8");
 
