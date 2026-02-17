@@ -835,9 +835,7 @@ function loadTaskBoardEntries(): TaskBoardEntry[] {
 
     return boardEntries;
   } catch (caughtError) {
-    throw new Error(
-      `loadTaskBoardEntries failed to read board file ${boardFilePath}: ${formatError(caughtError)}`,
-    );
+    fail(`loadTaskBoardEntries failed to read board file ${boardFilePath}: ${formatError(caughtError)}`);
   }
 }
 
@@ -1285,7 +1283,12 @@ function openPullRequestForTask(taskIdentifier: string): void {
   const worktreePath = resolveWorktreePath(branchName);
   const changedPaths = listChangedPathsAgainstMain(branchName);
   const pullRequestTitle = buildPullRequestTitle(boardEntry);
-  const pullRequestBody = buildPullRequestBody(boardEntry, changedPaths);
+  let pullRequestBody = "";
+  try {
+    pullRequestBody = buildPullRequestBody(boardEntry, changedPaths);
+  } catch (caughtError) {
+    fail(`openPullRequestForTask(${taskIdentifier}) failed: ${formatError(caughtError)}`);
+  }
   const pullRequestBodyFilePath = resolve(
     runtimeOpsDirectoryPath,
     `pr-body-${taskIdentifier}.md`,
@@ -1581,9 +1584,6 @@ function startTmuxBatch(argumentsList: string[]): void {
     fail("missing required arguments for ops:tmux-batch");
   }
 
-  startBatchSession(argumentsList);
-  validateSession([sessionIdentifier]);
-
   const tmuxSessionName = `mergewise-${sessionIdentifier}`;
   if (tmuxSessionExists(tmuxSessionName)) {
     fail(
@@ -1591,6 +1591,9 @@ function startTmuxBatch(argumentsList: string[]): void {
       "attach to it or kill it first",
     );
   }
+
+  startBatchSession(argumentsList);
+  validateSession([sessionIdentifier]);
 
   const buildWindowCommand = (taskIdentifier: string): string => {
     const launchCommand =
