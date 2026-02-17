@@ -1237,7 +1237,7 @@ describe("finding delivery", () => {
     }
   });
 
-  test("buildWorkerCheckOutput includes structured skip counters", () => {
+  test("buildWorkerCheckOutput formats reviewer summary grouped by category and rule", () => {
     const delivery = prepareFindingDelivery(
       [
         {
@@ -1248,7 +1248,18 @@ describe("finding delivery", () => {
           line: 1,
           evidence: "const a: any = source;",
           recommendation: "Use a typed value.",
-          confidence: 0.6,
+          confidence: 0.9,
+        },
+        {
+          ...baseFinding,
+          category: "perf",
+          findingId: "two",
+          ruleId: "rule/b",
+          filePath: "src/b.ts",
+          line: 12,
+          evidence: "for (const item of items) { expensive(item); }",
+          recommendation: "Memoize expensive computation.",
+          confidence: 0.88,
         },
       ],
       {
@@ -1264,10 +1275,10 @@ describe("finding delivery", () => {
           totalRules: 3,
           successfulRules: 3,
           failedRules: 0,
-          totalFindings: 1,
+          totalFindings: 2,
           findingsByCategory: {
             clean: 0,
-            perf: 0,
+            perf: 1,
             safety: 1,
             idiomatic: 0,
           },
@@ -1276,11 +1287,27 @@ describe("finding delivery", () => {
       },
       delivery,
       0,
+      {
+        repositoryFullName: "acme/widget",
+        headSha: "abc123",
+      },
     );
 
-    expect(checkOutput.title).toContain("0 posted of 1");
+    expect(checkOutput.title).toContain("0 posted of 2");
     expect(checkOutput.summary).toContain("Rules=3/3");
-    expect(checkOutput.text).toContain("skipped_by_confidence=1");
+    expect(checkOutput.text).toContain("### Reviewer Summary");
+    expect(checkOutput.text).toContain("- `safety` (1)");
+    expect(checkOutput.text).toContain("- `perf` (1)");
+    expect(checkOutput.text).toContain("`rule/a` (1)");
+    expect(checkOutput.text).toContain("`rule/b` (1)");
+    expect(checkOutput.text).toContain(
+      "[src/a.ts:1](https://github.com/acme/widget/blob/abc123/src/a.ts#L1)",
+    );
+    expect(checkOutput.text).toContain(
+      "[src/b.ts:12](https://github.com/acme/widget/blob/abc123/src/b.ts#L12)",
+    );
+    expect(checkOutput.text).toContain("### Delivery Counters");
+    expect(checkOutput.text).toContain("skipped_by_confidence=0");
   });
 });
 

@@ -208,6 +208,24 @@ export interface WorkerCheckOutput {
 }
 
 /**
+ * Options used to render reviewer-facing summary links in check output details.
+ */
+export interface WorkerReviewerSummaryOptions {
+  /**
+   * Repository full name in `owner/name` format.
+   */
+  readonly repositoryFullName: string;
+  /**
+   * Pull request head commit SHA used for blob links.
+   */
+  readonly headSha: string;
+  /**
+   * Maximum evidence links shown per rule group.
+   */
+  readonly maxEvidenceLinksPerRule?: number;
+}
+
+/**
  * Prepared finding comment payload with stable dedupe key.
  */
 export interface PreparedFindingComment {
@@ -667,24 +685,129 @@ export function prepareFindingDelivery(
  * @param executionResult - Rule execution result.
  * @param delivery - Prepared delivery output.
  * @param postedCount - Number of comments that were actually posted.
+ * @param reviewerSummaryOptions - Optional `WorkerReviewerSummaryOptions` used to build reviewer summary evidence links with repository/head context and link limits; when omitted, reviewer summary falls back to plain location labels.
  * @returns Structured check output payload.
  */
 export function buildWorkerCheckOutput(
   executionResult: RuleExecutionResult,
   delivery: PreparedFindingDelivery,
   postedCount: number,
+  reviewerSummaryOptions?: WorkerReviewerSummaryOptions,
 ): WorkerCheckOutput {
   const totalFindings = executionResult.summary.totalFindings;
+  const reviewerSummaryMarkdown = buildReviewerSummaryMarkdown(
+    delivery.comments,
+    reviewerSummaryOptions,
+  );
+  const deliveryCounterMarkdown = [
+    "### Delivery Counters",
+    `- skipped_by_confidence=${delivery.skippedByConfidence}`,
+    `- skipped_by_deduplication=${delivery.skippedByDeduplication}`,
+    `- skipped_by_cap=${delivery.skippedByCap}`,
+  ].join("\n");
+
   return {
     title: `Mergewise Findings (${postedCount} posted of ${totalFindings})`,
     summary:
       `Rules=${executionResult.summary.successfulRules}/${executionResult.summary.totalRules}` +
       ` findings=${totalFindings} posted=${postedCount}`,
-    text:
-      `skipped_by_confidence=${delivery.skippedByConfidence}\n` +
-      `skipped_by_deduplication=${delivery.skippedByDeduplication}\n` +
-      `skipped_by_cap=${delivery.skippedByCap}`,
+    text: `${reviewerSummaryMarkdown}\n\n${deliveryCounterMarkdown}`,
   };
+}
+
+function buildReviewerSummaryMarkdown(
+  comments: readonly PreparedFindingComment[],
+  options?: WorkerReviewerSummaryOptions,
+): string {
+  if (comments.length === 0) {
+    return "### Reviewer Summary\nNo findings selected for reviewer output.";
+  }
+
+  const groupedByCategory = new Map<FindingCategory, Map<string, Finding[]>>();
+  for (const preparedComment of comments) {
+    const finding = preparedComment.finding;
+    const groupedByRule = groupedByCategory.get(finding.category) ?? new Map<string, Finding[]>();
+    const findingsForRule = groupedByRule.get(finding.ruleId) ?? [];
+    groupedByRule.set(finding.ruleId, [...findingsForRule, finding]);
+    groupedByCategory.set(finding.category, groupedByRule);
+  }
+
+  const categoryOrder: readonly FindingCategory[] = ["safety", "perf", "clean", "idiomatic"];
+  const orderedCategories = [...groupedByCategory.entries()].sort(([leftCategory], [rightCategory]) => {
+    const leftIndex = categoryOrder.indexOf(leftCategory);
+    const rightIndex = categoryOrder.indexOf(rightCategory);
+    if (leftIndex !== rightIndex) {
+      return leftIndex - rightIndex;
+    }
+
+    return leftCategory.localeCompare(rightCategory);
+  });
+
+  const summaryLines: string[] = ["### Reviewer Summary"];
+  for (const [category, groupedByRule] of orderedCategories) {
+    const sortedRuleEntries = [...groupedByRule.entries()].sort(([leftRuleId], [rightRuleId]) =>
+      leftRuleId.localeCompare(rightRuleId),
+    );
+    const categoryCount = sortedRuleEntries.reduce(
+      (totalCount, [, findings]) => totalCount + findings.length,
+      0,
+    );
+    summaryLines.push(`- \`${category}\` (${categoryCount})`);
+
+    for (const [ruleId, findings] of sortedRuleEntries) {
+      const sortedFindings = [...findings].sort(compareFindingsForGating);
+      const evidenceLinksMarkdown = formatEvidenceLinksForRule(sortedFindings, options);
+      summaryLines.push(
+        `  - \`${ruleId}\` (${findings.length}): ${evidenceLinksMarkdown.join(", ")}`,
+      );
+    }
+  }
+
+  return summaryLines.join("\n");
+}
+
+function formatEvidenceLinksForRule(
+  findings: readonly Finding[],
+  options?: WorkerReviewerSummaryOptions,
+): readonly string[] {
+  const maxEvidenceLinksPerRule = options?.maxEvidenceLinksPerRule ?? 3;
+  const uniqueLocations = new Set<string>();
+  const evidenceLinks: string[] = [];
+
+  for (const finding of findings) {
+    const locationKey = `${finding.filePath}:${finding.line}`;
+    if (uniqueLocations.has(locationKey)) {
+      continue;
+    }
+
+    uniqueLocations.add(locationKey);
+    evidenceLinks.push(formatEvidenceLocationLink(finding, options));
+    if (evidenceLinks.length >= maxEvidenceLinksPerRule) {
+      break;
+    }
+  }
+
+  return evidenceLinks;
+}
+
+function formatEvidenceLocationLink(
+  finding: Finding,
+  options?: WorkerReviewerSummaryOptions,
+): string {
+  const locationLabel = `${finding.filePath}:${finding.line}`;
+  if (!options) {
+    return `\`${locationLabel}\``;
+  }
+
+  const encodedFilePath = finding.filePath
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  const normalizedLineNumber = Math.max(1, finding.line);
+  const blobUrl =
+    `https://github.com/${options.repositoryFullName}` +
+    `/blob/${encodeURIComponent(options.headSha)}/${encodedFilePath}#L${String(normalizedLineNumber)}`;
+  return `[${locationLabel}](${blobUrl})`;
 }
 
 /**
@@ -973,7 +1096,10 @@ export async function processAnalyzePullRequestJob(
     );
     postedCommentCount = postingResult.postedCount;
   }
-  const checkOutput = buildWorkerCheckOutput(gatedExecutionResult, delivery, postedCommentCount);
+  const checkOutput = buildWorkerCheckOutput(gatedExecutionResult, delivery, postedCommentCount, {
+    repositoryFullName: job.repo_full_name,
+    headSha: job.head_sha,
+  });
 
   const summary = buildJobSummary(
     job,
