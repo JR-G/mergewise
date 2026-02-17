@@ -1594,12 +1594,18 @@ function startTmuxBatch(argumentsList: string[]): void {
 
   startBatchSession(argumentsList);
   validateSession([sessionIdentifier]);
+  const shellPath = process.env.SHELL ?? "/bin/sh";
+  const loginShellCommand = shellPath === "/bin/sh"
+    ? `exec ${JSON.stringify(shellPath)}`
+    : `exec ${JSON.stringify(shellPath)} -l`;
+  const wrapShellCommand = (command: string): string =>
+    `${JSON.stringify(shellPath)} -lc ${JSON.stringify(command)}`;
 
   const buildWindowCommand = (taskIdentifier: string): string => {
     const launchCommand =
       `cd ${JSON.stringify(sharedRepositoryRoot)} && ` +
       `bun run ops:launch-agent -- ${taskIdentifier}`;
-    return `zsh -lc ${JSON.stringify(launchCommand)}`;
+    return wrapShellCommand(launchCommand);
   };
 
   const [firstTaskIdentifier, ...remainingTaskIdentifiers] = taskIdentifiers;
@@ -1643,7 +1649,7 @@ function startTmuxBatch(argumentsList: string[]): void {
       `echo \"Tech Lead Monitor\" && ` +
       `echo \"- bun run ops:status\" && ` +
       `echo \"- bun run ops:review-ready -- <task-id> && bun run ops:open-pr -- <task-id>\" && ` +
-      `exec zsh -l`;
+      loginShellCommand;
     execFileSync(
       "tmux",
       [
@@ -1652,7 +1658,7 @@ function startTmuxBatch(argumentsList: string[]): void {
         tmuxSessionName,
         "-n",
         "tech-lead",
-        `zsh -lc ${JSON.stringify(monitorWindowCommand)}`,
+        wrapShellCommand(monitorWindowCommand),
       ],
       { stdio: "inherit" },
     );
