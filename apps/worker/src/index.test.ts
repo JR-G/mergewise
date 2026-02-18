@@ -1378,3 +1378,10 @@ describe("loadConfig", () => {
     expect(() => loadConfig()).toThrow("Invalid WORKER_FINDING_MAX_COMMENTS value");
   });
 });
+
+describe("mergewise e2e trigger", () => {
+  test("includes non-null assertion in a TypeScript diff", () => {
+    const optionalLabel: string | undefined = "trigger";
+    expect(optionalLabel!).toBe("trigger");
+  });
+});
