@@ -86,6 +86,26 @@ This command:
 - Assigns deterministic owners (`agent-1`, `agent-2`, ...).
 - Prints copy-paste commands for each agent terminal and tech lead PR flow.
 
+Single-command tmux launch (creates windows and starts agents):
+
+```bash
+bun run ops:tmux-batch -- <session-id> <task-id> [task-id...]
+```
+
+Example:
+
+```bash
+bun run ops:tmux-batch -- s03 mw-003 mw-004 mw-006
+```
+
+This command:
+
+- Runs `ops:start-batch`
+- Runs `ops:validate-session`
+- Creates tmux session `mergewise-<session-id>`
+- Opens one window per task (`agent-1`, `agent-2`, ...)
+- Starts each window with `bun run ops:launch-agent -- <task-id>`
+
 One-command agent launcher (start + prompt + shell in worktree):
 
 ```bash
