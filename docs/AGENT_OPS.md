@@ -151,6 +151,12 @@ Session teardown after merges:
 bun run wt:cleanup:session s01
 ```
 
+One-command full reset (cleanup all/prune/status):
+
+```bash
+bun run ops:reset
+```
+
 Open PR from task identifier:
 
 ```bash
