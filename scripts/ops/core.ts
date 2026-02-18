@@ -115,6 +115,7 @@ function usage(): void {
   bun run ops:start-session -- <session-id> <task-id> [owner] [scope] [branch-kind]
   bun run ops:start-batch -- <session-id> <task-id> [task-id...]
   bun run ops:tmux-batch -- <session-id> <task-id> [task-id...]
+  bun run ops:reset
   bun run ops:validate-session -- <session-id>
   bun run ops:launch-agent -- <task-id>
   bun run ops:agent -- <session-id> <task-id> [owner] [scope] [branch-kind]
@@ -128,6 +129,7 @@ Examples:
   bun run ops:start-session -- s01 github-client
   bun run ops:start-batch -- s01 mw-003 mw-004 mw-006
   bun run ops:tmux-batch -- s01 mw-003 mw-004 mw-006
+  bun run ops:reset
   bun run ops:validate-session -- s01
   bun run ops:launch-agent -- mw-003
   bun run ops:agent -- s01 github-client
@@ -1671,6 +1673,40 @@ function startTmuxBatch(argumentsList: string[]): void {
 }
 
 /**
+ * Runs post-session cleanup and prints current workspace status.
+ */
+function resetWorkspace(): void {
+  try {
+    execFileSync(
+      "bash",
+      [resolve(repositoryRoot, "scripts/worktree.sh"), "cleanup-all"],
+      {
+        cwd: sharedRepositoryRoot,
+        stdio: "inherit",
+      },
+    );
+    execFileSync(
+      "bash",
+      [resolve(repositoryRoot, "scripts/worktree.sh"), "prune"],
+      {
+        cwd: sharedRepositoryRoot,
+        stdio: "inherit",
+      },
+    );
+    execFileSync(
+      "bash",
+      [resolve(repositoryRoot, "scripts/ops-status.sh")],
+      {
+        cwd: sharedRepositoryRoot,
+        stdio: "inherit",
+      },
+    );
+  } catch (caughtError) {
+    fail(`ops:reset failed: ${formatError(caughtError)}`);
+  }
+}
+
+/**
  * Starts one session task, prints the prompt, and opens a shell in the task worktree.
  *
  * @param argumentsList - Positional CLI args passed after `agent`.
@@ -1745,6 +1781,11 @@ function main(): void {
 
   if (commandName === "validate-session") {
     validateSession(argumentsList);
+    return;
+  }
+
+  if (commandName === "reset") {
+    resetWorkspace();
     return;
   }
 
