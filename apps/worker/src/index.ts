@@ -1506,43 +1506,120 @@ async function buildAnalysisContextFromGitHub(
  * and embeds the payload inside a collapsible `<details>` block.
  */
 function buildStructuredFindingComment(finding: Finding, dedupeKey: string): string {
-  const structuredPayload = JSON.stringify(
-    {
-      dedupeKey,
-      findingId: finding.findingId,
-      ruleId: finding.ruleId,
-      category: finding.category,
-      filePath: finding.filePath,
-      line: finding.line,
-      confidence: finding.confidence,
-    },
-    null,
-    2,
-  );
+  const antiPattern = buildAntiPatternText(finding);
+  const whyThisMatters = buildWhyThisMattersText(finding.category);
+  const refactorSteps = buildRefactorSteps(finding);
+  const suggestedRewrite = buildSuggestedRewriteSection(finding);
+  const debugMetadata = buildDebugMetadataSection(finding, dedupeKey);
 
   return [
-    "## Mergewise Finding",
+    "## Mergewise Refactor Suggestion",
     "",
-    `- Rule: \`${finding.ruleId}\``,
-    `- Category: \`${finding.category}\``,
-    `- Location: \`${finding.filePath}:${finding.line}\``,
-    `- Confidence: \`${finding.confidence.toFixed(2)}\``,
+    "**Anti-pattern**",
+    antiPattern,
     "",
-    "**Evidence**",
-    finding.evidence,
+    "**Why this matters**",
+    whyThisMatters,
     "",
-    "**Recommendation**",
-    finding.recommendation,
+    "**Refactor path**",
+    ...refactorSteps.map((refactorStep) => `- ${refactorStep}`),
     "",
-    "<details>",
-    "<summary>Structured Payload</summary>",
-    "",
-    "```json",
-    structuredPayload,
+    ...suggestedRewrite,
+    debugMetadata,
+  ].join("\n");
+}
+
+/**
+ * Builds the anti-pattern summary text for a finding.
+ *
+ * @param finding - Finding to summarize.
+ * @returns Human-readable anti-pattern sentence.
+ */
+function buildAntiPatternText(finding: Finding): string {
+  const normalizedEvidence = finding.evidence.trim();
+  const evidenceSummary = normalizedEvidence.length > 0
+    ? `\`${normalizedEvidence}\``
+    : "the changed code";
+  return `${finding.ruleId} triggered at \`${finding.filePath}:${finding.line}\` due to ${evidenceSummary}.`;
+}
+
+/**
+ * Builds a short explanation of why the finding matters.
+ *
+ * @param category - Finding category.
+ * @returns Category-specific impact statement.
+ */
+function buildWhyThisMattersText(category: FindingCategory): string {
+  if (category === "safety") {
+    return "This pattern increases the chance of runtime failures and weakens confidence in behavior under edge cases.";
+  }
+  if (category === "perf") {
+    return "This pattern can add avoidable compute cost and make performance regressions harder to detect.";
+  }
+  if (category === "idiomatic") {
+    return "This pattern is non-idiomatic for the language/framework and raises maintenance cost for future contributors.";
+  }
+
+  return "This pattern makes the codebase harder to read and evolve safely over time.";
+}
+
+/**
+ * Builds deterministic refactor steps from the finding recommendation.
+ *
+ * @param finding - Finding used to generate steps.
+ * @returns Ordered refactor steps.
+ */
+function buildRefactorSteps(finding: Finding): readonly string[] {
+  const normalizedRecommendation = finding.recommendation.trim();
+  const firstSentenceMatch = normalizedRecommendation.match(/^(.+?[.!?])(\s|$)/);
+  const firstStep = firstSentenceMatch?.[1]?.trim() || normalizedRecommendation || "Apply the recommended refactor.";
+  const secondStep = "Update related tests to lock the new behavior and prevent regressions.";
+
+  if (firstStep === secondStep) {
+    return [firstStep];
+  }
+
+  return [firstStep, secondStep];
+}
+
+/**
+ * Builds the suggested rewrite section when a patch preview is available.
+ *
+ * @param finding - Finding that may include a patch preview.
+ * @returns Markdown lines for the suggested rewrite section.
+ */
+function buildSuggestedRewriteSection(finding: Finding): readonly string[] {
+  const patchPreview = finding.patchPreview;
+  if (!patchPreview || patchPreview.addedLines.length === 0) {
+    return [];
+  }
+
+  const normalizedLanguage = finding.language.toLowerCase();
+  const fencedLanguage = normalizedLanguage === "typescriptreact" ? "tsx" : normalizedLanguage;
+  const addedLines = patchPreview.addedLines.map((addedLine) => addedLine.replace(/^\+/, ""));
+
+  return [
+    "**Suggested rewrite**",
+    `\`\`\`${fencedLanguage}`,
+    ...addedLines,
     "```",
     "",
-    "</details>",
-  ].join("\n");
+  ];
+}
+
+/**
+ * Builds a hidden metadata marker for dedupe and debugging.
+ *
+ * @param finding - Finding metadata source.
+ * @param dedupeKey - Dedupe key assigned to the comment.
+ * @returns Invisible metadata marker.
+ */
+function buildDebugMetadataSection(finding: Finding, dedupeKey: string): string {
+  return (
+    `<!-- mergewise-meta dedupeKey=${dedupeKey} ` +
+    `findingId=${finding.findingId} ruleId=${finding.ruleId} ` +
+    `category=${finding.category} confidence=${finding.confidence.toFixed(2)} -->`
+  );
 }
 
 function resolveGitHubFetchOptions(): WorkerGitHubFetchOptions {

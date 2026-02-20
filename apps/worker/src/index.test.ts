@@ -1258,7 +1258,12 @@ describe("finding delivery", () => {
     expect(postingResult.successes).toHaveLength(1);
     expect(postingResult.failures).toHaveLength(0);
     expect(postedBodies).toHaveLength(1);
-    expect(postedBodies[0]!).toContain("\"dedupeKey\": \"acme/widget#3:one\"");
+    expect(postedBodies[0]!).toContain("## Mergewise Refactor Suggestion");
+    expect(postedBodies[0]!).toContain("**Anti-pattern**");
+    expect(postedBodies[0]!).toContain("**Why this matters**");
+    expect(postedBodies[0]!).toContain("**Refactor path**");
+    expect(postedBodies[0]!).toContain("dedupeKey=acme/widget#3:one");
+    expect(postedBodies[0]!).not.toContain("Structured Payload");
     expect(postingResult.successes[0]!.requestOptions.installationAccessToken).toBe("[REDACTED]");
     expect(postingResult.successes[0]!.requestOptions.traceId).toBe("trace-post-1");
   });
@@ -1308,13 +1313,13 @@ describe("finding delivery", () => {
           installationAccessToken: "token",
           traceId: "trace-post-2",
           githubFetchOptions: workerFetchOptions,
-          comments: delivery.comments,
-        },
-        {
-          postPullRequestSummaryCommentFn: async (options) => {
-            if (options.body.includes("\"dedupeKey\": \"acme/widget#3:two\"")) {
-              throw new Error("secondary post failed");
-            }
+        comments: delivery.comments,
+      },
+      {
+        postPullRequestSummaryCommentFn: async (options) => {
+          if (options.body.includes("dedupeKey=acme/widget#3:two")) {
+            throw new Error("secondary post failed");
+          }
 
             return {
               id: 1,
