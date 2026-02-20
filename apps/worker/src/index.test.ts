@@ -1297,6 +1297,76 @@ describe("finding delivery", () => {
     expect(delivery.skippedByConfidence).toBe(1);
   });
 
+  test("prepareFindingDelivery treats __mocks__ and /test/ paths as test files", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "mock-file",
+          ruleId: "rule/a",
+          filePath: "src/__mocks__/api.ts",
+          line: 2,
+          evidence: "value!",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.99,
+        },
+        {
+          ...baseFinding,
+          findingId: "test-dir-file",
+          ruleId: "rule/b",
+          filePath: "src/test/helpers.ts",
+          line: 3,
+          evidence: "other!",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.99,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 5,
+        testFileConfidenceThreshold: 1,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(0);
+    expect(delivery.skippedByConfidence).toBe(2);
+  });
+
+  test("prepareFindingDelivery treats JavaScript test/spec suffixes as test files", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "js-test",
+          ruleId: "rule/a",
+          filePath: "src/component.test.js",
+          line: 1,
+          evidence: "value!",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.99,
+        },
+        {
+          ...baseFinding,
+          findingId: "jsx-spec",
+          ruleId: "rule/b",
+          filePath: "src/component.spec.jsx",
+          line: 1,
+          evidence: "value!",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.99,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 5,
+        testFileConfidenceThreshold: 1,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(0);
+    expect(delivery.skippedByConfidence).toBe(2);
+  });
+
   test("postPreparedFindingComments only posts prepared bounded payload", async () => {
     const delivery = prepareFindingDelivery(
       [

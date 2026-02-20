@@ -647,6 +647,10 @@ export function buildFindingDedupeKey(finding: Finding): string {
  * @remarks
  * Selection order is deterministic and independent of input ordering.
  * Findings are sorted by confidence descending, then by stable dedupe key.
+ * When building `confidencePassing`, `nonTestConfidencePassing` is preferred over
+ * `testConfidencePassing`: test-file findings are suppressed whenever at least one
+ * non-test finding exists, and test-file findings are only used when no non-test
+ * findings are available.
  *
  * @param findings - Findings emitted by rule execution.
  * @param options - Confidence threshold and posting cap.
@@ -734,9 +738,15 @@ function isTestFilePath(filePath: string): boolean {
   const normalizedPath = filePath.toLowerCase();
   return (
     normalizedPath.includes("/__tests__/") ||
+    normalizedPath.includes("/__mocks__/") ||
+    normalizedPath.includes("/test/") ||
     normalizedPath.includes("/tests/") ||
+    normalizedPath.endsWith(".test.js") ||
+    normalizedPath.endsWith(".test.jsx") ||
     normalizedPath.endsWith(".test.ts") ||
     normalizedPath.endsWith(".test.tsx") ||
+    normalizedPath.endsWith(".spec.js") ||
+    normalizedPath.endsWith(".spec.jsx") ||
     normalizedPath.endsWith(".spec.ts") ||
     normalizedPath.endsWith(".spec.tsx")
   );
