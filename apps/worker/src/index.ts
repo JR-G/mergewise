@@ -26,6 +26,8 @@ import type {
   Rule,
 } from "@mergewise/shared-types";
 
+const DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD = 0.98;
+
 /**
  * Runtime configuration for the worker process.
  */
@@ -554,7 +556,8 @@ export function loadConfig(): WorkerConfig {
   const maxCommentsRaw = process.env.WORKER_FINDING_MAX_COMMENTS ?? "20";
   const maxComments = Number.parseInt(maxCommentsRaw, 10);
   const testFileConfidenceThresholdRaw =
-    process.env.WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD ?? "0.98";
+    process.env.WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD ??
+    String(DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD);
   const testFileConfidenceThreshold = Number.parseFloat(testFileConfidenceThresholdRaw);
 
   if (Number.isNaN(pollIntervalMs) || pollIntervalMs < 250) {
@@ -653,7 +656,8 @@ export function prepareFindingDelivery(
   findings: readonly Finding[],
   options: WorkerFindingDeliveryOptions,
 ): PreparedFindingDelivery {
-  const testFileConfidenceThreshold = options.testFileConfidenceThreshold ?? 0.98;
+  const testFileConfidenceThreshold =
+    options.testFileConfidenceThreshold ?? DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD;
   const skippedByConfidenceCandidates = findings.filter(
     (finding) =>
       finding.confidence < options.confidenceThreshold ||
@@ -676,7 +680,7 @@ export function prepareFindingDelivery(
   );
   const confidencePassing = nonTestConfidencePassing.length > 0
     ? nonTestConfidencePassing
-    : [...nonTestConfidencePassing, ...testConfidencePassing];
+    : testConfidencePassing;
   const sortedFindings = [...confidencePassing].sort((left, right) => {
     if (right.confidence !== left.confidence) {
       return right.confidence - left.confidence;
@@ -1105,7 +1109,7 @@ export async function processAnalyzePullRequestJob(
   const findingDeliveryOptions = dependencies.findingDeliveryOptions ?? {
     confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
     maxComments: mergewiseConfig.gating.maxComments,
-    testFileConfidenceThreshold: 0.98,
+    testFileConfidenceThreshold: DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD,
   };
 
   infoLogger(
