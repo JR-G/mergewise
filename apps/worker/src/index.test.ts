@@ -1571,27 +1571,27 @@ describe("finding delivery", () => {
           installationAccessToken: "token",
           traceId: "trace-post-2",
           githubFetchOptions: workerFetchOptions,
-        comments: delivery.comments,
-      },
-      {
-        postPullRequestInlineCommentFn: async (options) => {
-          if (options.body.includes("dedupeKey=acme/widget#3:two")) {
-            throw new Error("secondary post failed");
-          }
+          comments: delivery.comments,
+        },
+        {
+          postPullRequestInlineCommentFn: async (options) => {
+            if (options.body.includes("dedupeKey=acme/widget#3:two")) {
+              throw new Error("secondary post failed");
+            }
 
-          return {
-            id: 1,
-            html_url: "https://github.com/acme/widget/pull/3#discussion_r1",
-            body: options.body,
-            path: options.path,
-            line: options.line,
-          };
+            return {
+              id: 1,
+              html_url: "https://github.com/acme/widget/pull/3#discussion_r1",
+              body: options.body,
+              path: options.path,
+              line: options.line,
+            };
+          },
+          postPullRequestSummaryCommentFn: async () => {
+            throw new Error("secondary post failed");
+          },
         },
-        postPullRequestSummaryCommentFn: async () => {
-          throw new Error("secondary post failed");
-        },
-      },
-    );
+      );
 
       expect(postingResult.postedCount).toBe(1);
       expect(postingResult.successes).toHaveLength(1);

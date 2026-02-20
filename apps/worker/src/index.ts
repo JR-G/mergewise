@@ -1030,7 +1030,21 @@ export async function postPreparedFindingComments(
         requestOptions: sanitizedInlineRequestOptions,
         createdComment,
       });
-    } catch {
+    } catch (inlineError) {
+      const inlineErrorDetail = inlineError instanceof Error
+        ? inlineError.stack ?? inlineError.message
+        : String(inlineError);
+      console.warn(
+        "[worker] inline finding comment post failed index=" +
+          String(index) +
+          " dedupeKey=" +
+          preparedComment.dedupeKey +
+          " requestOptions=" +
+          JSON.stringify(sanitizedInlineRequestOptions) +
+          " error=" +
+          inlineErrorDetail,
+      );
+
       const fallbackRequestOptions: PostPullRequestSummaryCommentOptions = {
         owner: options.owner,
         repository: options.repository,
