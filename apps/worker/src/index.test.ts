@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { GitHubApiError } from "@mergewise/github-client";
 import type { Finding, FindingCategory, Rule } from "@mergewise/shared-types";
@@ -697,6 +700,109 @@ describe("processAnalyzePullRequestJob", () => {
 
     expect(summary.jobId).toBe("job-legacy-key");
     expect(summary.traceId).toBe("job-legacy-key");
+  });
+
+  test("supports GITHUB_APP_PRIVATE_KEY_PATH when inline key vars are unset", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
+    delete process.env.GITHUB_APP_PRIVATE_KEY_PEM;
+
+    const temporaryDirectoryPath = mkdtempSync(join(tmpdir(), "mergewise-worker-test-"));
+    const privateKeyPath = join(temporaryDirectoryPath, "private-key.pem");
+    writeFileSync(privateKeyPath, "path-private-key\n");
+    process.env.GITHUB_APP_PRIVATE_KEY_PATH = privateKeyPath;
+
+    try {
+      const summary = await processAnalyzePullRequestJob(
+        {
+          job_id: "job-path-key",
+          installation_id: 44,
+          repo_full_name: "acme/widget",
+          pr_number: 52,
+          head_sha: "def458",
+          queued_at: "2025-01-01T00:00:00Z",
+        },
+        {
+          githubFetchOptions: workerFetchOptions,
+          rules: [],
+          createGitHubAppJwtFn: () => "jwt",
+          exchangeInstallationAccessTokenFn: async () => ({
+            token: "installation-token",
+            expires_at: "2026-01-01T00:00:00Z",
+          }),
+          fetchPullRequestFilesWithRetryFn: async () => [],
+          executeRulesFn: async () => ({
+            findings: [],
+            summary: {
+              totalRules: 0,
+              successfulRules: 0,
+              failedRules: 0,
+              totalFindings: 0,
+              findingsByCategory: {
+                clean: 0,
+                perf: 0,
+                safety: 0,
+                idiomatic: 0,
+              },
+            },
+            failedRuleIds: [],
+          }),
+        },
+      );
+
+      expect(summary.jobId).toBe("job-path-key");
+    } finally {
+      rmSync(temporaryDirectoryPath, { recursive: true, force: true });
+      delete process.env.GITHUB_APP_PRIVATE_KEY_PATH;
+    }
+  });
+
+  test("invalid GITHUB_APP_PRIVATE_KEY_PATH surfaces explicit error", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
+    delete process.env.GITHUB_APP_PRIVATE_KEY_PEM;
+    process.env.GITHUB_APP_PRIVATE_KEY_PATH = "/tmp/mergewise-missing-private-key.pem";
+
+    await expect(
+      processAnalyzePullRequestJob(
+        {
+          job_id: "job-invalid-path-key",
+          installation_id: 44,
+          repo_full_name: "acme/widget",
+          pr_number: 53,
+          head_sha: "def459",
+          queued_at: "2025-01-01T00:00:00Z",
+        },
+        {
+          githubFetchOptions: workerFetchOptions,
+          rules: [],
+          createGitHubAppJwtFn: () => "jwt",
+          exchangeInstallationAccessTokenFn: async () => ({
+            token: "installation-token",
+            expires_at: "2026-01-01T00:00:00Z",
+          }),
+          fetchPullRequestFilesWithRetryFn: async () => [],
+          executeRulesFn: async () => ({
+            findings: [],
+            summary: {
+              totalRules: 0,
+              successfulRules: 0,
+              failedRules: 0,
+              totalFindings: 0,
+              findingsByCategory: {
+                clean: 0,
+                perf: 0,
+                safety: 0,
+                idiomatic: 0,
+              },
+            },
+            failedRuleIds: [],
+          }),
+        },
+      ),
+    ).rejects.toThrow("[worker] failed to read GITHUB_APP_PRIVATE_KEY_PATH");
+
+    delete process.env.GITHUB_APP_PRIVATE_KEY_PATH;
   });
 
   test("invalid GITHUB_APP_ID surfaces explicit error", async () => {

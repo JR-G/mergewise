@@ -12,6 +12,36 @@ Current local development flow:
 2. `apps/worker` polls queued jobs, deduplicates by idempotency key, and invokes `packages/rule-engine`.
 3. `packages/rule-engine` executes registered rules and returns a deterministic per-job summary payload.
 
+## Local Env Setup
+
+Create local secrets file (gitignored):
+
+```bash
+cp .env.example .env.local
+```
+
+Set values in `.env.local`:
+
+- `GITHUB_APP_ID`
+- `GITHUB_WEBHOOK_SECRET`
+- `GITHUB_APP_PRIVATE_KEY_PATH` (absolute path to downloaded GitHub App `.pem`)
+- `WEBHOOK_PORT` (defaults to `8787`)
+
+`dev:*:local` commands load `.env.local` automatically via `bun --env-file`, so no manual `export` is required.
+
+Run services with env auto-loaded:
+
+```bash
+bun run dev:webhook:local
+bun run dev:worker:local
+```
+
+Run both together:
+
+```bash
+bun run dev:stack
+```
+
 ## npm package
 
 Package: `mergewise`  

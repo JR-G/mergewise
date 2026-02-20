@@ -8,6 +8,7 @@ import {
   type GitHubPullRequestFile,
   type PostPullRequestSummaryCommentOptions,
 } from "@mergewise/github-client";
+import { readFileSync } from "node:fs";
 import {
   DEFAULT_MERGEWISE_CONFIG,
   type MergewiseConfig,
@@ -1634,12 +1635,25 @@ function loadGitHubAppCredentials(): Readonly<{ appId: number; privateKeyPem: st
   }
 
   const preferredPrivateKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY;
+  const privateKeyPathRaw = process.env.GITHUB_APP_PRIVATE_KEY_PATH;
   const legacyPrivateKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY_PEM;
-  const privateKeyRaw = preferredPrivateKeyRaw ?? legacyPrivateKeyRaw;
+  let privateKeyRaw = preferredPrivateKeyRaw ?? legacyPrivateKeyRaw;
+
+  if (privateKeyRaw === undefined && privateKeyPathRaw?.trim()) {
+    try {
+      privateKeyRaw = readFileSync(privateKeyPathRaw, "utf8");
+    } catch (caughtError) {
+      const details =
+        caughtError instanceof Error ? caughtError.message : String(caughtError);
+      throw new Error(
+        `[worker] failed to read GITHUB_APP_PRIVATE_KEY_PATH (${privateKeyPathRaw}): ${details}`,
+      );
+    }
+  }
 
   if (privateKeyRaw === undefined) {
     throw new Error(
-      "[worker] missing GITHUB_APP_PRIVATE_KEY (or legacy GITHUB_APP_PRIVATE_KEY_PEM)",
+      "[worker] missing GITHUB_APP_PRIVATE_KEY (or GITHUB_APP_PRIVATE_KEY_PATH or legacy GITHUB_APP_PRIVATE_KEY_PEM)",
     );
   }
 
