@@ -1272,6 +1272,31 @@ describe("finding delivery", () => {
     expect(delivery.comments[0]!.finding.filePath).toBe("src/index.spec.ts");
   });
 
+  test("prepareFindingDelivery counts test-only threshold band as skipped by confidence", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "test-finding-mid",
+          ruleId: "rule/a",
+          filePath: "src/index.test.ts",
+          line: 3,
+          evidence: "expect(value!).toBeTruthy();",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.9,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 5,
+        testFileConfidenceThreshold: 0.98,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(0);
+    expect(delivery.skippedByConfidence).toBe(1);
+  });
+
   test("postPreparedFindingComments only posts prepared bounded payload", async () => {
     const delivery = prepareFindingDelivery(
       [

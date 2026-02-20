@@ -655,7 +655,13 @@ export function prepareFindingDelivery(
 ): PreparedFindingDelivery {
   const testFileConfidenceThreshold = options.testFileConfidenceThreshold ?? 0.98;
   const skippedByConfidenceCandidates = findings.filter(
-    (finding) => finding.confidence < options.confidenceThreshold,
+    (finding) =>
+      finding.confidence < options.confidenceThreshold ||
+      (
+        isTestFilePath(finding.filePath) &&
+        finding.confidence >= options.confidenceThreshold &&
+        finding.confidence < testFileConfidenceThreshold
+      ),
   );
   const baseConfidencePassing = findings.filter(
     (finding) => finding.confidence >= options.confidenceThreshold,
