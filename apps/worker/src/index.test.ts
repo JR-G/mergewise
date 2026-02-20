@@ -974,7 +974,8 @@ describe("processAnalyzePullRequestJob", () => {
     });
     expect(summary.postedCommentCount).toBe(0);
     expect(summary.skippedByConfidence).toBe(1);
-    expect(summary.skippedByCap).toBe(1);
+    expect(summary.skippedByGrouping).toBe(2);
+    expect(summary.skippedByCap).toBe(0);
     expect(summary.traceId).toBe("job-gating");
     expect(summary.checkOutput?.title).toContain("0 posted of 3");
   });
@@ -1201,6 +1202,93 @@ describe("finding delivery", () => {
     expect(reverseOrderDelivery).toEqual(forwardOrderDelivery);
   });
 
+  test("prepareFindingDelivery groups same file/rule findings into one comment", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "group-a",
+          ruleId: "rule/a",
+          filePath: "src/a.ts",
+          line: 10,
+          evidence: "alpha",
+          recommendation: "Refactor alpha.",
+          confidence: 0.92,
+        },
+        {
+          ...baseFinding,
+          findingId: "group-b",
+          ruleId: "rule/a",
+          filePath: "src/a.ts",
+          line: 25,
+          evidence: "beta",
+          recommendation: "Refactor beta.",
+          confidence: 0.9,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 5,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(1);
+    expect(delivery.skippedByGrouping).toBe(1);
+    expect(delivery.comments[0]!.groupedFindings).toHaveLength(2);
+    expect(delivery.comments[0]!.body).toContain("**Also affects**");
+    expect(delivery.comments[0]!.body).toContain("`src/a.ts:25`");
+  });
+
+  test("prepareFindingDelivery applies default high-value category post policy", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "policy-clean",
+          ruleId: "rule/clean",
+          category: "clean",
+          filePath: "src/a.ts",
+          line: 1,
+          evidence: "alpha",
+          recommendation: "Refactor alpha.",
+          confidence: 0.95,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 5,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(0);
+    expect(delivery.skippedByPolicy).toBe(1);
+  });
+
+  test("prepareFindingDelivery applies default blocked-rule post policy", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "policy-blocked-rule",
+          ruleId: "ts-react/no-non-null-assertion",
+          category: "safety",
+          filePath: "src/a.ts",
+          line: 1,
+          evidence: "value!",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.95,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 5,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(0);
+    expect(delivery.skippedByPolicy).toBe(1);
+  });
+
   test("prepareFindingDelivery suppresses test-file findings when non-test findings exist", () => {
     const delivery = prepareFindingDelivery(
       [
@@ -1403,18 +1491,23 @@ describe("finding delivery", () => {
         owner: "acme",
         repository: "widget",
         pullRequestNumber: 3,
+        pullRequestHeadSha: "abc123",
         installationAccessToken: "token",
         traceId: "trace-post-1",
         githubFetchOptions: workerFetchOptions,
         comments: delivery.comments,
       },
       {
-        postPullRequestSummaryCommentFn: async (options) => {
+        listPullRequestSummaryCommentsFn: async () => [],
+        listPullRequestInlineCommentsFn: async () => [],
+        postPullRequestInlineCommentFn: async (options) => {
           postedBodies.push(options.body);
           return {
             id: 1,
-            html_url: "https://github.com/acme/widget/pull/3#issuecomment-1",
+            html_url: "https://github.com/acme/widget/pull/3#discussion_r1",
             body: options.body,
+            path: options.path,
+            line: options.line,
           };
         },
       },
@@ -1476,22 +1569,30 @@ describe("finding delivery", () => {
           owner: "acme",
           repository: "widget",
           pullRequestNumber: 3,
+          pullRequestHeadSha: "abc123",
           installationAccessToken: "token",
           traceId: "trace-post-2",
           githubFetchOptions: workerFetchOptions,
-        comments: delivery.comments,
-      },
-      {
-        postPullRequestSummaryCommentFn: async (options) => {
-          if (options.body.includes("dedupeKey=acme/widget#3:two")) {
-            throw new Error("secondary post failed");
-          }
+          comments: delivery.comments,
+        },
+        {
+          listPullRequestSummaryCommentsFn: async () => [],
+          listPullRequestInlineCommentsFn: async () => [],
+          postPullRequestInlineCommentFn: async (options) => {
+            if (options.body.includes("dedupeKey=acme/widget#3:two")) {
+              throw new Error("secondary post failed");
+            }
 
             return {
               id: 1,
-              html_url: "https://github.com/acme/widget/pull/3#issuecomment-1",
+              html_url: "https://github.com/acme/widget/pull/3#discussion_r1",
               body: options.body,
+              path: options.path,
+              line: options.line,
             };
+          },
+          postPullRequestSummaryCommentFn: async () => {
+            throw new Error("secondary post failed");
           },
         },
       );
@@ -1505,13 +1606,90 @@ describe("finding delivery", () => {
       expect(postingResult.failures[0]!.preparedComment.dedupeKey).toBe("acme/widget#3:two");
       expect(postingResult.failures[0]!.requestOptions.installationAccessToken).toBe("[REDACTED]");
       expect(postingResult.failures[0]!.requestOptions.traceId).toBe("trace-post-2");
-      expect(loggedErrors).toHaveLength(1);
-      expect(loggedErrors[0]!).toContain("acme/widget#3:two");
-      expect(loggedErrors[0]!).toContain("[REDACTED]");
-      expect(loggedErrors[0]!).not.toContain("\"installationAccessToken\":\"token\"");
+      expect(loggedErrors.length).toBeGreaterThanOrEqual(1);
+      expect(loggedErrors.some((entry) => entry.includes("acme/widget#3:two"))).toBe(true);
+      expect(loggedErrors.some((entry) => entry.includes("[REDACTED]"))).toBe(true);
+      expect(
+        loggedErrors.some((entry) => entry.includes("\"installationAccessToken\":\"token\"")),
+      ).toBe(false);
     } finally {
       console.error = originalConsoleError;
     }
+  });
+
+  test("postPreparedFindingComments skips already-posted dedupe keys on the pull request", async () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "one",
+          ruleId: "rule/a",
+          filePath: "src/a.ts",
+          line: 1,
+          evidence: "const a: any = source;",
+          recommendation: "Use a typed value.",
+          confidence: 0.9,
+        },
+        {
+          ...baseFinding,
+          findingId: "two",
+          ruleId: "rule/b",
+          filePath: "src/b.ts",
+          line: 1,
+          evidence: "const b: any = source;",
+          recommendation: "Use a typed value.",
+          confidence: 0.89,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 2,
+      },
+    );
+
+    const postedDedupeKeys: string[] = [];
+    const postingResult = await postPreparedFindingComments(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 3,
+        pullRequestHeadSha: "abc123",
+        installationAccessToken: "token",
+        traceId: "trace-post-skip-existing",
+        githubFetchOptions: workerFetchOptions,
+        comments: delivery.comments,
+      },
+      {
+        listPullRequestSummaryCommentsFn: async () => [
+          {
+            id: 901,
+            html_url: "https://github.com/acme/widget/pull/3#issuecomment-901",
+            body:
+              "<!-- mergewise-meta dedupeKey=acme/widget#3:one " +
+              "findingId=one ruleId=rule/a category=clean confidence=0.9 -->",
+          },
+        ],
+        listPullRequestInlineCommentsFn: async () => [],
+        postPullRequestInlineCommentFn: async (options) => {
+          const dedupeKeyMatch = /dedupeKey=([^\s>]+)/.exec(options.body);
+          postedDedupeKeys.push(dedupeKeyMatch?.[1] ?? "unknown");
+          return {
+            id: 11,
+            html_url: "https://github.com/acme/widget/pull/3#discussion_r11",
+            body: options.body,
+            path: options.path,
+            line: options.line,
+          };
+        },
+      },
+    );
+
+    expect(postingResult.postedCount).toBe(1);
+    expect(postingResult.successes).toHaveLength(1);
+    expect(postingResult.failures).toHaveLength(0);
+    expect(postingResult.skipped).toHaveLength(1);
+    expect(postingResult.skipped[0]!.preparedComment.dedupeKey).toBe("acme/widget#3:one");
+    expect(postedDedupeKeys).toEqual(["acme/widget#3:two"]);
   });
 
   test("builds anti-pattern evidence as single-line markdown-safe inline code", async () => {
@@ -1540,18 +1718,23 @@ describe("finding delivery", () => {
         owner: "acme",
         repository: "widget",
         pullRequestNumber: 3,
+        pullRequestHeadSha: "abc123",
         installationAccessToken: "token",
         traceId: "trace-inline-fence",
         githubFetchOptions: workerFetchOptions,
         comments: delivery.comments,
       },
       {
-        postPullRequestSummaryCommentFn: async (options) => {
+        listPullRequestSummaryCommentsFn: async () => [],
+        listPullRequestInlineCommentsFn: async () => [],
+        postPullRequestInlineCommentFn: async (options) => {
           postedBodies.push(options.body);
           return {
             id: 1,
-            html_url: "https://github.com/acme/widget/pull/3#issuecomment-1",
+            html_url: "https://github.com/acme/widget/pull/3#discussion_r1",
             body: options.body,
+            path: options.path,
+            line: options.line,
           };
         },
       },
@@ -1593,18 +1776,23 @@ describe("finding delivery", () => {
         owner: "acme",
         repository: "widget",
         pullRequestNumber: 3,
+        pullRequestHeadSha: "abc123",
         installationAccessToken: "token",
         traceId: "trace-block-fence",
         githubFetchOptions: workerFetchOptions,
         comments: delivery.comments,
       },
       {
-        postPullRequestSummaryCommentFn: async (options) => {
+        listPullRequestSummaryCommentsFn: async () => [],
+        listPullRequestInlineCommentsFn: async () => [],
+        postPullRequestInlineCommentFn: async (options) => {
           postedBodies.push(options.body);
           return {
             id: 2,
-            html_url: "https://github.com/acme/widget/pull/3#issuecomment-2",
+            html_url: "https://github.com/acme/widget/pull/3#discussion_r2",
             body: options.body,
+            path: options.path,
+            line: options.line,
           };
         },
       },
@@ -1613,6 +1801,64 @@ describe("finding delivery", () => {
     expect(postedBodies).toHaveLength(1);
     expect(postedBodies[0]!).toContain("````typescript");
     expect(postedBodies[0]!).toContain("\n````\n");
+  });
+
+  test("builds GitHub suggested-change block when patch preview is suggestion-safe", async () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "suggestion-block",
+          ruleId: "rule/a",
+          filePath: "src/a.ts",
+          line: 1,
+          evidence: "const value = source;",
+          recommendation: "Use safer output.",
+          confidence: 0.95,
+          patchPreview: {
+            hunkHeader: "@@ -1,1 +1,1 @@",
+            removedLines: ["const value = source;"],
+            addedLines: ["const value = normalize(source);"],
+          },
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 1,
+      },
+    );
+
+    const postedBodies: string[] = [];
+    await postPreparedFindingComments(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 3,
+        pullRequestHeadSha: "abc123",
+        installationAccessToken: "token",
+        traceId: "trace-suggestion-block",
+        githubFetchOptions: workerFetchOptions,
+        comments: delivery.comments,
+      },
+      {
+        listPullRequestSummaryCommentsFn: async () => [],
+        listPullRequestInlineCommentsFn: async () => [],
+        postPullRequestInlineCommentFn: async (options) => {
+          postedBodies.push(options.body);
+          return {
+            id: 3,
+            html_url: "https://github.com/acme/widget/pull/3#discussion_r3",
+            body: options.body,
+            path: options.path,
+            line: options.line,
+          };
+        },
+      },
+    );
+
+    expect(postedBodies).toHaveLength(1);
+    expect(postedBodies[0]!).toContain("**Suggested change**");
+    expect(postedBodies[0]!).toContain("```suggestion");
   });
 
   test("buildWorkerCheckOutput formats reviewer summary grouped by category and rule", () => {
@@ -1686,6 +1932,8 @@ describe("finding delivery", () => {
     );
     expect(checkOutput.text).toContain("### Delivery Counters");
     expect(checkOutput.text).toContain("skipped_by_confidence=0");
+    expect(checkOutput.text).toContain("skipped_by_policy=0");
+    expect(checkOutput.text).toContain("skipped_by_grouping=0");
   });
 });
 

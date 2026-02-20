@@ -1,11 +1,18 @@
 import {
+  postPullRequestInlineComment,
   postPullRequestSummaryComment,
+  listPullRequestInlineComments,
+  listPullRequestSummaryComments,
   createGitHubAppJwt,
   exchangeInstallationAccessToken,
   fetchPullRequestFiles,
   GitHubApiError,
   type FetchPullRequestFilesOptions,
+  type GitHubIssueComment,
+  type GitHubPullRequestReviewComment,
   type GitHubPullRequestFile,
+  type ListPullRequestCommentsOptions,
+  type PostPullRequestInlineCommentOptions,
   type PostPullRequestSummaryCommentOptions,
 } from "@mergewise/github-client";
 import { readFileSync } from "node:fs";
@@ -27,6 +34,14 @@ import type {
 } from "@mergewise/shared-types";
 
 const DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD = 0.98;
+const DEFAULT_ALLOWED_POST_CATEGORIES: readonly FindingCategory[] = [
+  "safety",
+  "perf",
+  "idiomatic",
+];
+const DEFAULT_BLOCKED_POST_RULE_IDS: readonly string[] = [
+  "ts-react/no-non-null-assertion",
+];
 
 /**
  * Runtime configuration for the worker process.
@@ -177,6 +192,14 @@ export interface AnalyzePullRequestJobSummary {
    */
   readonly skippedByCap?: number;
   /**
+   * Number of findings skipped due to category/rule post policy.
+   */
+  readonly skippedByPolicy?: number;
+  /**
+   * Number of findings skipped because they were grouped into another posted comment.
+   */
+  readonly skippedByGrouping?: number;
+  /**
    * Structured check output payload for PR status reporting.
    */
   readonly checkOutput?: WorkerCheckOutput;
@@ -198,6 +221,14 @@ export interface WorkerFindingDeliveryOptions {
    * Minimum confidence required for test-file findings.
    */
   readonly testFileConfidenceThreshold?: number;
+  /**
+   * Finding categories eligible for posting.
+   */
+  readonly allowedCategories?: readonly FindingCategory[];
+  /**
+   * Rule identifiers excluded from posting.
+   */
+  readonly blockedRuleIds?: readonly string[];
 }
 
 /**
@@ -249,6 +280,10 @@ export interface PreparedFindingComment {
    */
   readonly finding: Finding;
   /**
+   * Additional grouped findings for the same file/rule pair.
+   */
+  readonly groupedFindings: readonly Finding[];
+  /**
    * Markdown body posted to GitHub.
    */
   readonly body: string;
@@ -276,6 +311,14 @@ export interface PostedCommentRequestOptions {
   readonly requestTimeoutMs?: number;
   /** Optional end-to-end trace identifier for observability. */
   readonly traceId?: string;
+  /** Inline path for review comments when available. */
+  readonly path?: string;
+  /** Inline line for review comments when available. */
+  readonly line?: number;
+  /** Commit SHA used for inline anchors when available. */
+  readonly commitId?: string;
+  /** Posted mode for diagnostics. */
+  readonly mode?: "inline" | "summary";
 }
 
 /**
@@ -301,6 +344,8 @@ export interface PostedFindingCommentSuccess {
     readonly id: number;
     readonly html_url: string;
     readonly body: string;
+    readonly path?: string;
+    readonly line?: number;
   };
 }
 
@@ -327,6 +372,24 @@ export interface PostedFindingCommentFailure {
 }
 
 /**
+ * Metadata for one finding skipped due to an existing dedupe key on the PR.
+ */
+export interface PostedFindingCommentSkipped {
+  /**
+   * Index of the prepared comment in the input list.
+   */
+  readonly index: number;
+  /**
+   * Prepared comment that was skipped.
+   */
+  readonly preparedComment: PreparedFindingComment;
+  /**
+   * Skip reason identifier.
+   */
+  readonly reason: "existing_dedupe_key";
+}
+
+/**
  * Result summary for prepared finding comment posting.
  */
 export interface PostPreparedFindingCommentsResult {
@@ -342,6 +405,10 @@ export interface PostPreparedFindingCommentsResult {
    * Failed post entries in call order.
    */
   readonly failures: readonly PostedFindingCommentFailure[];
+  /**
+   * Skipped comment entries in call order.
+   */
+  readonly skipped: readonly PostedFindingCommentSkipped[];
 }
 
 /**
@@ -364,6 +431,14 @@ export interface PreparedFindingDelivery {
    * Findings rejected due to maximum comment cap.
    */
   readonly skippedByCap: number;
+  /**
+   * Findings skipped due to category post policy.
+   */
+  readonly skippedByPolicy: number;
+  /**
+   * Findings grouped into an existing file/rule comment.
+   */
+  readonly skippedByGrouping: number;
 }
 
 /**
@@ -458,6 +533,12 @@ export interface WorkerProcessingDependencies {
   readonly postPullRequestSummaryCommentFn?: (
     options: PostPullRequestSummaryCommentOptions,
   ) => Promise<{ id: number; html_url: string; body: string }>;
+  /**
+   * GitHub inline pull request comment function override.
+   */
+  readonly postPullRequestInlineCommentFn?: (
+    options: PostPullRequestInlineCommentOptions,
+  ) => Promise<GitHubPullRequestReviewComment>;
   /**
    * Runtime rule selection and gating config.
    */
@@ -662,6 +743,10 @@ export function prepareFindingDelivery(
 ): PreparedFindingDelivery {
   const testFileConfidenceThreshold =
     options.testFileConfidenceThreshold ?? DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD;
+  const allowedCategories = options.allowedCategories ?? DEFAULT_ALLOWED_POST_CATEGORIES;
+  const blockedRuleIds = options.blockedRuleIds ?? DEFAULT_BLOCKED_POST_RULE_IDS;
+  const allowedCategorySet = new Set<FindingCategory>(allowedCategories);
+  const blockedRuleIdSet = new Set<string>(blockedRuleIds);
   const skippedByConfidenceCandidates = findings.filter(
     (finding) =>
       finding.confidence < options.confidenceThreshold ||
@@ -685,7 +770,12 @@ export function prepareFindingDelivery(
   const confidencePassing = nonTestConfidencePassing.length > 0
     ? nonTestConfidencePassing
     : testConfidencePassing;
-  const sortedFindings = [...confidencePassing].sort((left, right) => {
+  const policyFilteredFindings = confidencePassing.filter((finding) =>
+    allowedCategorySet.has(finding.category) &&
+    !blockedRuleIdSet.has(finding.ruleId)
+  );
+  const skippedByPolicy = confidencePassing.length - policyFilteredFindings.length;
+  const sortedFindings = [...policyFilteredFindings].sort((left, right) => {
     if (right.confidence !== left.confidence) {
       return right.confidence - left.confidence;
     }
@@ -709,14 +799,31 @@ export function prepareFindingDelivery(
     deduplicatedFindings.push(finding);
   }
 
-  const selectedFindings = deduplicatedFindings.slice(0, options.maxComments);
-  const skippedByCap = Math.max(deduplicatedFindings.length - selectedFindings.length, 0);
-  const comments = selectedFindings.map((finding) => {
-    const dedupeKey = buildFindingDedupeKey(finding);
+  const groupedByFileRule = new Map<string, Finding[]>();
+  let skippedByGrouping = 0;
+  for (const finding of deduplicatedFindings) {
+    const groupKey = `${finding.filePath}:${finding.ruleId}`;
+    const groupEntries = groupedByFileRule.get(groupKey);
+    if (!groupEntries) {
+      groupedByFileRule.set(groupKey, [finding]);
+      continue;
+    }
+
+    groupEntries.push(finding);
+    skippedByGrouping += 1;
+  }
+
+  const groupedFindings = [...groupedByFileRule.values()];
+  const selectedGroups = groupedFindings.slice(0, options.maxComments);
+  const skippedByCap = Math.max(groupedFindings.length - selectedGroups.length, 0);
+  const comments = selectedGroups.map((group) => {
+    const primaryFinding = group[0]!;
+    const dedupeKey = buildFindingDedupeKey(primaryFinding);
     return {
       dedupeKey,
-      finding,
-      body: buildStructuredFindingComment(finding, dedupeKey),
+      finding: primaryFinding,
+      groupedFindings: group,
+      body: buildStructuredFindingComment(primaryFinding, group, dedupeKey),
     };
   });
 
@@ -724,6 +831,8 @@ export function prepareFindingDelivery(
     comments,
     skippedByConfidence: skippedByConfidenceCandidates.length,
     skippedByDeduplication,
+    skippedByPolicy,
+    skippedByGrouping,
     skippedByCap,
   };
 }
@@ -776,6 +885,8 @@ export function buildWorkerCheckOutput(
     "### Delivery Counters",
     `- skipped_by_confidence=${delivery.skippedByConfidence}`,
     `- skipped_by_deduplication=${delivery.skippedByDeduplication}`,
+    `- skipped_by_policy=${delivery.skippedByPolicy}`,
+    `- skipped_by_grouping=${delivery.skippedByGrouping}`,
     `- skipped_by_cap=${delivery.skippedByCap}`,
   ].join("\n");
 
@@ -895,63 +1006,158 @@ export async function postPreparedFindingComments(
     readonly owner: string;
     readonly repository: string;
     readonly pullRequestNumber: number;
+    readonly pullRequestHeadSha: string;
     readonly installationAccessToken: string;
     readonly traceId: string;
     readonly githubFetchOptions: WorkerGitHubFetchOptions;
     readonly comments: readonly PreparedFindingComment[];
   },
   dependencies: {
+    readonly listPullRequestSummaryCommentsFn?: (
+      options: ListPullRequestCommentsOptions,
+    ) => Promise<GitHubIssueComment[]>;
+    readonly listPullRequestInlineCommentsFn?: (
+      options: ListPullRequestCommentsOptions,
+    ) => Promise<GitHubPullRequestReviewComment[]>;
+    readonly postPullRequestInlineCommentFn?: (
+      options: PostPullRequestInlineCommentOptions,
+    ) => Promise<GitHubPullRequestReviewComment>;
     readonly postPullRequestSummaryCommentFn?: (
       options: PostPullRequestSummaryCommentOptions,
     ) => Promise<{ id: number; html_url: string; body: string }>;
   } = {},
 ): Promise<PostPreparedFindingCommentsResult> {
+  const listPullRequestSummaryCommentsFn =
+    dependencies.listPullRequestSummaryCommentsFn ?? listPullRequestSummaryComments;
+  const listPullRequestInlineCommentsFn =
+    dependencies.listPullRequestInlineCommentsFn ?? listPullRequestInlineComments;
+  const postPullRequestInlineCommentFn =
+    dependencies.postPullRequestInlineCommentFn ?? postPullRequestInlineComment;
   const postPullRequestSummaryCommentFn =
     dependencies.postPullRequestSummaryCommentFn ?? postPullRequestSummaryComment;
 
-  const successes: PostedFindingCommentSuccess[] = [];
-  const failures: PostedFindingCommentFailure[] = [];
-  for (const [index, preparedComment] of options.comments.entries()) {
-    const requestOptions: PostPullRequestSummaryCommentOptions = {
+  const existingDedupeKeys = await loadExistingDedupeKeys(
+    {
       owner: options.owner,
       repository: options.repository,
       pullRequestNumber: options.pullRequestNumber,
       installationAccessToken: options.installationAccessToken,
+      apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
+      userAgent: options.githubFetchOptions.githubUserAgent,
+      requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
+      traceId: options.traceId,
+    },
+    {
+      listPullRequestSummaryCommentsFn,
+      listPullRequestInlineCommentsFn,
+    },
+  );
+
+  const successes: PostedFindingCommentSuccess[] = [];
+  const failures: PostedFindingCommentFailure[] = [];
+  const skipped: PostedFindingCommentSkipped[] = [];
+  for (const [index, preparedComment] of options.comments.entries()) {
+    if (existingDedupeKeys.has(preparedComment.dedupeKey)) {
+      skipped.push({
+        index,
+        preparedComment,
+        reason: "existing_dedupe_key",
+      });
+      continue;
+    }
+
+    const requestOptions: PostPullRequestInlineCommentOptions = {
+      owner: options.owner,
+      repository: options.repository,
+      pullRequestNumber: options.pullRequestNumber,
+      installationAccessToken: options.installationAccessToken,
+      commitId: options.pullRequestHeadSha,
+      path: preparedComment.finding.filePath,
+      line: preparedComment.finding.line,
       body: preparedComment.body,
       apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
       userAgent: options.githubFetchOptions.githubUserAgent,
       requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
       traceId: options.traceId,
     };
-    const sanitizedRequestOptions = sanitizePostCommentRequestOptionsForLogging(requestOptions);
+    const sanitizedInlineRequestOptions = sanitizePostCommentRequestOptionsForLogging({
+      ...requestOptions,
+      mode: "inline",
+    });
 
     try {
-      const createdComment = await postPullRequestSummaryCommentFn(requestOptions);
+      const createdComment = await postPullRequestInlineCommentFn(requestOptions);
+      existingDedupeKeys.add(preparedComment.dedupeKey);
       successes.push({
         index,
         preparedComment,
-        requestOptions: sanitizedRequestOptions,
+        requestOptions: sanitizedInlineRequestOptions,
         createdComment,
       });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const errorDetail = error instanceof Error ? error.stack ?? error.message : String(error);
+    } catch (inlineError) {
+      const inlineErrorDetail = inlineError instanceof Error
+        ? inlineError.stack ?? inlineError.message
+        : String(inlineError);
       console.error(
-        "[worker] failed to post finding comment index=" +
+        "[worker] inline finding comment post failed index=" +
           String(index) +
           " dedupeKey=" +
           preparedComment.dedupeKey +
           " requestOptions=" +
-          JSON.stringify(sanitizedRequestOptions) +
+          JSON.stringify(sanitizedInlineRequestOptions) +
           " error=" +
-          errorDetail,
+          inlineErrorDetail,
       );
-      failures.push({
-        index,
-        preparedComment,
-        requestOptions: sanitizedRequestOptions,
-        errorMessage,
+
+      const fallbackRequestOptions: PostPullRequestSummaryCommentOptions = {
+        owner: options.owner,
+        repository: options.repository,
+        pullRequestNumber: options.pullRequestNumber,
+        installationAccessToken: options.installationAccessToken,
+        body: preparedComment.body,
+        apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
+        userAgent: options.githubFetchOptions.githubUserAgent,
+        requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
+        traceId: options.traceId,
+      };
+      const sanitizedFallbackRequestOptions = sanitizePostCommentRequestOptionsForLogging({
+        ...fallbackRequestOptions,
+        mode: "summary",
       });
+
+      try {
+        const createdComment = await postPullRequestSummaryCommentFn(fallbackRequestOptions);
+        existingDedupeKeys.add(preparedComment.dedupeKey);
+        successes.push({
+          index,
+          preparedComment,
+          requestOptions: sanitizedFallbackRequestOptions,
+          createdComment,
+        });
+      } catch (fallbackError) {
+        const errorMessage = fallbackError instanceof Error
+          ? fallbackError.message
+          : String(fallbackError);
+        const errorDetail = fallbackError instanceof Error
+          ? fallbackError.stack ?? fallbackError.message
+          : String(fallbackError);
+        console.error(
+          "[worker] failed to post finding comment index=" +
+            String(index) +
+            " dedupeKey=" +
+            preparedComment.dedupeKey +
+            " requestOptions=" +
+            JSON.stringify(sanitizedFallbackRequestOptions) +
+            " error=" +
+            errorDetail,
+        );
+        failures.push({
+          index,
+          preparedComment,
+          requestOptions: sanitizedFallbackRequestOptions,
+          errorMessage,
+        });
+      }
     }
   }
 
@@ -959,6 +1165,7 @@ export async function postPreparedFindingComments(
     postedCount: successes.length,
     successes,
     failures,
+    skipped,
   };
 }
 
@@ -969,12 +1176,92 @@ export async function postPreparedFindingComments(
  * @returns Safe request options for logs with token removed.
  */
 function sanitizePostCommentRequestOptionsForLogging(
-  requestOptions: PostPullRequestSummaryCommentOptions,
+  requestOptions: (
+    PostPullRequestSummaryCommentOptions |
+    PostPullRequestInlineCommentOptions
+  ) & { readonly mode: "inline" | "summary" },
 ): PostedCommentRequestOptions {
   return {
     ...requestOptions,
     installationAccessToken: "[REDACTED]",
   };
+}
+
+async function loadExistingDedupeKeys(
+  options: ListPullRequestCommentsOptions,
+  dependencies: {
+    readonly listPullRequestSummaryCommentsFn: (
+      options: ListPullRequestCommentsOptions,
+    ) => Promise<GitHubIssueComment[]>;
+    readonly listPullRequestInlineCommentsFn: (
+      options: ListPullRequestCommentsOptions,
+    ) => Promise<GitHubPullRequestReviewComment[]>;
+  },
+): Promise<Set<string>> {
+  const dedupeKeys = new Set<string>();
+  try {
+    const summaryComments = await dependencies.listPullRequestSummaryCommentsFn(options);
+    for (const comment of summaryComments) {
+      const dedupeKey = extractDedupeKeyFromCommentBody(comment.body);
+      if (dedupeKey) {
+        dedupeKeys.add(dedupeKey);
+      }
+    }
+  } catch (caughtError) {
+    const errorDetail = caughtError instanceof Error
+      ? caughtError.stack ?? caughtError.message
+      : String(caughtError);
+    console.error(
+      "[worker] failed to list summary comments for dedupe owner=" +
+        options.owner +
+        " repo=" +
+        options.repository +
+        " pr=" +
+        String(options.pullRequestNumber) +
+        " error=" +
+        errorDetail,
+    );
+  }
+
+  try {
+    const inlineComments = await dependencies.listPullRequestInlineCommentsFn(options);
+    for (const comment of inlineComments) {
+      const dedupeKey = extractDedupeKeyFromCommentBody(comment.body);
+      if (dedupeKey) {
+        dedupeKeys.add(dedupeKey);
+      }
+    }
+  } catch (caughtError) {
+    const errorDetail = caughtError instanceof Error
+      ? caughtError.stack ?? caughtError.message
+      : String(caughtError);
+    console.error(
+      "[worker] failed to list inline comments for dedupe owner=" +
+        options.owner +
+        " repo=" +
+        options.repository +
+        " pr=" +
+        String(options.pullRequestNumber) +
+        " error=" +
+        errorDetail,
+    );
+  }
+
+  return dedupeKeys;
+}
+
+function extractDedupeKeyFromCommentBody(commentBody: string | undefined): string | null {
+  if (!commentBody) {
+    return null;
+  }
+
+  const dedupeKeyMatch = /mergewise-meta[^>]*dedupeKey=([^\s>]+)/.exec(commentBody);
+  if (!dedupeKeyMatch) {
+    return null;
+  }
+
+  const dedupeKey = dedupeKeyMatch[1]?.trim() ?? "";
+  return dedupeKey || null;
 }
 
 /**
@@ -1120,6 +1407,8 @@ export async function processAnalyzePullRequestJob(
     confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
     maxComments: mergewiseConfig.gating.maxComments,
     testFileConfidenceThreshold: DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD,
+    allowedCategories: DEFAULT_ALLOWED_POST_CATEGORIES,
+    blockedRuleIds: DEFAULT_BLOCKED_POST_RULE_IDS,
   };
 
   infoLogger(
@@ -1159,12 +1448,14 @@ export async function processAnalyzePullRequestJob(
         owner: githubAnalysisContext.owner,
         repository: githubAnalysisContext.repository,
         pullRequestNumber: job.pr_number,
+        pullRequestHeadSha: job.head_sha,
         installationAccessToken: githubAnalysisContext.installationAccessToken,
         traceId,
         githubFetchOptions,
         comments: delivery.comments,
       },
       {
+        postPullRequestInlineCommentFn: dependencies.postPullRequestInlineCommentFn,
         postPullRequestSummaryCommentFn: dependencies.postPullRequestSummaryCommentFn,
       },
     );
@@ -1193,6 +1484,8 @@ export async function processAnalyzePullRequestJob(
     postedCommentCount,
     skippedByConfidence: delivery.skippedByConfidence,
     skippedByDeduplication: delivery.skippedByDeduplication,
+    skippedByPolicy: delivery.skippedByPolicy,
+    skippedByGrouping: delivery.skippedByGrouping,
     skippedByCap: delivery.skippedByCap,
     checkOutput,
   };
@@ -1578,11 +1871,16 @@ async function buildAnalysisContextFromGitHub(
  * Stringifies a subset of finding fields with 2-space indentation, includes evidence and recommendation sections,
  * and embeds the payload inside a collapsible `<details>` block.
  */
-function buildStructuredFindingComment(finding: Finding, dedupeKey: string): string {
+function buildStructuredFindingComment(
+  finding: Finding,
+  groupedFindings: readonly Finding[],
+  dedupeKey: string,
+): string {
   const antiPattern = buildAntiPatternText(finding);
   const whyThisMatters = buildWhyThisMattersText(finding.category);
   const refactorSteps = buildRefactorSteps(finding);
   const suggestedRewrite = buildSuggestedRewriteSection(finding);
+  const additionalLocations = buildAdditionalLocationsSection(groupedFindings);
   const debugMetadata = buildDebugMetadataSection(finding, dedupeKey);
 
   return [
@@ -1597,6 +1895,7 @@ function buildStructuredFindingComment(finding: Finding, dedupeKey: string): str
     "**Refactor path**",
     ...refactorSteps.map((refactorStep) => `- ${refactorStep}`),
     "",
+    ...additionalLocations,
     ...suggestedRewrite,
     debugMetadata,
   ].join("\n");
@@ -1671,6 +1970,15 @@ function buildSuggestedRewriteSection(finding: Finding): readonly string[] {
   const normalizedLanguage = finding.language.toLowerCase();
   const fencedLanguage = normalizedLanguage === "typescriptreact" ? "tsx" : normalizedLanguage;
   const addedLines = patchPreview.addedLines.map((addedLine) => addedLine.replace(/^\+/, ""));
+  if (canRenderGitHubSuggestedChange(addedLines)) {
+    return [
+      "**Suggested change**",
+      "```suggestion",
+      ...addedLines,
+      "```",
+      "",
+    ];
+  }
   const codeFence = createCodeFence(addedLines, fencedLanguage);
 
   return [
@@ -1680,6 +1988,37 @@ function buildSuggestedRewriteSection(finding: Finding): readonly string[] {
     codeFence.close,
     "",
   ];
+}
+
+/**
+ * Builds grouped-location context for same file/rule findings.
+ *
+ * @param groupedFindings - All findings grouped by file/rule key.
+ * @returns Markdown lines describing additional grouped locations.
+ */
+function buildAdditionalLocationsSection(groupedFindings: readonly Finding[]): readonly string[] {
+  if (groupedFindings.length <= 1) {
+    return [];
+  }
+
+  const additionalLocations = groupedFindings
+    .slice(1)
+    .map((finding) => `${finding.filePath}:${String(finding.line)}`);
+  return [
+    "**Also affects**",
+    ...additionalLocations.map((location) => `- \`${location}\``),
+    "",
+  ];
+}
+
+/**
+ * Returns whether lines are safe to render as a GitHub suggested-change block.
+ *
+ * @param lines - Suggested replacement lines.
+ * @returns True when lines do not contain code-fence terminators.
+ */
+function canRenderGitHubSuggestedChange(lines: readonly string[]): boolean {
+  return lines.every((line) => !line.includes("```"));
 }
 
 /**
