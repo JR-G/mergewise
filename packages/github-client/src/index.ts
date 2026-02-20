@@ -159,6 +159,50 @@ export interface PostPullRequestSummaryCommentOptions extends GitHubApiOptions {
 }
 
 /**
+ * Request options for posting an inline pull request review comment.
+ */
+export interface PostPullRequestInlineCommentOptions extends GitHubApiOptions {
+  /**
+   * Repository owner.
+   */
+  owner: string;
+  /**
+   * Repository name.
+   */
+  repository: string;
+  /**
+   * Pull request number.
+   */
+  pullRequestNumber: number;
+  /**
+   * Installation access token used for API authentication.
+   */
+  installationAccessToken: string;
+  /**
+   * Pull request head commit SHA that the comment anchors to.
+   */
+  commitId: string;
+  /**
+   * Repository file path for the inline anchor.
+   */
+  path: string;
+  /**
+   * 1-based line number in the file for the inline anchor.
+   */
+  line: number;
+  /**
+   * Diff side for inline comments.
+   *
+   * @defaultValue `"RIGHT"`
+   */
+  side?: "LEFT" | "RIGHT";
+  /**
+   * Markdown body for the inline review comment.
+   */
+  body: string;
+}
+
+/**
  * Response shape for created GitHub issue comments.
  */
 export interface GitHubIssueComment {
@@ -174,6 +218,32 @@ export interface GitHubIssueComment {
    * Stored markdown body.
    */
   body: string;
+}
+
+/**
+ * Response shape for created GitHub pull request review comments.
+ */
+export interface GitHubPullRequestReviewComment {
+  /**
+   * Review comment identifier.
+   */
+  id: number;
+  /**
+   * HTML URL for the review comment.
+   */
+  html_url: string;
+  /**
+   * Stored markdown body.
+   */
+  body: string;
+  /**
+   * Repository path associated with this inline comment.
+   */
+  path?: string;
+  /**
+   * 1-based line number associated with this inline comment.
+   */
+  line?: number;
 }
 
 /**
@@ -363,6 +433,49 @@ export async function postPullRequestSummaryComment(
     signal: AbortSignal.timeout(requestTimeoutMs),
   });
   const createdComment = await parseResponse<GitHubIssueComment>(
+    response,
+    "POST",
+    endpointUrl,
+  );
+  return createdComment;
+}
+
+/**
+ * Posts an inline review comment on a pull request diff.
+ *
+ * @param options - Inline comment request options.
+ * @returns Created pull request review comment payload.
+ * @throws {@link GitHubApiError} when GitHub returns a non-success status.
+ */
+export async function postPullRequestInlineComment(
+  options: PostPullRequestInlineCommentOptions,
+): Promise<GitHubPullRequestReviewComment> {
+  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
+  const apiBaseUrl = trimTrailingSlash(
+    options.apiBaseUrl ?? "https://api.github.com",
+  );
+  const endpointUrl =
+    `${apiBaseUrl}/repos/${encodeURIComponent(options.owner)}` +
+    `/${encodeURIComponent(options.repository)}` +
+    `/pulls/${options.pullRequestNumber}/comments`;
+  const response = await fetch(endpointUrl, {
+    method: "POST",
+    headers: buildHeaders({
+      authorization: `Bearer ${options.installationAccessToken}`,
+      userAgent: options.userAgent,
+      contentType: "application/json",
+      traceId: options.traceId,
+    }),
+    body: JSON.stringify({
+      body: options.body,
+      commit_id: options.commitId,
+      path: options.path,
+      line: Math.max(1, Math.floor(options.line)),
+      side: options.side ?? "RIGHT",
+    }),
+    signal: AbortSignal.timeout(requestTimeoutMs),
+  });
+  const createdComment = await parseResponse<GitHubPullRequestReviewComment>(
     response,
     "POST",
     endpointUrl,

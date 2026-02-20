@@ -7,6 +7,7 @@ import {
   exchangeInstallationAccessToken,
   fetchPullRequestFiles,
   GitHubApiError,
+  postPullRequestInlineComment,
   postPullRequestSummaryComment,
 } from "./index";
 
@@ -187,6 +188,53 @@ describe("github-client", () => {
     expect(String(calls[0]!.input)).toBe(
       "https://api.github.com/repos/acme/widget/issues/3/comments",
     );
+  });
+
+  test("postPullRequestInlineComment sends inline anchor payload and returns created comment", async () => {
+    const calls: FetchCall[] = [];
+    const fetchMock: FetchMock = async (input, init) => {
+      calls.push({ input, init });
+      return makeJsonResponse({
+        id: 101,
+        html_url: "https://github.com/acme/widget/pull/3#discussion_r101",
+        body: "inline comment",
+        path: "src/index.ts",
+        line: 42,
+      });
+    };
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const result = await postPullRequestInlineComment({
+      owner: "acme",
+      repository: "widget",
+      pullRequestNumber: 3,
+      installationAccessToken: "installation-token",
+      commitId: "abc123",
+      path: "src/index.ts",
+      line: 42,
+      body: "inline comment",
+      apiBaseUrl: "https://api.github.com",
+      traceId: "trace-inline-1",
+    });
+
+    expect(result.id).toBe(101);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(calls[0]!.init?.signal).toBeDefined();
+    expect(String(calls[0]!.input)).toBe(
+      "https://api.github.com/repos/acme/widget/pulls/3/comments",
+    );
+    expect(calls[0]!.init?.body).toBe(
+      JSON.stringify({
+        body: "inline comment",
+        commit_id: "abc123",
+        path: "src/index.ts",
+        line: 42,
+        side: "RIGHT",
+      }),
+    );
+    const requestHeaders = calls[0]!.init?.headers as Record<string, string>;
+    expect(requestHeaders["X-Mergewise-Trace-Id"]).toBe("trace-inline-1");
   });
 
   test("throws when requestTimeoutMs is invalid", async () => {
