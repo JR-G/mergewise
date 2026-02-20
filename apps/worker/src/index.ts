@@ -1013,6 +1013,8 @@ export async function postPreparedFindingComments(
     readonly comments: readonly PreparedFindingComment[];
   },
   dependencies: {
+    readonly logWarn?: (message: string) => void;
+    readonly logError?: (message: string) => void;
     readonly listPullRequestSummaryCommentsFn?: (
       options: ListPullRequestCommentsOptions,
     ) => Promise<GitHubIssueComment[]>;
@@ -1027,6 +1029,7 @@ export async function postPreparedFindingComments(
     ) => Promise<{ id: number; html_url: string; body: string }>;
   } = {},
 ): Promise<PostPreparedFindingCommentsResult> {
+  const errorLogger = dependencies.logError ?? console.error;
   const listPullRequestSummaryCommentsFn =
     dependencies.listPullRequestSummaryCommentsFn ?? listPullRequestSummaryComments;
   const listPullRequestInlineCommentsFn =
@@ -1098,7 +1101,7 @@ export async function postPreparedFindingComments(
       const inlineErrorDetail = inlineError instanceof Error
         ? inlineError.stack ?? inlineError.message
         : String(inlineError);
-      console.error(
+      (dependencies.logWarn ?? errorLogger)(
         "[worker] inline finding comment post failed index=" +
           String(index) +
           " dedupeKey=" +
@@ -1141,7 +1144,7 @@ export async function postPreparedFindingComments(
         const errorDetail = fallbackError instanceof Error
           ? fallbackError.stack ?? fallbackError.message
           : String(fallbackError);
-        console.error(
+        errorLogger(
           "[worker] failed to post finding comment index=" +
             String(index) +
             " dedupeKey=" +
