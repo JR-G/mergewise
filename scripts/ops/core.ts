@@ -1725,8 +1725,18 @@ function hasBranchMergedIntoMain(branchName: string): boolean {
       },
     );
     return true;
-  } catch {
-    return false;
+  } catch (caughtError) {
+    const status =
+      typeof caughtError === "object" &&
+      caughtError !== null &&
+      "status" in caughtError
+        ? (caughtError as { status?: unknown }).status
+        : undefined;
+    if (status === 1) {
+      return false;
+    }
+
+    throw caughtError;
   }
 }
 
@@ -1781,8 +1791,19 @@ function finishSession(argumentsList: string[]): void {
     fail(`ops:finish-session found no board rows for session ${sessionIdentifier}`);
   }
 
+  const mergedBranchStatusByBranchName = new Map<string, boolean>();
+  for (const sessionEntry of sessionEntries) {
+    if (mergedBranchStatusByBranchName.has(sessionEntry.branchName)) {
+      continue;
+    }
+    mergedBranchStatusByBranchName.set(
+      sessionEntry.branchName,
+      hasBranchMergedIntoMain(sessionEntry.branchName),
+    );
+  }
+
   const unmergedEntries = sessionEntries.filter((sessionEntry) =>
-    !hasBranchMergedIntoMain(sessionEntry.branchName)
+    !mergedBranchStatusByBranchName.get(sessionEntry.branchName)
   );
   if (unmergedEntries.length > 0 && !forceCleanup) {
     const unmergedBranchNames = unmergedEntries.map((sessionEntry) => sessionEntry.branchName);
@@ -1795,7 +1816,7 @@ function finishSession(argumentsList: string[]): void {
   const removableTaskIdentifiers = forceCleanup
     ? sessionEntries.map((sessionEntry) => sessionEntry.taskIdentifier)
     : sessionEntries
-      .filter((sessionEntry) => hasBranchMergedIntoMain(sessionEntry.branchName))
+      .filter((sessionEntry) => mergedBranchStatusByBranchName.get(sessionEntry.branchName))
       .map((sessionEntry) => sessionEntry.taskIdentifier);
 
   try {
