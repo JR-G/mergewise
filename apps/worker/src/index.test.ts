@@ -1498,6 +1498,8 @@ describe("finding delivery", () => {
         comments: delivery.comments,
       },
       {
+        listPullRequestSummaryCommentsFn: async () => [],
+        listPullRequestInlineCommentsFn: async () => [],
         postPullRequestInlineCommentFn: async (options) => {
           postedBodies.push(options.body);
           return {
@@ -1574,6 +1576,8 @@ describe("finding delivery", () => {
           comments: delivery.comments,
         },
         {
+          listPullRequestSummaryCommentsFn: async () => [],
+          listPullRequestInlineCommentsFn: async () => [],
           postPullRequestInlineCommentFn: async (options) => {
             if (options.body.includes("dedupeKey=acme/widget#3:two")) {
               throw new Error("secondary post failed");
@@ -1602,13 +1606,90 @@ describe("finding delivery", () => {
       expect(postingResult.failures[0]!.preparedComment.dedupeKey).toBe("acme/widget#3:two");
       expect(postingResult.failures[0]!.requestOptions.installationAccessToken).toBe("[REDACTED]");
       expect(postingResult.failures[0]!.requestOptions.traceId).toBe("trace-post-2");
-      expect(loggedErrors).toHaveLength(1);
-      expect(loggedErrors[0]!).toContain("acme/widget#3:two");
-      expect(loggedErrors[0]!).toContain("[REDACTED]");
-      expect(loggedErrors[0]!).not.toContain("\"installationAccessToken\":\"token\"");
+      expect(loggedErrors.length).toBeGreaterThanOrEqual(1);
+      expect(loggedErrors.some((entry) => entry.includes("acme/widget#3:two"))).toBe(true);
+      expect(loggedErrors.some((entry) => entry.includes("[REDACTED]"))).toBe(true);
+      expect(
+        loggedErrors.some((entry) => entry.includes("\"installationAccessToken\":\"token\"")),
+      ).toBe(false);
     } finally {
       console.error = originalConsoleError;
     }
+  });
+
+  test("postPreparedFindingComments skips already-posted dedupe keys on the pull request", async () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "one",
+          ruleId: "rule/a",
+          filePath: "src/a.ts",
+          line: 1,
+          evidence: "const a: any = source;",
+          recommendation: "Use a typed value.",
+          confidence: 0.9,
+        },
+        {
+          ...baseFinding,
+          findingId: "two",
+          ruleId: "rule/b",
+          filePath: "src/b.ts",
+          line: 1,
+          evidence: "const b: any = source;",
+          recommendation: "Use a typed value.",
+          confidence: 0.89,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 2,
+      },
+    );
+
+    const postedDedupeKeys: string[] = [];
+    const postingResult = await postPreparedFindingComments(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 3,
+        pullRequestHeadSha: "abc123",
+        installationAccessToken: "token",
+        traceId: "trace-post-skip-existing",
+        githubFetchOptions: workerFetchOptions,
+        comments: delivery.comments,
+      },
+      {
+        listPullRequestSummaryCommentsFn: async () => [
+          {
+            id: 901,
+            html_url: "https://github.com/acme/widget/pull/3#issuecomment-901",
+            body:
+              "<!-- mergewise-meta dedupeKey=acme/widget#3:one " +
+              "findingId=one ruleId=rule/a category=clean confidence=0.9 -->",
+          },
+        ],
+        listPullRequestInlineCommentsFn: async () => [],
+        postPullRequestInlineCommentFn: async (options) => {
+          const dedupeKeyMatch = /dedupeKey=([^\s>]+)/.exec(options.body);
+          postedDedupeKeys.push(dedupeKeyMatch?.[1] ?? "unknown");
+          return {
+            id: 11,
+            html_url: "https://github.com/acme/widget/pull/3#discussion_r11",
+            body: options.body,
+            path: options.path,
+            line: options.line,
+          };
+        },
+      },
+    );
+
+    expect(postingResult.postedCount).toBe(1);
+    expect(postingResult.successes).toHaveLength(1);
+    expect(postingResult.failures).toHaveLength(0);
+    expect(postingResult.skipped).toHaveLength(1);
+    expect(postingResult.skipped[0]!.preparedComment.dedupeKey).toBe("acme/widget#3:one");
+    expect(postedDedupeKeys).toEqual(["acme/widget#3:two"]);
   });
 
   test("builds anti-pattern evidence as single-line markdown-safe inline code", async () => {
@@ -1644,6 +1725,8 @@ describe("finding delivery", () => {
         comments: delivery.comments,
       },
       {
+        listPullRequestSummaryCommentsFn: async () => [],
+        listPullRequestInlineCommentsFn: async () => [],
         postPullRequestInlineCommentFn: async (options) => {
           postedBodies.push(options.body);
           return {
@@ -1700,6 +1783,8 @@ describe("finding delivery", () => {
         comments: delivery.comments,
       },
       {
+        listPullRequestSummaryCommentsFn: async () => [],
+        listPullRequestInlineCommentsFn: async () => [],
         postPullRequestInlineCommentFn: async (options) => {
           postedBodies.push(options.body);
           return {
@@ -1756,6 +1841,8 @@ describe("finding delivery", () => {
         comments: delivery.comments,
       },
       {
+        listPullRequestSummaryCommentsFn: async () => [],
+        listPullRequestInlineCommentsFn: async () => [],
         postPullRequestInlineCommentFn: async (options) => {
           postedBodies.push(options.body);
           return {

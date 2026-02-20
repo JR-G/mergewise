@@ -203,6 +203,40 @@ export interface PostPullRequestInlineCommentOptions extends GitHubApiOptions {
 }
 
 /**
+ * Request options for listing pull request comments.
+ */
+export interface ListPullRequestCommentsOptions extends GitHubApiOptions {
+  /**
+   * Repository owner.
+   */
+  owner: string;
+  /**
+   * Repository name.
+   */
+  repository: string;
+  /**
+   * Pull request number.
+   */
+  pullRequestNumber: number;
+  /**
+   * Installation access token used for API authentication.
+   */
+  installationAccessToken: string;
+  /**
+   * Page size used for pagination.
+   *
+   * @defaultValue `100`
+   */
+  perPage?: number;
+  /**
+   * Maximum number of pages to fetch.
+   *
+   * @defaultValue `20`
+   */
+  maxPages?: number;
+}
+
+/**
  * Response shape for created GitHub issue comments.
  */
 export interface GitHubIssueComment {
@@ -481,6 +515,100 @@ export async function postPullRequestInlineComment(
     endpointUrl,
   );
   return createdComment;
+}
+
+/**
+ * Lists summary-level issue comments for a pull request.
+ *
+ * @param options - List request options.
+ * @returns Pull request issue comments in API order.
+ * @throws {@link GitHubApiError} when GitHub returns a non-success status.
+ */
+export async function listPullRequestSummaryComments(
+  options: ListPullRequestCommentsOptions,
+): Promise<GitHubIssueComment[]> {
+  const perPage = options.perPage ?? 100;
+  const maxPages = options.maxPages ?? 20;
+  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
+  const apiBaseUrl = trimTrailingSlash(
+    options.apiBaseUrl ?? "https://api.github.com",
+  );
+  const collectedComments: GitHubIssueComment[] = [];
+
+  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+    const endpointUrl =
+      `${apiBaseUrl}/repos/${encodeURIComponent(options.owner)}` +
+      `/${encodeURIComponent(options.repository)}` +
+      `/issues/${options.pullRequestNumber}/comments` +
+      `?per_page=${perPage}&page=${pageNumber}`;
+    const response = await fetch(endpointUrl, {
+      method: "GET",
+      headers: buildHeaders({
+        authorization: `Bearer ${options.installationAccessToken}`,
+        userAgent: options.userAgent,
+        traceId: options.traceId,
+      }),
+      signal: AbortSignal.timeout(requestTimeoutMs),
+    });
+    const pageComments = await parseResponse<GitHubIssueComment[]>(
+      response,
+      "GET",
+      endpointUrl,
+    );
+    collectedComments.push(...pageComments);
+    if (pageComments.length < perPage) {
+      break;
+    }
+  }
+
+  return collectedComments;
+}
+
+/**
+ * Lists inline review comments for a pull request.
+ *
+ * @param options - List request options.
+ * @returns Pull request review comments in API order.
+ * @throws {@link GitHubApiError} when GitHub returns a non-success status.
+ */
+export async function listPullRequestInlineComments(
+  options: ListPullRequestCommentsOptions,
+): Promise<GitHubPullRequestReviewComment[]> {
+  const perPage = options.perPage ?? 100;
+  const maxPages = options.maxPages ?? 20;
+  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
+  const apiBaseUrl = trimTrailingSlash(
+    options.apiBaseUrl ?? "https://api.github.com",
+  );
+  const collectedComments: GitHubPullRequestReviewComment[] = [];
+
+  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+    const endpointUrl =
+      `${apiBaseUrl}/repos/${encodeURIComponent(options.owner)}` +
+      `/${encodeURIComponent(options.repository)}` +
+      `/pulls/${options.pullRequestNumber}/comments` +
+      `?per_page=${perPage}&page=${pageNumber}`;
+    const response = await fetch(endpointUrl, {
+      method: "GET",
+      headers: buildHeaders({
+        authorization: `Bearer ${options.installationAccessToken}`,
+        userAgent: options.userAgent,
+        traceId: options.traceId,
+      }),
+      signal: AbortSignal.timeout(requestTimeoutMs),
+    });
+    const pageComments = await parseResponse<GitHubPullRequestReviewComment[]>(
+      response,
+      "GET",
+      endpointUrl,
+    );
+    collectedComments.push(...pageComments);
+    if (pageComments.length < perPage) {
+      break;
+    }
+  }
+
+  return collectedComments;
 }
 
 type HeaderBuildOptions = {

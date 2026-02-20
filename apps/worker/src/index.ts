@@ -1,13 +1,17 @@
 import {
   postPullRequestInlineComment,
   postPullRequestSummaryComment,
+  listPullRequestInlineComments,
+  listPullRequestSummaryComments,
   createGitHubAppJwt,
   exchangeInstallationAccessToken,
   fetchPullRequestFiles,
   GitHubApiError,
   type FetchPullRequestFilesOptions,
+  type GitHubIssueComment,
   type GitHubPullRequestReviewComment,
   type GitHubPullRequestFile,
+  type ListPullRequestCommentsOptions,
   type PostPullRequestInlineCommentOptions,
   type PostPullRequestSummaryCommentOptions,
 } from "@mergewise/github-client";
@@ -368,6 +372,24 @@ export interface PostedFindingCommentFailure {
 }
 
 /**
+ * Metadata for one finding skipped due to an existing dedupe key on the PR.
+ */
+export interface PostedFindingCommentSkipped {
+  /**
+   * Index of the prepared comment in the input list.
+   */
+  readonly index: number;
+  /**
+   * Prepared comment that was skipped.
+   */
+  readonly preparedComment: PreparedFindingComment;
+  /**
+   * Skip reason identifier.
+   */
+  readonly reason: "existing_dedupe_key";
+}
+
+/**
  * Result summary for prepared finding comment posting.
  */
 export interface PostPreparedFindingCommentsResult {
@@ -383,6 +405,10 @@ export interface PostPreparedFindingCommentsResult {
    * Failed post entries in call order.
    */
   readonly failures: readonly PostedFindingCommentFailure[];
+  /**
+   * Skipped comment entries in call order.
+   */
+  readonly skipped: readonly PostedFindingCommentSkipped[];
 }
 
 /**
@@ -987,6 +1013,12 @@ export async function postPreparedFindingComments(
     readonly comments: readonly PreparedFindingComment[];
   },
   dependencies: {
+    readonly listPullRequestSummaryCommentsFn?: (
+      options: ListPullRequestCommentsOptions,
+    ) => Promise<GitHubIssueComment[]>;
+    readonly listPullRequestInlineCommentsFn?: (
+      options: ListPullRequestCommentsOptions,
+    ) => Promise<GitHubPullRequestReviewComment[]>;
     readonly postPullRequestInlineCommentFn?: (
       options: PostPullRequestInlineCommentOptions,
     ) => Promise<GitHubPullRequestReviewComment>;
@@ -995,14 +1027,45 @@ export async function postPreparedFindingComments(
     ) => Promise<{ id: number; html_url: string; body: string }>;
   } = {},
 ): Promise<PostPreparedFindingCommentsResult> {
+  const listPullRequestSummaryCommentsFn =
+    dependencies.listPullRequestSummaryCommentsFn ?? listPullRequestSummaryComments;
+  const listPullRequestInlineCommentsFn =
+    dependencies.listPullRequestInlineCommentsFn ?? listPullRequestInlineComments;
   const postPullRequestInlineCommentFn =
     dependencies.postPullRequestInlineCommentFn ?? postPullRequestInlineComment;
   const postPullRequestSummaryCommentFn =
     dependencies.postPullRequestSummaryCommentFn ?? postPullRequestSummaryComment;
 
+  const existingDedupeKeys = await loadExistingDedupeKeys(
+    {
+      owner: options.owner,
+      repository: options.repository,
+      pullRequestNumber: options.pullRequestNumber,
+      installationAccessToken: options.installationAccessToken,
+      apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
+      userAgent: options.githubFetchOptions.githubUserAgent,
+      requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
+      traceId: options.traceId,
+    },
+    {
+      listPullRequestSummaryCommentsFn,
+      listPullRequestInlineCommentsFn,
+    },
+  );
+
   const successes: PostedFindingCommentSuccess[] = [];
   const failures: PostedFindingCommentFailure[] = [];
+  const skipped: PostedFindingCommentSkipped[] = [];
   for (const [index, preparedComment] of options.comments.entries()) {
+    if (existingDedupeKeys.has(preparedComment.dedupeKey)) {
+      skipped.push({
+        index,
+        preparedComment,
+        reason: "existing_dedupe_key",
+      });
+      continue;
+    }
+
     const requestOptions: PostPullRequestInlineCommentOptions = {
       owner: options.owner,
       repository: options.repository,
@@ -1024,6 +1087,7 @@ export async function postPreparedFindingComments(
 
     try {
       const createdComment = await postPullRequestInlineCommentFn(requestOptions);
+      existingDedupeKeys.add(preparedComment.dedupeKey);
       successes.push({
         index,
         preparedComment,
@@ -1034,7 +1098,7 @@ export async function postPreparedFindingComments(
       const inlineErrorDetail = inlineError instanceof Error
         ? inlineError.stack ?? inlineError.message
         : String(inlineError);
-      console.warn(
+      console.error(
         "[worker] inline finding comment post failed index=" +
           String(index) +
           " dedupeKey=" +
@@ -1063,6 +1127,7 @@ export async function postPreparedFindingComments(
 
       try {
         const createdComment = await postPullRequestSummaryCommentFn(fallbackRequestOptions);
+        existingDedupeKeys.add(preparedComment.dedupeKey);
         successes.push({
           index,
           preparedComment,
@@ -1100,6 +1165,7 @@ export async function postPreparedFindingComments(
     postedCount: successes.length,
     successes,
     failures,
+    skipped,
   };
 }
 
@@ -1119,6 +1185,83 @@ function sanitizePostCommentRequestOptionsForLogging(
     ...requestOptions,
     installationAccessToken: "[REDACTED]",
   };
+}
+
+async function loadExistingDedupeKeys(
+  options: ListPullRequestCommentsOptions,
+  dependencies: {
+    readonly listPullRequestSummaryCommentsFn: (
+      options: ListPullRequestCommentsOptions,
+    ) => Promise<GitHubIssueComment[]>;
+    readonly listPullRequestInlineCommentsFn: (
+      options: ListPullRequestCommentsOptions,
+    ) => Promise<GitHubPullRequestReviewComment[]>;
+  },
+): Promise<Set<string>> {
+  const dedupeKeys = new Set<string>();
+  try {
+    const summaryComments = await dependencies.listPullRequestSummaryCommentsFn(options);
+    for (const comment of summaryComments) {
+      const dedupeKey = extractDedupeKeyFromCommentBody(comment.body);
+      if (dedupeKey) {
+        dedupeKeys.add(dedupeKey);
+      }
+    }
+  } catch (caughtError) {
+    const errorDetail = caughtError instanceof Error
+      ? caughtError.stack ?? caughtError.message
+      : String(caughtError);
+    console.error(
+      "[worker] failed to list summary comments for dedupe owner=" +
+        options.owner +
+        " repo=" +
+        options.repository +
+        " pr=" +
+        String(options.pullRequestNumber) +
+        " error=" +
+        errorDetail,
+    );
+  }
+
+  try {
+    const inlineComments = await dependencies.listPullRequestInlineCommentsFn(options);
+    for (const comment of inlineComments) {
+      const dedupeKey = extractDedupeKeyFromCommentBody(comment.body);
+      if (dedupeKey) {
+        dedupeKeys.add(dedupeKey);
+      }
+    }
+  } catch (caughtError) {
+    const errorDetail = caughtError instanceof Error
+      ? caughtError.stack ?? caughtError.message
+      : String(caughtError);
+    console.error(
+      "[worker] failed to list inline comments for dedupe owner=" +
+        options.owner +
+        " repo=" +
+        options.repository +
+        " pr=" +
+        String(options.pullRequestNumber) +
+        " error=" +
+        errorDetail,
+    );
+  }
+
+  return dedupeKeys;
+}
+
+function extractDedupeKeyFromCommentBody(commentBody: string | undefined): string | null {
+  if (!commentBody) {
+    return null;
+  }
+
+  const dedupeKeyMatch = /mergewise-meta[^>]*dedupeKey=([^\s>]+)/.exec(commentBody);
+  if (!dedupeKeyMatch) {
+    return null;
+  }
+
+  const dedupeKey = dedupeKeyMatch[1]?.trim() ?? "";
+  return dedupeKey || null;
 }
 
 /**
