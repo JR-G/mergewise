@@ -181,6 +181,7 @@ export function startWorkerProcess(
       const findingDeliveryOptions: WorkerFindingDeliveryOptions = {
         confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
         maxComments: mergewiseConfig.gating.maxComments,
+        testFileConfidenceThreshold: config.testFileConfidenceThreshold,
       };
       const githubFetchOptions: WorkerGitHubFetchOptions = {
         githubApiBaseUrl: config.githubApiBaseUrl,

@@ -26,6 +26,8 @@ import type {
   Rule,
 } from "@mergewise/shared-types";
 
+const DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD = 0.98;
+
 /**
  * Runtime configuration for the worker process.
  */
@@ -66,6 +68,10 @@ export interface WorkerConfig {
    * Maximum number of findings posted per pull request.
    */
   maxComments: number;
+  /**
+   * Minimum confidence required for test-file findings to be eligible for posting.
+   */
+  testFileConfidenceThreshold: number;
 }
 
 /**
@@ -188,6 +194,10 @@ export interface WorkerFindingDeliveryOptions {
    * Maximum number of findings posted as comments.
    */
   readonly maxComments: number;
+  /**
+   * Minimum confidence required for test-file findings.
+   */
+  readonly testFileConfidenceThreshold?: number;
 }
 
 /**
@@ -545,6 +555,10 @@ export function loadConfig(): WorkerConfig {
   const confidenceThreshold = Number.parseFloat(confidenceThresholdRaw);
   const maxCommentsRaw = process.env.WORKER_FINDING_MAX_COMMENTS ?? "20";
   const maxComments = Number.parseInt(maxCommentsRaw, 10);
+  const testFileConfidenceThresholdRaw =
+    process.env.WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD ??
+    String(DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD);
+  const testFileConfidenceThreshold = Number.parseFloat(testFileConfidenceThresholdRaw);
 
   if (Number.isNaN(pollIntervalMs) || pollIntervalMs < 250) {
     throw new Error(`Invalid WORKER_POLL_INTERVAL_MS value: ${pollRaw}`);
@@ -587,6 +601,16 @@ export function loadConfig(): WorkerConfig {
   if (Number.isNaN(maxComments) || maxComments < 1) {
     throw new Error(`Invalid WORKER_FINDING_MAX_COMMENTS value: ${maxCommentsRaw}`);
   }
+  if (
+    Number.isNaN(testFileConfidenceThreshold) ||
+    testFileConfidenceThreshold < 0 ||
+    testFileConfidenceThreshold > 1
+  ) {
+    throw new Error(
+      "Invalid WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD value: " +
+        testFileConfidenceThresholdRaw,
+    );
+  }
 
   return {
     pollIntervalMs,
@@ -598,6 +622,7 @@ export function loadConfig(): WorkerConfig {
     githubRetryDelayMs,
     confidenceThreshold,
     maxComments,
+    testFileConfidenceThreshold,
   };
 }
 
@@ -622,6 +647,10 @@ export function buildFindingDedupeKey(finding: Finding): string {
  * @remarks
  * Selection order is deterministic and independent of input ordering.
  * Findings are sorted by confidence descending, then by stable dedupe key.
+ * When building `confidencePassing`, `nonTestConfidencePassing` is preferred over
+ * `testConfidencePassing`: test-file findings are suppressed whenever at least one
+ * non-test finding exists, and test-file findings are only used when no non-test
+ * findings are available.
  *
  * @param findings - Findings emitted by rule execution.
  * @param options - Confidence threshold and posting cap.
@@ -631,12 +660,31 @@ export function prepareFindingDelivery(
   findings: readonly Finding[],
   options: WorkerFindingDeliveryOptions,
 ): PreparedFindingDelivery {
+  const testFileConfidenceThreshold =
+    options.testFileConfidenceThreshold ?? DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD;
   const skippedByConfidenceCandidates = findings.filter(
-    (finding) => finding.confidence < options.confidenceThreshold,
+    (finding) =>
+      finding.confidence < options.confidenceThreshold ||
+      (
+        isTestFilePath(finding.filePath) &&
+        finding.confidence >= options.confidenceThreshold &&
+        finding.confidence < testFileConfidenceThreshold
+      ),
   );
-  const confidencePassing = findings.filter(
+  const baseConfidencePassing = findings.filter(
     (finding) => finding.confidence >= options.confidenceThreshold,
   );
+  const nonTestConfidencePassing = baseConfidencePassing.filter(
+    (finding) => !isTestFilePath(finding.filePath),
+  );
+  const testConfidencePassing = baseConfidencePassing.filter(
+    (finding) =>
+      isTestFilePath(finding.filePath) &&
+      finding.confidence >= testFileConfidenceThreshold,
+  );
+  const confidencePassing = nonTestConfidencePassing.length > 0
+    ? nonTestConfidencePassing
+    : testConfidencePassing;
   const sortedFindings = [...confidencePassing].sort((left, right) => {
     if (right.confidence !== left.confidence) {
       return right.confidence - left.confidence;
@@ -678,6 +726,30 @@ export function prepareFindingDelivery(
     skippedByDeduplication,
     skippedByCap,
   };
+}
+
+/**
+ * Returns whether a file path points to test-only code.
+ *
+ * @param filePath - Path to classify.
+ * @returns True when path matches common test file conventions.
+ */
+function isTestFilePath(filePath: string): boolean {
+  const normalizedPath = filePath.toLowerCase();
+  return (
+    normalizedPath.includes("/__tests__/") ||
+    normalizedPath.includes("/__mocks__/") ||
+    normalizedPath.includes("/test/") ||
+    normalizedPath.includes("/tests/") ||
+    normalizedPath.endsWith(".test.js") ||
+    normalizedPath.endsWith(".test.jsx") ||
+    normalizedPath.endsWith(".test.ts") ||
+    normalizedPath.endsWith(".test.tsx") ||
+    normalizedPath.endsWith(".spec.js") ||
+    normalizedPath.endsWith(".spec.jsx") ||
+    normalizedPath.endsWith(".spec.ts") ||
+    normalizedPath.endsWith(".spec.tsx")
+  );
 }
 
 /**
@@ -1047,6 +1119,7 @@ export async function processAnalyzePullRequestJob(
   const findingDeliveryOptions = dependencies.findingDeliveryOptions ?? {
     confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
     maxComments: mergewiseConfig.gating.maxComments,
+    testFileConfidenceThreshold: DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD,
   };
 
   infoLogger(
@@ -1506,43 +1579,171 @@ async function buildAnalysisContextFromGitHub(
  * and embeds the payload inside a collapsible `<details>` block.
  */
 function buildStructuredFindingComment(finding: Finding, dedupeKey: string): string {
-  const structuredPayload = JSON.stringify(
-    {
-      dedupeKey,
-      findingId: finding.findingId,
-      ruleId: finding.ruleId,
-      category: finding.category,
-      filePath: finding.filePath,
-      line: finding.line,
-      confidence: finding.confidence,
-    },
-    null,
-    2,
-  );
+  const antiPattern = buildAntiPatternText(finding);
+  const whyThisMatters = buildWhyThisMattersText(finding.category);
+  const refactorSteps = buildRefactorSteps(finding);
+  const suggestedRewrite = buildSuggestedRewriteSection(finding);
+  const debugMetadata = buildDebugMetadataSection(finding, dedupeKey);
 
   return [
-    "## Mergewise Finding",
+    "## Mergewise Refactor Suggestion",
     "",
-    `- Rule: \`${finding.ruleId}\``,
-    `- Category: \`${finding.category}\``,
-    `- Location: \`${finding.filePath}:${finding.line}\``,
-    `- Confidence: \`${finding.confidence.toFixed(2)}\``,
+    "**Anti-pattern**",
+    antiPattern,
     "",
-    "**Evidence**",
-    finding.evidence,
+    "**Why this matters**",
+    whyThisMatters,
     "",
-    "**Recommendation**",
-    finding.recommendation,
+    "**Refactor path**",
+    ...refactorSteps.map((refactorStep) => `- ${refactorStep}`),
     "",
-    "<details>",
-    "<summary>Structured Payload</summary>",
-    "",
-    "```json",
-    structuredPayload,
-    "```",
-    "",
-    "</details>",
+    ...suggestedRewrite,
+    debugMetadata,
   ].join("\n");
+}
+
+/**
+ * Builds the anti-pattern summary text for a finding.
+ *
+ * @param finding - Finding to summarize.
+ * @returns Human-readable anti-pattern sentence.
+ */
+function buildAntiPatternText(finding: Finding): string {
+  const normalizedEvidence = finding.evidence.replace(/\s+/g, " ").trim();
+  const evidenceFence = createInlineCodeFence(normalizedEvidence);
+  const evidenceSummary = normalizedEvidence.length > 0
+    ? `${evidenceFence}${normalizedEvidence}${evidenceFence}`
+    : "the changed code";
+  return `${finding.ruleId} triggered at \`${finding.filePath}:${finding.line}\` due to ${evidenceSummary}.`;
+}
+
+/**
+ * Builds a short explanation of why the finding matters.
+ *
+ * @param category - Finding category.
+ * @returns Category-specific impact statement.
+ */
+function buildWhyThisMattersText(category: FindingCategory): string {
+  if (category === "safety") {
+    return "This pattern increases the chance of runtime failures and weakens confidence in behavior under edge cases.";
+  }
+  if (category === "perf") {
+    return "This pattern can add avoidable compute cost and make performance regressions harder to detect.";
+  }
+  if (category === "idiomatic") {
+    return "This pattern is non-idiomatic for the language/framework and raises maintenance cost for future contributors.";
+  }
+
+  return "This pattern makes the codebase harder to read and evolve safely over time.";
+}
+
+/**
+ * Builds deterministic refactor steps from the finding recommendation.
+ *
+ * @param finding - Finding used to generate steps.
+ * @returns Ordered refactor steps.
+ */
+function buildRefactorSteps(finding: Finding): readonly string[] {
+  const normalizedRecommendation = finding.recommendation.trim();
+  const firstSentenceMatch = normalizedRecommendation.match(/^(.+?[.!?])(\s|$)/);
+  const firstStep = firstSentenceMatch?.[1]?.trim() || normalizedRecommendation || "Apply the recommended refactor.";
+  const secondStep = "Update related tests to lock the new behavior and prevent regressions.";
+
+  if (firstStep === secondStep) {
+    return [firstStep];
+  }
+
+  return [firstStep, secondStep];
+}
+
+/**
+ * Builds the suggested rewrite section when a patch preview is available.
+ *
+ * @param finding - Finding that may include a patch preview.
+ * @returns Markdown lines for the suggested rewrite section.
+ */
+function buildSuggestedRewriteSection(finding: Finding): readonly string[] {
+  const patchPreview = finding.patchPreview;
+  if (!patchPreview || patchPreview.addedLines.length === 0) {
+    return [];
+  }
+
+  const normalizedLanguage = finding.language.toLowerCase();
+  const fencedLanguage = normalizedLanguage === "typescriptreact" ? "tsx" : normalizedLanguage;
+  const addedLines = patchPreview.addedLines.map((addedLine) => addedLine.replace(/^\+/, ""));
+  const codeFence = createCodeFence(addedLines, fencedLanguage);
+
+  return [
+    "**Suggested rewrite**",
+    codeFence.open,
+    ...addedLines,
+    codeFence.close,
+    "",
+  ];
+}
+
+/**
+ * Builds a safe inline code fence for Markdown from text that may contain backticks.
+ *
+ * @param text - Text to wrap.
+ * @returns Fence string safe for inline Markdown code.
+ */
+function createInlineCodeFence(text: string): string {
+  const longestBacktickRun = getLongestBacktickRun(text);
+  return "`".repeat(Math.max(1, longestBacktickRun + 1));
+}
+
+/**
+ * Builds Markdown code fence delimiters based on content backticks.
+ *
+ * @param lines - Code block content lines.
+ * @param language - Optional fenced language identifier.
+ * @returns Open/close fence pair.
+ */
+function createCodeFence(
+  lines: readonly string[],
+  language: string,
+): { readonly open: string; readonly close: string } {
+  const longestBacktickRun = lines.reduce(
+    (currentLongest, line) => Math.max(currentLongest, getLongestBacktickRun(line)),
+    0,
+  );
+  const fence = "`".repeat(Math.max(3, longestBacktickRun + 1));
+  return {
+    open: `${fence}${language}`,
+    close: fence,
+  };
+}
+
+/**
+ * Returns the longest run of consecutive backticks in text.
+ *
+ * @param text - Text to scan.
+ * @returns Longest consecutive backtick run length.
+ */
+function getLongestBacktickRun(text: string): number {
+  const matches = text.match(/`+/g);
+  if (!matches || matches.length === 0) {
+    return 0;
+  }
+  return matches.reduce((currentLongest, matchValue) => {
+    return Math.max(currentLongest, matchValue.length);
+  }, 0);
+}
+
+/**
+ * Builds a hidden metadata marker for dedupe and debugging.
+ *
+ * @param finding - Finding metadata source.
+ * @param dedupeKey - Dedupe key assigned to the comment.
+ * @returns Invisible metadata marker.
+ */
+function buildDebugMetadataSection(finding: Finding, dedupeKey: string): string {
+  return (
+    `<!-- mergewise-meta dedupeKey=${dedupeKey} ` +
+    `findingId=${finding.findingId} ruleId=${finding.ruleId} ` +
+    `category=${finding.category} confidence=${finding.confidence.toFixed(2)} -->`
+  );
 }
 
 function resolveGitHubFetchOptions(): WorkerGitHubFetchOptions {

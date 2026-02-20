@@ -1201,6 +1201,172 @@ describe("finding delivery", () => {
     expect(reverseOrderDelivery).toEqual(forwardOrderDelivery);
   });
 
+  test("prepareFindingDelivery suppresses test-file findings when non-test findings exist", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "test-finding",
+          ruleId: "rule/a",
+          filePath: "src/index.test.ts",
+          line: 4,
+          evidence: "expect(value!).toBeTruthy();",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.99,
+        },
+        {
+          ...baseFinding,
+          findingId: "non-test-finding",
+          ruleId: "rule/b",
+          filePath: "src/index.ts",
+          line: 20,
+          evidence: "value!",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.84,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 5,
+        testFileConfidenceThreshold: 0.98,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(1);
+    expect(delivery.comments[0]!.finding.filePath).toBe("src/index.ts");
+  });
+
+  test("prepareFindingDelivery allows high-confidence test findings when no non-test findings exist", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "test-finding-low",
+          ruleId: "rule/a",
+          filePath: "src/index.test.ts",
+          line: 4,
+          evidence: "expect(value!).toBeTruthy();",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.9,
+        },
+        {
+          ...baseFinding,
+          findingId: "test-finding-high",
+          ruleId: "rule/b",
+          filePath: "src/index.spec.ts",
+          line: 8,
+          evidence: "expect(other!).toBeTruthy();",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.99,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 5,
+        testFileConfidenceThreshold: 0.98,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(1);
+    expect(delivery.comments[0]!.finding.findingId).toBe("test-finding-high");
+    expect(delivery.comments[0]!.finding.filePath).toBe("src/index.spec.ts");
+  });
+
+  test("prepareFindingDelivery counts test-only threshold band as skipped by confidence", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "test-finding-mid",
+          ruleId: "rule/a",
+          filePath: "src/index.test.ts",
+          line: 3,
+          evidence: "expect(value!).toBeTruthy();",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.9,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 5,
+        testFileConfidenceThreshold: 0.98,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(0);
+    expect(delivery.skippedByConfidence).toBe(1);
+  });
+
+  test("prepareFindingDelivery treats __mocks__ and /test/ paths as test files", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "mock-file",
+          ruleId: "rule/a",
+          filePath: "src/__mocks__/api.ts",
+          line: 2,
+          evidence: "value!",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.99,
+        },
+        {
+          ...baseFinding,
+          findingId: "test-dir-file",
+          ruleId: "rule/b",
+          filePath: "src/test/helpers.ts",
+          line: 3,
+          evidence: "other!",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.99,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 5,
+        testFileConfidenceThreshold: 1,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(0);
+    expect(delivery.skippedByConfidence).toBe(2);
+  });
+
+  test("prepareFindingDelivery treats JavaScript test/spec suffixes as test files", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "js-test",
+          ruleId: "rule/a",
+          filePath: "src/component.test.js",
+          line: 1,
+          evidence: "value!",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.99,
+        },
+        {
+          ...baseFinding,
+          findingId: "jsx-spec",
+          ruleId: "rule/b",
+          filePath: "src/component.spec.jsx",
+          line: 1,
+          evidence: "value!",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.99,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 5,
+        testFileConfidenceThreshold: 1,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(0);
+    expect(delivery.skippedByConfidence).toBe(2);
+  });
+
   test("postPreparedFindingComments only posts prepared bounded payload", async () => {
     const delivery = prepareFindingDelivery(
       [
@@ -1258,7 +1424,12 @@ describe("finding delivery", () => {
     expect(postingResult.successes).toHaveLength(1);
     expect(postingResult.failures).toHaveLength(0);
     expect(postedBodies).toHaveLength(1);
-    expect(postedBodies[0]!).toContain("\"dedupeKey\": \"acme/widget#3:one\"");
+    expect(postedBodies[0]!).toContain("## Mergewise Refactor Suggestion");
+    expect(postedBodies[0]!).toContain("**Anti-pattern**");
+    expect(postedBodies[0]!).toContain("**Why this matters**");
+    expect(postedBodies[0]!).toContain("**Refactor path**");
+    expect(postedBodies[0]!).toContain("dedupeKey=acme/widget#3:one");
+    expect(postedBodies[0]!).not.toContain("Structured Payload");
     expect(postingResult.successes[0]!.requestOptions.installationAccessToken).toBe("[REDACTED]");
     expect(postingResult.successes[0]!.requestOptions.traceId).toBe("trace-post-1");
   });
@@ -1308,13 +1479,13 @@ describe("finding delivery", () => {
           installationAccessToken: "token",
           traceId: "trace-post-2",
           githubFetchOptions: workerFetchOptions,
-          comments: delivery.comments,
-        },
-        {
-          postPullRequestSummaryCommentFn: async (options) => {
-            if (options.body.includes("\"dedupeKey\": \"acme/widget#3:two\"")) {
-              throw new Error("secondary post failed");
-            }
+        comments: delivery.comments,
+      },
+      {
+        postPullRequestSummaryCommentFn: async (options) => {
+          if (options.body.includes("dedupeKey=acme/widget#3:two")) {
+            throw new Error("secondary post failed");
+          }
 
             return {
               id: 1,
@@ -1341,6 +1512,107 @@ describe("finding delivery", () => {
     } finally {
       console.error = originalConsoleError;
     }
+  });
+
+  test("builds anti-pattern evidence as single-line markdown-safe inline code", async () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "inline-fence",
+          ruleId: "rule/a",
+          filePath: "src/a.ts",
+          line: 1,
+          evidence: "const value = ```x```\nnextLine",
+          recommendation: "Use a safer pattern.",
+          confidence: 0.95,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 1,
+      },
+    );
+
+    const postedBodies: string[] = [];
+    await postPreparedFindingComments(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 3,
+        installationAccessToken: "token",
+        traceId: "trace-inline-fence",
+        githubFetchOptions: workerFetchOptions,
+        comments: delivery.comments,
+      },
+      {
+        postPullRequestSummaryCommentFn: async (options) => {
+          postedBodies.push(options.body);
+          return {
+            id: 1,
+            html_url: "https://github.com/acme/widget/pull/3#issuecomment-1",
+            body: options.body,
+          };
+        },
+      },
+    );
+
+    expect(postedBodies).toHaveLength(1);
+    expect(postedBodies[0]!).toContain("````const value = ```x``` nextLine````");
+    expect(postedBodies[0]!).not.toContain("```x```\nnextLine");
+  });
+
+  test("builds suggested rewrite with dynamic markdown fences", async () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "block-fence",
+          ruleId: "rule/a",
+          filePath: "src/a.ts",
+          line: 1,
+          evidence: "const value = source;",
+          recommendation: "Use safer output.",
+          confidence: 0.95,
+          patchPreview: {
+            hunkHeader: "@@ -1,1 +1,1 @@",
+            removedLines: ["const value = source;"],
+            addedLines: ["const template = \"```\";", "const value = template;"],
+          },
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 1,
+      },
+    );
+
+    const postedBodies: string[] = [];
+    await postPreparedFindingComments(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 3,
+        installationAccessToken: "token",
+        traceId: "trace-block-fence",
+        githubFetchOptions: workerFetchOptions,
+        comments: delivery.comments,
+      },
+      {
+        postPullRequestSummaryCommentFn: async (options) => {
+          postedBodies.push(options.body);
+          return {
+            id: 2,
+            html_url: "https://github.com/acme/widget/pull/3#issuecomment-2",
+            body: options.body,
+          };
+        },
+      },
+    );
+
+    expect(postedBodies).toHaveLength(1);
+    expect(postedBodies[0]!).toContain("````typescript");
+    expect(postedBodies[0]!).toContain("\n````\n");
   });
 
   test("buildWorkerCheckOutput formats reviewer summary grouped by category and rule", () => {
@@ -1434,6 +1706,7 @@ describe("loadConfig", () => {
     delete process.env.WORKER_GITHUB_RETRY_DELAY_MS;
     delete process.env.WORKER_FINDING_CONFIDENCE_THRESHOLD;
     delete process.env.WORKER_FINDING_MAX_COMMENTS;
+    delete process.env.WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD;
 
     const config = loadConfig();
 
@@ -1446,6 +1719,7 @@ describe("loadConfig", () => {
     expect(config.githubRetryDelayMs).toBe(250);
     expect(config.confidenceThreshold).toBe(0.78);
     expect(config.maxComments).toBe(20);
+    expect(config.testFileConfidenceThreshold).toBe(0.98);
   });
 
   test("throws for below-minimum poll interval", () => {
@@ -1482,5 +1756,12 @@ describe("loadConfig", () => {
   test("throws for invalid max comments", () => {
     process.env.WORKER_FINDING_MAX_COMMENTS = "0";
     expect(() => loadConfig()).toThrow("Invalid WORKER_FINDING_MAX_COMMENTS value");
+  });
+
+  test("throws for invalid test file confidence threshold", () => {
+    process.env.WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD = "1.2";
+    expect(() => loadConfig()).toThrow(
+      "Invalid WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD value",
+    );
   });
 });
