@@ -83,6 +83,7 @@ describe("startWorkerProcess", () => {
         githubRetryDelayMs: 10,
         confidenceThreshold: 0.78,
         maxComments: 20,
+        testFileConfidenceThreshold: 0.98,
       }),
       loadMergewiseConfigFn: () => ({
         gating: {
@@ -154,6 +155,7 @@ describe("startWorkerProcess", () => {
         githubRetryDelayMs: 10,
         confidenceThreshold: 0.78,
         maxComments: 20,
+        testFileConfidenceThreshold: 0.98,
       }),
       loadMergewiseConfigFn: () => ({
         gating: {
@@ -225,6 +227,7 @@ describe("startWorkerProcess", () => {
         githubRetryDelayMs: 10,
         confidenceThreshold: 0.78,
         maxComments: 20,
+        testFileConfidenceThreshold: 0.98,
       }),
       loadMergewiseConfigFn: () => ({
         gating: {
@@ -297,6 +300,7 @@ describe("startWorkerProcess", () => {
         githubRetryDelayMs: 10,
         confidenceThreshold: 0.78,
         maxComments: 20,
+        testFileConfidenceThreshold: 0.98,
       }),
       loadMergewiseConfigFn: () => ({
         gating: {
@@ -382,6 +386,7 @@ describe("startWorkerProcess", () => {
           githubRetryDelayMs: 10,
           confidenceThreshold: 0.78,
           maxComments: 20,
+          testFileConfidenceThreshold: 0.98,
         }),
         loadMergewiseConfigFn: () => ({
           gating: {

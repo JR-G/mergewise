@@ -1201,6 +1201,77 @@ describe("finding delivery", () => {
     expect(reverseOrderDelivery).toEqual(forwardOrderDelivery);
   });
 
+  test("prepareFindingDelivery suppresses test-file findings when non-test findings exist", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "test-finding",
+          ruleId: "rule/a",
+          filePath: "src/index.test.ts",
+          line: 4,
+          evidence: "expect(value!).toBeTruthy();",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.99,
+        },
+        {
+          ...baseFinding,
+          findingId: "non-test-finding",
+          ruleId: "rule/b",
+          filePath: "src/index.ts",
+          line: 20,
+          evidence: "value!",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.84,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 5,
+        testFileConfidenceThreshold: 0.98,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(1);
+    expect(delivery.comments[0]!.finding.filePath).toBe("src/index.ts");
+  });
+
+  test("prepareFindingDelivery allows high-confidence test findings when no non-test findings exist", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "test-finding-low",
+          ruleId: "rule/a",
+          filePath: "src/index.test.ts",
+          line: 4,
+          evidence: "expect(value!).toBeTruthy();",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.9,
+        },
+        {
+          ...baseFinding,
+          findingId: "test-finding-high",
+          ruleId: "rule/b",
+          filePath: "src/index.spec.ts",
+          line: 8,
+          evidence: "expect(other!).toBeTruthy();",
+          recommendation: "Avoid non-null assertions.",
+          confidence: 0.99,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 5,
+        testFileConfidenceThreshold: 0.98,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(1);
+    expect(delivery.comments[0]!.finding.findingId).toBe("test-finding-high");
+    expect(delivery.comments[0]!.finding.filePath).toBe("src/index.spec.ts");
+  });
+
   test("postPreparedFindingComments only posts prepared bounded payload", async () => {
     const delivery = prepareFindingDelivery(
       [
@@ -1439,6 +1510,7 @@ describe("loadConfig", () => {
     delete process.env.WORKER_GITHUB_RETRY_DELAY_MS;
     delete process.env.WORKER_FINDING_CONFIDENCE_THRESHOLD;
     delete process.env.WORKER_FINDING_MAX_COMMENTS;
+    delete process.env.WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD;
 
     const config = loadConfig();
 
@@ -1451,6 +1523,7 @@ describe("loadConfig", () => {
     expect(config.githubRetryDelayMs).toBe(250);
     expect(config.confidenceThreshold).toBe(0.78);
     expect(config.maxComments).toBe(20);
+    expect(config.testFileConfidenceThreshold).toBe(0.98);
   });
 
   test("throws for below-minimum poll interval", () => {
@@ -1487,5 +1560,12 @@ describe("loadConfig", () => {
   test("throws for invalid max comments", () => {
     process.env.WORKER_FINDING_MAX_COMMENTS = "0";
     expect(() => loadConfig()).toThrow("Invalid WORKER_FINDING_MAX_COMMENTS value");
+  });
+
+  test("throws for invalid test file confidence threshold", () => {
+    process.env.WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD = "1.2";
+    expect(() => loadConfig()).toThrow(
+      "Invalid WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD value",
+    );
   });
 });

@@ -66,6 +66,10 @@ export interface WorkerConfig {
    * Maximum number of findings posted per pull request.
    */
   maxComments: number;
+  /**
+   * Minimum confidence required for test-file findings to be eligible for posting.
+   */
+  testFileConfidenceThreshold: number;
 }
 
 /**
@@ -188,6 +192,10 @@ export interface WorkerFindingDeliveryOptions {
    * Maximum number of findings posted as comments.
    */
   readonly maxComments: number;
+  /**
+   * Minimum confidence required for test-file findings.
+   */
+  readonly testFileConfidenceThreshold?: number;
 }
 
 /**
@@ -545,6 +553,9 @@ export function loadConfig(): WorkerConfig {
   const confidenceThreshold = Number.parseFloat(confidenceThresholdRaw);
   const maxCommentsRaw = process.env.WORKER_FINDING_MAX_COMMENTS ?? "20";
   const maxComments = Number.parseInt(maxCommentsRaw, 10);
+  const testFileConfidenceThresholdRaw =
+    process.env.WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD ?? "0.98";
+  const testFileConfidenceThreshold = Number.parseFloat(testFileConfidenceThresholdRaw);
 
   if (Number.isNaN(pollIntervalMs) || pollIntervalMs < 250) {
     throw new Error(`Invalid WORKER_POLL_INTERVAL_MS value: ${pollRaw}`);
@@ -587,6 +598,16 @@ export function loadConfig(): WorkerConfig {
   if (Number.isNaN(maxComments) || maxComments < 1) {
     throw new Error(`Invalid WORKER_FINDING_MAX_COMMENTS value: ${maxCommentsRaw}`);
   }
+  if (
+    Number.isNaN(testFileConfidenceThreshold) ||
+    testFileConfidenceThreshold < 0 ||
+    testFileConfidenceThreshold > 1
+  ) {
+    throw new Error(
+      "Invalid WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD value: " +
+        testFileConfidenceThresholdRaw,
+    );
+  }
 
   return {
     pollIntervalMs,
@@ -598,6 +619,7 @@ export function loadConfig(): WorkerConfig {
     githubRetryDelayMs,
     confidenceThreshold,
     maxComments,
+    testFileConfidenceThreshold,
   };
 }
 
@@ -631,12 +653,24 @@ export function prepareFindingDelivery(
   findings: readonly Finding[],
   options: WorkerFindingDeliveryOptions,
 ): PreparedFindingDelivery {
+  const testFileConfidenceThreshold = options.testFileConfidenceThreshold ?? 0.98;
   const skippedByConfidenceCandidates = findings.filter(
     (finding) => finding.confidence < options.confidenceThreshold,
   );
-  const confidencePassing = findings.filter(
+  const baseConfidencePassing = findings.filter(
     (finding) => finding.confidence >= options.confidenceThreshold,
   );
+  const nonTestConfidencePassing = baseConfidencePassing.filter(
+    (finding) => !isTestFilePath(finding.filePath),
+  );
+  const testConfidencePassing = baseConfidencePassing.filter(
+    (finding) =>
+      isTestFilePath(finding.filePath) &&
+      finding.confidence >= testFileConfidenceThreshold,
+  );
+  const confidencePassing = nonTestConfidencePassing.length > 0
+    ? nonTestConfidencePassing
+    : [...nonTestConfidencePassing, ...testConfidencePassing];
   const sortedFindings = [...confidencePassing].sort((left, right) => {
     if (right.confidence !== left.confidence) {
       return right.confidence - left.confidence;
@@ -678,6 +712,24 @@ export function prepareFindingDelivery(
     skippedByDeduplication,
     skippedByCap,
   };
+}
+
+/**
+ * Returns whether a file path points to test-only code.
+ *
+ * @param filePath - Path to classify.
+ * @returns True when path matches common test file conventions.
+ */
+function isTestFilePath(filePath: string): boolean {
+  const normalizedPath = filePath.toLowerCase();
+  return (
+    normalizedPath.includes("/__tests__/") ||
+    normalizedPath.includes("/tests/") ||
+    normalizedPath.endsWith(".test.ts") ||
+    normalizedPath.endsWith(".test.tsx") ||
+    normalizedPath.endsWith(".spec.ts") ||
+    normalizedPath.endsWith(".spec.tsx")
+  );
 }
 
 /**
@@ -1047,6 +1099,7 @@ export async function processAnalyzePullRequestJob(
   const findingDeliveryOptions = dependencies.findingDeliveryOptions ?? {
     confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
     maxComments: mergewiseConfig.gating.maxComments,
+    testFileConfidenceThreshold: 0.98,
   };
 
   infoLogger(
