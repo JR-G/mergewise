@@ -16,6 +16,8 @@ import type {
   SymbolEntry,
 } from "@mergewise/shared-types";
 
+export { goFmtPrintRule, goPilotRules } from "./go";
+
 const FINDING_CATEGORIES: readonly FindingCategory[] = [
   "clean",
   "perf",
