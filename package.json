@@ -49,6 +49,7 @@
     "ops:start-batch": "bun run scripts/ops.ts start-batch",
     "ops:tmux-batch": "bun run scripts/ops.ts tmux-batch",
     "ops:reset": "bun run scripts/ops.ts reset",
+    "ops:finish-session": "bun run scripts/ops.ts finish-session",
     "ops:validate-session": "bun run scripts/ops.ts validate-session",
     "ops:launch-agent": "bun run scripts/ops.ts launch-agent",
     "ops:agent": "bun run scripts/ops.ts agent",

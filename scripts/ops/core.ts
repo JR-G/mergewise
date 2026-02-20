@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseDocument } from "yaml";
 import { extractTaskGoal, hasPlaceholderGoal } from "./task-file";
@@ -116,6 +116,7 @@ function usage(): void {
   bun run ops:start-batch -- <session-id> <task-id> [task-id...]
   bun run ops:tmux-batch -- <session-id> <task-id> [task-id...]
   bun run ops:reset
+  bun run ops:finish-session -- <session-id> [--force]
   bun run ops:validate-session -- <session-id>
   bun run ops:launch-agent -- <task-id>
   bun run ops:agent -- <session-id> <task-id> [owner] [scope] [branch-kind]
@@ -130,6 +131,7 @@ Examples:
   bun run ops:start-batch -- s01 mw-003 mw-004 mw-006
   bun run ops:tmux-batch -- s01 mw-003 mw-004 mw-006
   bun run ops:reset
+  bun run ops:finish-session -- s01
   bun run ops:validate-session -- s01
   bun run ops:launch-agent -- mw-003
   bun run ops:agent -- s01 github-client
@@ -1707,6 +1709,137 @@ function resetWorkspace(): void {
 }
 
 /**
+ * Returns true when the provided branch has been merged into local main.
+ *
+ * @param branchName - Candidate branch name.
+ * @returns Whether main contains the branch tip.
+ */
+function hasBranchMergedIntoMain(branchName: string): boolean {
+  try {
+    execFileSync(
+      "git",
+      ["merge-base", "--is-ancestor", branchName, "main"],
+      {
+        cwd: repositoryRoot,
+        stdio: "ignore",
+      },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Removes one runtime task file when present.
+ *
+ * @param taskIdentifier - Task identifier that maps to a runtime task file.
+ */
+function removeRuntimeTaskFile(taskIdentifier: string): void {
+  const runtimeTaskFilePath = resolve(tasksDirectoryPath, `${taskIdentifier}.md`);
+  if (!existsSync(runtimeTaskFilePath)) {
+    return;
+  }
+
+  rmSync(runtimeTaskFilePath, { force: true });
+}
+
+/**
+ * Removes task rows from the runtime board.
+ *
+ * @param taskIdentifiers - Task identifiers to remove.
+ */
+function removeTaskRowsFromBoard(taskIdentifiers: readonly string[]): void {
+  ensureBoardFile();
+  let updatedBoardContents = readFileSync(boardFilePath, "utf8");
+  for (const taskIdentifier of taskIdentifiers) {
+    updatedBoardContents = removeBoardRowsForTask(updatedBoardContents, taskIdentifier);
+  }
+  writeFileSync(boardFilePath, updatedBoardContents, "utf8");
+}
+
+/**
+ * Finishes one session by validating merge state and cleaning runtime/session artifacts.
+ *
+ * @param argumentsList - Positional CLI args passed after `finish-session`.
+ */
+function finishSession(argumentsList: string[]): void {
+  const [sessionIdentifier, ...optionalArguments] = argumentsList;
+  if (!sessionIdentifier) {
+    usage();
+    fail("missing session-id for ops:finish-session");
+  }
+
+  const forceCleanup = optionalArguments.includes("--force");
+  validateSegment(sessionIdentifier, "session-id");
+
+  const sessionMarker = `/${sessionIdentifier}-`;
+  const sessionEntries = loadTaskBoardEntries().filter((boardEntry) =>
+    boardEntry.branchName.includes(sessionMarker)
+  );
+  if (sessionEntries.length === 0) {
+    fail(`ops:finish-session found no board rows for session ${sessionIdentifier}`);
+  }
+
+  const unmergedEntries = sessionEntries.filter((sessionEntry) =>
+    !hasBranchMergedIntoMain(sessionEntry.branchName)
+  );
+  if (unmergedEntries.length > 0 && !forceCleanup) {
+    const unmergedBranchNames = unmergedEntries.map((sessionEntry) => sessionEntry.branchName);
+    fail(
+      `ops:finish-session blocked for ${sessionIdentifier}: unmerged branches ${unmergedBranchNames.join(", ")}. ` +
+      "merge/close them or rerun with --force",
+    );
+  }
+
+  const removableTaskIdentifiers = forceCleanup
+    ? sessionEntries.map((sessionEntry) => sessionEntry.taskIdentifier)
+    : sessionEntries
+      .filter((sessionEntry) => hasBranchMergedIntoMain(sessionEntry.branchName))
+      .map((sessionEntry) => sessionEntry.taskIdentifier);
+
+  try {
+    execFileSync(
+      "bash",
+      [resolve(repositoryRoot, "scripts/worktree.sh"), "cleanup-session", sessionIdentifier],
+      {
+        cwd: sharedRepositoryRoot,
+        stdio: "inherit",
+      },
+    );
+    execFileSync(
+      "bash",
+      [resolve(repositoryRoot, "scripts/worktree.sh"), "prune"],
+      {
+        cwd: sharedRepositoryRoot,
+        stdio: "inherit",
+      },
+    );
+
+    removeTaskRowsFromBoard(removableTaskIdentifiers);
+    for (const taskIdentifier of removableTaskIdentifiers) {
+      removeRuntimeTaskFile(taskIdentifier);
+    }
+
+    execFileSync(
+      "bash",
+      [resolve(repositoryRoot, "scripts/ops-status.sh")],
+      {
+        cwd: sharedRepositoryRoot,
+        stdio: "inherit",
+      },
+    );
+  } catch (caughtError) {
+    fail(`ops:finish-session failed for ${sessionIdentifier}: ${formatError(caughtError)}`);
+  }
+
+  console.log(
+    `finish-session complete for ${sessionIdentifier}. removed_tasks=${removableTaskIdentifiers.length} ` +
+    `force=${forceCleanup ? "true" : "false"}`,
+  );
+}
+
+/**
  * Starts one session task, prints the prompt, and opens a shell in the task worktree.
  *
  * @param argumentsList - Positional CLI args passed after `agent`.
@@ -1786,6 +1919,11 @@ function main(): void {
 
   if (commandName === "reset") {
     resetWorkspace();
+    return;
+  }
+
+  if (commandName === "finish-session") {
+    finishSession(argumentsList);
     return;
   }
 
