@@ -1645,6 +1645,9 @@ function loadGitHubAppCredentials(): Readonly<{ appId: number; privateKeyPem: st
     } catch (caughtError) {
       const details =
         caughtError instanceof Error ? caughtError.message : String(caughtError);
+      console.error(
+        `[worker] failed to read key from GITHUB_APP_PRIVATE_KEY_PATH (${privateKeyPathRaw}): ${details}`,
+      );
       throw new Error(
         `[worker] failed to read GITHUB_APP_PRIVATE_KEY_PATH (${privateKeyPathRaw}): ${details}`,
       );
