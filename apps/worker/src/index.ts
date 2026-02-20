@@ -1506,6 +1506,8 @@ async function buildAnalysisContextFromGitHub(
  * and embeds the payload inside a collapsible `<details>` block.
  */
 function buildStructuredFindingComment(finding: Finding, dedupeKey: string): string {
+  const patchSuggestionPolicy =
+    finding.patchSuggestionPolicy ?? (finding.patchPreview ? "safe-patch" : "manual-only");
   const structuredPayload = JSON.stringify(
     {
       dedupeKey,
@@ -1515,24 +1517,36 @@ function buildStructuredFindingComment(finding: Finding, dedupeKey: string): str
       filePath: finding.filePath,
       line: finding.line,
       confidence: finding.confidence,
+      patchSuggestionPolicy,
     },
     null,
     2,
   );
+  const evidenceMarkdown = buildMarkdownCodeBlock(finding.evidence, "ts");
+  const recommendationMarkdown = buildMarkdownCodeBlock(finding.recommendation, "text");
+  const patchMarkdownLines = buildPatchPreviewMarkdownLines(finding);
 
-  return [
-    "## Mergewise Finding",
+  const markdownLines = [
+    "### Mergewise Finding",
     "",
     `- Rule: \`${finding.ruleId}\``,
     `- Category: \`${finding.category}\``,
     `- Location: \`${finding.filePath}:${finding.line}\``,
     `- Confidence: \`${finding.confidence.toFixed(2)}\``,
+    `- Patch Policy: \`${patchSuggestionPolicy}\``,
     "",
     "**Evidence**",
-    finding.evidence,
+    evidenceMarkdown,
     "",
     "**Recommendation**",
-    finding.recommendation,
+    recommendationMarkdown,
+  ];
+
+  if (patchMarkdownLines.length > 0) {
+    markdownLines.push("", "**Suggested Patch**", ...patchMarkdownLines);
+  }
+
+  markdownLines.push(
     "",
     "<details>",
     "<summary>Structured Payload</summary>",
@@ -1542,7 +1556,39 @@ function buildStructuredFindingComment(finding: Finding, dedupeKey: string): str
     "```",
     "",
     "</details>",
-  ].join("\n");
+  );
+
+  return markdownLines.join("\n");
+}
+
+function buildMarkdownCodeBlock(content: string, language: string): string {
+  const normalizedContent = content.trim() || "(empty)";
+  const fence = buildCodeFence(normalizedContent);
+  return [fence + language, normalizedContent, fence].join("\n");
+}
+
+function buildCodeFence(content: string): string {
+  const backtickMatches = content.match(/`+/g) ?? [];
+  const longestBacktickRun = backtickMatches.reduce(
+    (maxRunLength, sequence) => Math.max(maxRunLength, sequence.length),
+    0,
+  );
+  const fenceLength = Math.max(3, longestBacktickRun + 1);
+  return "`".repeat(fenceLength);
+}
+
+function buildPatchPreviewMarkdownLines(finding: Finding): string[] {
+  if (!finding.patchPreview) {
+    return [];
+  }
+
+  const patchLines = [
+    finding.patchPreview.hunkHeader,
+    ...finding.patchPreview.removedLines.map((removedLine) => `-${removedLine}`),
+    ...finding.patchPreview.addedLines.map((addedLine) => `+${addedLine}`),
+  ];
+  const patchMarkdown = buildMarkdownCodeBlock(patchLines.join("\n"), "diff");
+  return patchMarkdown.split("\n");
 }
 
 function resolveGitHubFetchOptions(): WorkerGitHubFetchOptions {
