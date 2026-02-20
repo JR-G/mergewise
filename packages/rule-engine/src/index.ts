@@ -182,10 +182,71 @@ function enforcePatchSuggestionPolicy(finding: Finding): Finding {
     );
   }
 
+  const normalizedPatchPreview = finding.patchPreview
+    ? normalizePatchPreview(finding.patchPreview)
+    : undefined;
+
   return {
     ...finding,
+    evidence: normalizeFindingText(
+      finding.evidence,
+      "No evidence provided by rule.",
+    ),
+    recommendation: normalizeFindingText(
+      finding.recommendation,
+      "No recommendation provided by rule.",
+    ),
+    patchPreview: normalizedPatchPreview,
     patchSuggestionPolicy,
   };
+}
+
+function normalizeFindingText(text: string, fallback: string): string {
+  const normalizedNewlines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const trimmedText = normalizedNewlines.trim();
+  if (!trimmedText) {
+    return fallback;
+  }
+
+  return trimmedText.replace(/\n{3,}/g, "\n\n");
+}
+
+function normalizePatchPreview(patchPreview: PatchPreview): PatchPreview {
+  const hunkHeader = normalizePatchHeader(
+    patchPreview.hunkHeader,
+    "@@ -0,0 +0,0 @@",
+  );
+  return {
+    hunkHeader,
+    removedLines: patchPreview.removedLines.map((line) =>
+      normalizePatchSegment(line, "")
+    ),
+    addedLines: patchPreview.addedLines.map((line) =>
+      normalizePatchSegment(line, "")
+    ),
+  };
+}
+
+function normalizePatchHeader(header: string, fallback: string): string {
+  const normalizedNewlines = header.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const firstLine = normalizedNewlines.split("\n")[0] ?? "";
+  const trimmedLine = firstLine.trim();
+  if (!trimmedLine) {
+    return fallback;
+  }
+
+  return trimmedLine;
+}
+
+function normalizePatchSegment(segment: string, fallback: string): string {
+  const normalizedNewlines = segment.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const firstLine = normalizedNewlines.split("\n")[0] ?? "";
+  const trimmedLine = firstLine.trimEnd();
+  if (!trimmedLine.trim()) {
+    return fallback;
+  }
+
+  return trimmedLine;
 }
 
 function derivePatchSuggestionPolicy(

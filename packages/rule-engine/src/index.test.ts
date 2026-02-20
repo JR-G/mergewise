@@ -31,6 +31,8 @@ function buildFinding(
   ruleId: string,
   category: Finding["category"],
   options?: {
+    evidence?: string;
+    recommendation?: string;
     patchPreview?: PatchPreview;
     patchSuggestionPolicy?: Finding["patchSuggestionPolicy"];
   },
@@ -45,8 +47,9 @@ function buildFinding(
     category,
     filePath: "src/index.ts",
     line: 1,
-    evidence: "const value: any = input;",
-    recommendation: "Replace any with a concrete type.",
+    evidence: options?.evidence ?? "const value: any = input;",
+    recommendation:
+      options?.recommendation ?? "Replace any with a concrete type.",
     patchPreview: options?.patchPreview,
     patchSuggestionPolicy: options?.patchSuggestionPolicy,
     confidence: 0.95,
@@ -352,5 +355,105 @@ describe("executeRules", () => {
     expect(result.summary.totalFindings).toBe(0);
     expect(result.summary.failedRules).toBe(1);
     expect(result.failedRuleIds).toEqual(["stateless/partial-enforcement-failure"]);
+  });
+
+  test("normalizes evidence and recommendation text for reviewer output", async () => {
+    const rule: StatelessRule = {
+      kind: "stateless",
+      metadata: {
+        ruleId: "stateless/text-normalization",
+        name: "text normalization",
+        category: "clean",
+        languages: ["typescript"],
+        description: "text normalization",
+      },
+      analyse: async () => [
+        buildFinding("stateless/text-normalization", "clean", {
+          evidence: " \r\n\r\nconst value: any = input;\r\n\r\n\r\n",
+          recommendation: "   \n\nReplace any with a concrete type.\n\n\n",
+        }),
+      ],
+    };
+
+    const result = await executeRules({
+      context: ANALYSIS_CONTEXT,
+      rules: [rule],
+    });
+
+    expect(result.summary.failedRules).toBe(0);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]?.evidence).toBe("const value: any = input;");
+    expect(result.findings[0]?.recommendation).toBe(
+      "Replace any with a concrete type.",
+    );
+  });
+
+  test("supplies fallback text when evidence or recommendation are blank", async () => {
+    const rule: StatelessRule = {
+      kind: "stateless",
+      metadata: {
+        ruleId: "stateless/text-fallbacks",
+        name: "text fallbacks",
+        category: "clean",
+        languages: ["typescript"],
+        description: "text fallbacks",
+      },
+      analyse: async () => [
+        buildFinding("stateless/text-fallbacks", "clean", {
+          evidence: " \n\t\r\n ",
+          recommendation: " \n ",
+        }),
+      ],
+    };
+
+    const result = await executeRules({
+      context: ANALYSIS_CONTEXT,
+      rules: [rule],
+    });
+
+    expect(result.summary.failedRules).toBe(0);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]?.evidence).toBe("No evidence provided by rule.");
+    expect(result.findings[0]?.recommendation).toBe(
+      "No recommendation provided by rule.",
+    );
+  });
+
+  test("normalizes patch preview lines and hunk header for stable markdown rendering", async () => {
+    const rule: StatelessRule = {
+      kind: "stateless",
+      metadata: {
+        ruleId: "stateless/patch-normalization",
+        name: "patch normalization",
+        category: "clean",
+        languages: ["typescript"],
+        description: "patch normalization",
+      },
+      analyse: async () => [
+        buildFinding("stateless/patch-normalization", "clean", {
+          patchSuggestionPolicy: "safe-patch",
+          patchPreview: {
+            hunkHeader: "  @@ -10,1 +10,1 @@  \n@@ extra",
+            removedLines: ["const output = oldCall();  \r\nignored"],
+            addedLines: ["const output = safeCall();  "],
+          },
+        }),
+      ],
+    };
+
+    const result = await executeRules({
+      context: ANALYSIS_CONTEXT,
+      rules: [rule],
+    });
+
+    expect(result.summary.failedRules).toBe(0);
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]?.patchPreview?.hunkHeader).toBe("@@ -10,1 +10,1 @@");
+    expect(result.findings[0]?.patchPreview?.removedLines).toEqual([
+      "const output = oldCall();",
+    ]);
+    expect(result.findings[0]?.patchPreview?.addedLines).toEqual([
+      "const output = safeCall();",
+    ]);
   });
 });
