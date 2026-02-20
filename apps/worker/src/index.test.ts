@@ -1419,6 +1419,107 @@ describe("finding delivery", () => {
     }
   });
 
+  test("builds anti-pattern evidence as single-line markdown-safe inline code", async () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "inline-fence",
+          ruleId: "rule/a",
+          filePath: "src/a.ts",
+          line: 1,
+          evidence: "const value = ```x```\nnextLine",
+          recommendation: "Use a safer pattern.",
+          confidence: 0.95,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 1,
+      },
+    );
+
+    const postedBodies: string[] = [];
+    await postPreparedFindingComments(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 3,
+        installationAccessToken: "token",
+        traceId: "trace-inline-fence",
+        githubFetchOptions: workerFetchOptions,
+        comments: delivery.comments,
+      },
+      {
+        postPullRequestSummaryCommentFn: async (options) => {
+          postedBodies.push(options.body);
+          return {
+            id: 1,
+            html_url: "https://github.com/acme/widget/pull/3#issuecomment-1",
+            body: options.body,
+          };
+        },
+      },
+    );
+
+    expect(postedBodies).toHaveLength(1);
+    expect(postedBodies[0]!).toContain("````const value = ```x``` nextLine````");
+    expect(postedBodies[0]!).not.toContain("```x```\nnextLine");
+  });
+
+  test("builds suggested rewrite with dynamic markdown fences", async () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "block-fence",
+          ruleId: "rule/a",
+          filePath: "src/a.ts",
+          line: 1,
+          evidence: "const value = source;",
+          recommendation: "Use safer output.",
+          confidence: 0.95,
+          patchPreview: {
+            hunkHeader: "@@ -1,1 +1,1 @@",
+            removedLines: ["const value = source;"],
+            addedLines: ["const template = \"```\";", "const value = template;"],
+          },
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 1,
+      },
+    );
+
+    const postedBodies: string[] = [];
+    await postPreparedFindingComments(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 3,
+        installationAccessToken: "token",
+        traceId: "trace-block-fence",
+        githubFetchOptions: workerFetchOptions,
+        comments: delivery.comments,
+      },
+      {
+        postPullRequestSummaryCommentFn: async (options) => {
+          postedBodies.push(options.body);
+          return {
+            id: 2,
+            html_url: "https://github.com/acme/widget/pull/3#issuecomment-2",
+            body: options.body,
+          };
+        },
+      },
+    );
+
+    expect(postedBodies).toHaveLength(1);
+    expect(postedBodies[0]!).toContain("````typescript");
+    expect(postedBodies[0]!).toContain("\n````\n");
+  });
+
   test("buildWorkerCheckOutput formats reviewer summary grouped by category and rule", () => {
     const delivery = prepareFindingDelivery(
       [

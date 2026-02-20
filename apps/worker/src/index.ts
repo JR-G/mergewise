@@ -1589,9 +1589,10 @@ function buildStructuredFindingComment(finding: Finding, dedupeKey: string): str
  * @returns Human-readable anti-pattern sentence.
  */
 function buildAntiPatternText(finding: Finding): string {
-  const normalizedEvidence = finding.evidence.trim();
+  const normalizedEvidence = finding.evidence.replace(/\s+/g, " ").trim();
+  const evidenceFence = createInlineCodeFence(normalizedEvidence);
   const evidenceSummary = normalizedEvidence.length > 0
-    ? `\`${normalizedEvidence}\``
+    ? `${evidenceFence}${normalizedEvidence}${evidenceFence}`
     : "the changed code";
   return `${finding.ruleId} triggered at \`${finding.filePath}:${finding.line}\` due to ${evidenceSummary}.`;
 }
@@ -1650,14 +1651,64 @@ function buildSuggestedRewriteSection(finding: Finding): readonly string[] {
   const normalizedLanguage = finding.language.toLowerCase();
   const fencedLanguage = normalizedLanguage === "typescriptreact" ? "tsx" : normalizedLanguage;
   const addedLines = patchPreview.addedLines.map((addedLine) => addedLine.replace(/^\+/, ""));
+  const codeFence = createCodeFence(addedLines, fencedLanguage);
 
   return [
     "**Suggested rewrite**",
-    `\`\`\`${fencedLanguage}`,
+    codeFence.open,
     ...addedLines,
-    "```",
+    codeFence.close,
     "",
   ];
+}
+
+/**
+ * Builds a safe inline code fence for Markdown from text that may contain backticks.
+ *
+ * @param text - Text to wrap.
+ * @returns Fence string safe for inline Markdown code.
+ */
+function createInlineCodeFence(text: string): string {
+  const longestBacktickRun = getLongestBacktickRun(text);
+  return "`".repeat(Math.max(1, longestBacktickRun + 1));
+}
+
+/**
+ * Builds Markdown code fence delimiters based on content backticks.
+ *
+ * @param lines - Code block content lines.
+ * @param language - Optional fenced language identifier.
+ * @returns Open/close fence pair.
+ */
+function createCodeFence(
+  lines: readonly string[],
+  language: string,
+): { readonly open: string; readonly close: string } {
+  const longestBacktickRun = lines.reduce(
+    (currentLongest, line) => Math.max(currentLongest, getLongestBacktickRun(line)),
+    0,
+  );
+  const fence = "`".repeat(Math.max(3, longestBacktickRun + 1));
+  return {
+    open: `${fence}${language}`,
+    close: fence,
+  };
+}
+
+/**
+ * Returns the longest run of consecutive backticks in text.
+ *
+ * @param text - Text to scan.
+ * @returns Longest consecutive backtick run length.
+ */
+function getLongestBacktickRun(text: string): number {
+  const matches = text.match(/`+/g);
+  if (!matches || matches.length === 0) {
+    return 0;
+  }
+  return matches.reduce((currentLongest, matchValue) => {
+    return Math.max(currentLongest, matchValue.length);
+  }, 0);
 }
 
 /**
