@@ -157,6 +157,18 @@ One-command full reset (cleanup all/prune/status):
 bun run ops:reset
 ```
 
+Session close with merge guard and runtime cleanup:
+
+```bash
+bun run ops:finish-session -- <session-id>
+```
+
+Force cleanup when intentionally discarding unmerged task branches:
+
+```bash
+bun run ops:finish-session -- <session-id> --force
+```
+
 Open PR from task identifier:
 
 ```bash
