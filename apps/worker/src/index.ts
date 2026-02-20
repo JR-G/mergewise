@@ -1636,20 +1636,21 @@ function loadGitHubAppCredentials(): Readonly<{ appId: number; privateKeyPem: st
 
   const preferredPrivateKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY;
   const privateKeyPathRaw = process.env.GITHUB_APP_PRIVATE_KEY_PATH;
+  const privateKeyPath = privateKeyPathRaw?.trim();
   const legacyPrivateKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY_PEM;
   let privateKeyRaw = preferredPrivateKeyRaw ?? legacyPrivateKeyRaw;
 
-  if (privateKeyRaw === undefined && privateKeyPathRaw?.trim()) {
+  if (privateKeyRaw === undefined && privateKeyPath) {
     try {
-      privateKeyRaw = readFileSync(privateKeyPathRaw, "utf8");
+      privateKeyRaw = readFileSync(privateKeyPath, "utf8");
     } catch (caughtError) {
       const details =
         caughtError instanceof Error ? caughtError.message : String(caughtError);
       console.error(
-        `[worker] failed to read key from GITHUB_APP_PRIVATE_KEY_PATH (${privateKeyPathRaw}): ${details}`,
+        `[worker] failed to read key from GITHUB_APP_PRIVATE_KEY_PATH (${privateKeyPath}): ${details}`,
       );
       throw new Error(
-        `[worker] failed to read GITHUB_APP_PRIVATE_KEY_PATH (${privateKeyPathRaw}): ${details}`,
+        `[worker] failed to read GITHUB_APP_PRIVATE_KEY_PATH (${privateKeyPath}): ${details}`,
       );
     }
   }
