@@ -4,8 +4,13 @@ import { makeAnalysisContext, makeDiffHunk, makeFileDiff } from "./fixtures";
 import {
   arrayIndexKeyRule,
   debuggerStatementRule,
+  enumDeclarationRule,
+  excessiveOptionalChainingRule,
+  negatedConditionRule,
+  nestedTernaryRule,
   nonNullAssertionRule,
   tsReactRules,
+  typeAssertionChainRule,
   unsafeAnyUsageRule,
 } from "./index";
 
@@ -194,6 +199,26 @@ describe("rule-ts-react non-null assertion", () => {
     expect(findings).toEqual([]);
   });
 
+  test("reports non-null assertions inside JSX in tsx files", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/component.tsx", [
+        makeDiffHunk("@@ -5,0 +5,1 @@", [
+          "+return <span>{user!.name}</span>;",
+        ]),
+      ]),
+    ]);
+
+    const findings = await nonNullAssertionRule.analyse(context);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.evidence).toContain("user!.name");
+    expect(findings[0]!.patchPreview).toEqual({
+      hunkHeader: "@@ -5,0 +5,1 @@",
+      removedLines: ["return <span>{user!.name}</span>;"],
+      addedLines: ["return <span>{user.name}</span>;"],
+    });
+  });
+
   test("excludes definite-assignment assertions on class fields", async () => {
     const context = makeAnalysisContext([
       makeFileDiff("src/example.ts", [
@@ -316,26 +341,230 @@ describe("rule-ts-react debugger statement", () => {
   });
 });
 
+describe("rule-ts-react type assertion chain", () => {
+  test("reports double type assertions (as unknown as T)", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/example.ts", [
+        makeDiffHunk("@@ -1,0 +1,3 @@", [
+          "+const value = input as unknown as TargetType;",
+          "+const safe = input as string;",
+          "+const another = data as any as number;",
+        ]),
+      ]),
+    ]);
+
+    const findings = await typeAssertionChainRule.analyse(context);
+
+    expect(findings).toHaveLength(2);
+    expect(findings.every((finding) => finding.ruleId === "ts-react/no-type-assertion-chain")).toBe(true);
+    expect(findings.map((finding) => finding.line)).toEqual([1, 3]);
+  });
+
+  test("ignores single type assertions", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/example.ts", [
+        makeDiffHunk("@@ -1,0 +1,3 @@", [
+          "+const a = value as string;",
+          "+const b = value as unknown;",
+          "+const c: number = value;",
+        ]),
+      ]),
+    ]);
+
+    const findings = await typeAssertionChainRule.analyse(context);
+
+    expect(findings).toEqual([]);
+  });
+});
+
+describe("rule-ts-react enum declaration", () => {
+  test("reports enum declarations", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/types.ts", [
+        makeDiffHunk("@@ -1,0 +1,4 @@", [
+          "+enum Status {",
+          "+  Active = 'active',",
+          "+  Inactive = 'inactive',",
+          "+}",
+        ]),
+      ]),
+    ]);
+
+    const findings = await enumDeclarationRule.analyse(context);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.ruleId).toBe("ts-react/no-enum");
+    expect(findings[0]!.category).toBe("idiomatic");
+    expect(findings[0]!.recommendation).toContain("as const");
+  });
+
+  test("ignores const objects with as const", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/types.ts", [
+        makeDiffHunk("@@ -1,0 +1,4 @@", [
+          "+const Status = {",
+          "+  Active: 'active',",
+          "+  Inactive: 'inactive',",
+          "+} as const;",
+        ]),
+      ]),
+    ]);
+
+    const findings = await enumDeclarationRule.analyse(context);
+
+    expect(findings).toEqual([]);
+  });
+});
+
+describe("rule-ts-react nested ternary", () => {
+  test("reports nested ternary expressions", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/example.ts", [
+        makeDiffHunk("@@ -1,0 +1,2 @@", [
+          "+const label = isAdmin ? 'admin' : isUser ? 'user' : 'guest';",
+          "+const simple = isActive ? 'yes' : 'no';",
+        ]),
+      ]),
+    ]);
+
+    const findings = await nestedTernaryRule.analyse(context);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.ruleId).toBe("ts-react/no-nested-ternary");
+    expect(findings[0]!.line).toBe(1);
+  });
+
+  test("ignores simple ternaries", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/example.ts", [
+        makeDiffHunk("@@ -1,0 +1,2 @@", [
+          "+const a = condition ? 'yes' : 'no';",
+          "+const b = x > 0 ? x : -x;",
+        ]),
+      ]),
+    ]);
+
+    const findings = await nestedTernaryRule.analyse(context);
+
+    expect(findings).toEqual([]);
+  });
+});
+
+describe("rule-ts-react negated condition", () => {
+  test("reports negated if-conditions with else branches", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/example.ts", [
+        makeDiffHunk("@@ -1,0 +1,5 @@", [
+          "+if (!isReady) {",
+          "+  showLoading();",
+          "+} else {",
+          "+  showContent();",
+          "+}",
+        ]),
+      ]),
+    ]);
+
+    const findings = await negatedConditionRule.analyse(context);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.ruleId).toBe("ts-react/no-negated-condition");
+  });
+
+  test("ignores negated conditions without else branch", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/example.ts", [
+        makeDiffHunk("@@ -1,0 +1,3 @@", [
+          "+if (!isReady) {",
+          "+  return;",
+          "+}",
+        ]),
+      ]),
+    ]);
+
+    const findings = await negatedConditionRule.analyse(context);
+
+    expect(findings).toEqual([]);
+  });
+
+  test("ignores negated conditions with else-if chains", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/example.ts", [
+        makeDiffHunk("@@ -1,0 +1,7 @@", [
+          "+if (!isReady) {",
+          "+  showLoading();",
+          "+} else if (isError) {",
+          "+  showError();",
+          "+} else {",
+          "+  showContent();",
+          "+}",
+        ]),
+      ]),
+    ]);
+
+    const findings = await negatedConditionRule.analyse(context);
+
+    expect(findings).toEqual([]);
+  });
+});
+
+describe("rule-ts-react excessive optional chaining", () => {
+  test("reports deeply chained optional access (3+ levels)", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/example.ts", [
+        makeDiffHunk("@@ -1,0 +1,2 @@", [
+          "+const name = response?.data?.user?.profile?.name;",
+          "+const simple = user?.name;",
+        ]),
+      ]),
+    ]);
+
+    const findings = await excessiveOptionalChainingRule.analyse(context);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.ruleId).toBe("ts-react/no-excessive-optional-chaining");
+    expect(findings[0]!.line).toBe(1);
+  });
+
+  test("ignores chains under the threshold", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/example.ts", [
+        makeDiffHunk("@@ -1,0 +1,2 @@", [
+          "+const a = obj?.prop;",
+          "+const b = obj?.nested?.value;",
+        ]),
+      ]),
+    ]);
+
+    const findings = await excessiveOptionalChainingRule.analyse(context);
+
+    expect(findings).toEqual([]);
+  });
+});
+
 describe("rule-ts-react exported rules", () => {
   test("exposes deterministic rule list for worker integration", () => {
-    expect(tsReactRules).toHaveLength(4);
+    expect(tsReactRules).toHaveLength(9);
     expect(tsReactRules).toEqual([
       unsafeAnyUsageRule,
       nonNullAssertionRule,
       arrayIndexKeyRule,
       debuggerStatementRule,
-    ]);
-    expect(tsReactRules.map((rule) => rule.kind)).toEqual([
-      "stateless",
-      "stateless",
-      "stateless",
-      "stateless",
+      typeAssertionChainRule,
+      enumDeclarationRule,
+      nestedTernaryRule,
+      negatedConditionRule,
+      excessiveOptionalChainingRule,
     ]);
     expect(tsReactRules.map((rule) => rule.metadata.ruleId)).toEqual([
       "ts-react/no-unsafe-any",
       "ts-react/no-non-null-assertion",
       "ts-react/no-array-index-key",
       "ts-react/no-debugger-statement",
+      "ts-react/no-type-assertion-chain",
+      "ts-react/no-enum",
+      "ts-react/no-nested-ternary",
+      "ts-react/no-negated-condition",
+      "ts-react/no-excessive-optional-chaining",
     ]);
   });
 });

@@ -1,24 +1,30 @@
 import type { AnalysisContext, Finding, PatchPreview, StatelessRule } from "@mergewise/shared-types";
+import ts from "typescript";
 
-const TYPE_SCRIPT_REACT_FILE_PATTERN = /\.(ts|tsx)$/i;
-const TYPE_SCRIPT_JSX_FILE_PATTERN = /\.tsx$/i;
-const HUNK_HEADER_PATTERN = /^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/;
+import {
+  TYPE_SCRIPT_FILE_PATTERN,
+  TYPE_SCRIPT_JSX_FILE_PATTERN,
+  findAddedNodesWhere,
+  isOnAddedLine,
+  parseChangedFiles,
+  parseHunkStartingLine,
+} from "./ast";
+
 const NON_CODE_MARKER_PATTERN = /(?:'|"|`|\/\/|\/\*)/;
 
 const UNSAFE_ANY_RULE_IDENTIFIER = "ts-react/no-unsafe-any";
-const UNSAFE_ANY_PATTERN = /(?:\bas\s+any\b|:\s*any\b|<\s*any\s*>|\bany\s*\[\s*\]|\bArray\s*<\s*any\s*>|\bReadonlyArray\s*<\s*any\s*>|\bPromise\s*<\s*any\s*>)/;
-
 const NON_NULL_ASSERTION_RULE_IDENTIFIER = "ts-react/no-non-null-assertion";
-const NON_NULL_ASSERTION_PATTERN = /([)\]}\w$])!\s*(?=[.\[\]),;:?]|$)/;
-
 const ARRAY_INDEX_KEY_RULE_IDENTIFIER = "ts-react/no-array-index-key";
-const ARRAY_INDEX_KEY_PATTERN = /\bkey\s*=\s*{\s*(?:index|idx|i)\s*}/;
-
 const DEBUGGER_STATEMENT_RULE_IDENTIFIER = "ts-react/no-debugger-statement";
-const DEBUGGER_TOKEN_PATTERN = /\bdebugger\b/g;
+const TYPE_ASSERTION_CHAIN_RULE_IDENTIFIER = "ts-react/no-type-assertion-chain";
+const ENUM_DECLARATION_RULE_IDENTIFIER = "ts-react/no-enum";
+const NESTED_TERNARY_RULE_IDENTIFIER = "ts-react/no-nested-ternary";
+const NEGATED_CONDITION_RULE_IDENTIFIER = "ts-react/no-negated-condition";
+const EXCESSIVE_OPTIONAL_CHAIN_RULE_IDENTIFIER = "ts-react/no-excessive-optional-chaining";
+
+const UNSAFE_ANY_PATTERN = /(?:\bas\s+any\b|:\s*any\b|<\s*any\s*>|\bany\s*\[\s*\]|\bArray\s*<\s*any\s*>|\bReadonlyArray\s*<\s*any\s*>|\bPromise\s*<\s*any\s*>)/;
 const ONLY_DEBUGGER_STATEMENT_PATTERN = /^\s*debugger\s*;?\s*$/;
-const DEFINITE_ASSIGNMENT_ASSERTION_PATTERN =
-  /^\s*(?:(?:public|private|protected|readonly|static|declare|abstract|override)\s+)*(?:#?[A-Za-z_$][\w$]*)\s*!\s*:\s*/;
+const INDEX_VARIABLE_NAMES = new Set(["index", "idx", "i"]);
 
 type LineScanState = {
   insideBlockComment: boolean;
@@ -47,7 +53,7 @@ export const unsafeAnyUsageRule: StatelessRule = {
   analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
     const findings: Finding[] = [];
 
-    for (const addedLine of collectAddedLines(context, TYPE_SCRIPT_REACT_FILE_PATTERN)) {
+    for (const addedLine of collectAddedLines(context, TYPE_SCRIPT_FILE_PATTERN)) {
       if (!UNSAFE_ANY_PATTERN.test(addedLine.sanitizedContent)) {
         continue;
       }
@@ -81,6 +87,11 @@ export const unsafeAnyUsageRule: StatelessRule = {
 
 /**
  * Stateless rule that flags non-null assertions (`!`) in changed TypeScript and React files.
+ *
+ * @remarks
+ * Uses the TypeScript AST to identify `NonNullExpression` nodes and strips them
+ * from the evidence to produce a patch preview. Definite-assignment assertions
+ * on class fields are excluded.
  */
 export const nonNullAssertionRule: StatelessRule = {
   kind: "stateless",
@@ -94,34 +105,48 @@ export const nonNullAssertionRule: StatelessRule = {
   analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
     const findings: Finding[] = [];
 
-    for (const addedLine of collectAddedLines(context, TYPE_SCRIPT_REACT_FILE_PATTERN)) {
-      if (!NON_NULL_ASSERTION_PATTERN.test(addedLine.sanitizedContent)) {
-        continue;
-      }
+    for (const parsedFile of parseChangedFiles(context)) {
+      const seen = new Set<number>();
 
-      if (isDefiniteAssignmentAssertion(addedLine.sanitizedContent)) {
-        continue;
-      }
+      const visit = (node: ts.Node): void => {
+        if (ts.isNonNullExpression(node)) {
+          const lineInfo = isOnAddedLine(parsedFile, node);
+          if (lineInfo && !seen.has(lineInfo.lineNumber)) {
+            if (isDefiniteAssignmentContext(node)) {
+              ts.forEachChild(node, visit);
+              return;
+            }
+            seen.add(lineInfo.lineNumber);
+            const scriptKind = TYPE_SCRIPT_JSX_FILE_PATTERN.test(parsedFile.filePath)
+              ? ts.ScriptKind.TSX
+              : ts.ScriptKind.TS;
+            const replacementLine = buildNonNullAssertionReplacement(
+              lineInfo.evidence,
+              scriptKind,
+            );
+            const patchPreview = replacementLine
+              ? buildPatchPreview(lineInfo.hunkHeader, lineInfo.evidence, replacementLine)
+              : undefined;
 
-      const replacementLine = addedLine.evidence.replace(NON_NULL_ASSERTION_PATTERN, "$1");
-      const patchPreview =
-        replacementLine === addedLine.evidence
-          ? undefined
-          : buildPatchPreview(addedLine.hunkHeader, addedLine.evidence, replacementLine);
+            findings.push(
+              buildFinding(context, {
+                ruleId: NON_NULL_ASSERTION_RULE_IDENTIFIER,
+                category: "safety",
+                filePath: parsedFile.filePath,
+                line: lineInfo.lineNumber,
+                evidence: lineInfo.evidence,
+                recommendation:
+                  "Avoid non-null assertions. Add an explicit null guard or narrow the value before access so runtime null cases stay safe.",
+                patchPreview,
+                confidence: 0.92,
+              }),
+            );
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
 
-      findings.push(
-        buildFinding(context, {
-          ruleId: NON_NULL_ASSERTION_RULE_IDENTIFIER,
-          category: "safety",
-          filePath: addedLine.filePath,
-          line: addedLine.lineNumber,
-          evidence: addedLine.evidence,
-          recommendation:
-            "Avoid non-null assertions. Add an explicit null guard or narrow the value before access so runtime null cases stay safe.",
-          patchPreview,
-          confidence: 0.92,
-        }),
-      );
+      visit(parsedFile.sourceFile);
     }
 
     return findings;
@@ -130,6 +155,10 @@ export const nonNullAssertionRule: StatelessRule = {
 
 /**
  * Stateless rule that flags JSX `key` props backed by array indexes.
+ *
+ * @remarks
+ * Uses AST to find JSX attributes named `key` whose initialiser is an identifier
+ * commonly used as a map callback index parameter (`index`, `idx`, `i`).
  */
 export const arrayIndexKeyRule: StatelessRule = {
   kind: "stateless",
@@ -143,23 +172,30 @@ export const arrayIndexKeyRule: StatelessRule = {
   analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
     const findings: Finding[] = [];
 
-    for (const addedLine of collectAddedLines(context, TYPE_SCRIPT_JSX_FILE_PATTERN)) {
-      if (!ARRAY_INDEX_KEY_PATTERN.test(addedLine.sanitizedContent)) {
-        continue;
-      }
+    for (const parsedFile of parseChangedFiles(context, TYPE_SCRIPT_JSX_FILE_PATTERN)) {
+      const astFindings = findAddedNodesWhere(parsedFile, (node) => {
+        if (!ts.isJsxAttribute(node)) return false;
+        if (!ts.isIdentifier(node.name) || node.name.text !== "key") return false;
+        if (!node.initializer || !ts.isJsxExpression(node.initializer)) return false;
+        const expression = node.initializer.expression;
+        if (!expression || !ts.isIdentifier(expression)) return false;
+        return INDEX_VARIABLE_NAMES.has(expression.text);
+      });
 
-      findings.push(
-        buildFinding(context, {
-          ruleId: ARRAY_INDEX_KEY_RULE_IDENTIFIER,
-          category: "idiomatic",
-          filePath: addedLine.filePath,
-          line: addedLine.lineNumber,
-          evidence: addedLine.evidence,
-          recommendation:
-            "Do not use array index as a React key. Use a stable identifier from the item data so reorder and insertion operations keep component state aligned.",
-          confidence: 0.9,
-        }),
-      );
+      for (const match of astFindings) {
+        findings.push(
+          buildFinding(context, {
+            ruleId: ARRAY_INDEX_KEY_RULE_IDENTIFIER,
+            category: "idiomatic",
+            filePath: parsedFile.filePath,
+            line: match.lineNumber,
+            evidence: match.evidence,
+            recommendation:
+              "Do not use array index as a React key. Use a stable identifier from the item data so reorder and insertion operations keep component state aligned.",
+            confidence: 0.9,
+          }),
+        );
+      }
     }
 
     return findings;
@@ -168,6 +204,9 @@ export const arrayIndexKeyRule: StatelessRule = {
 
 /**
  * Stateless rule that flags debugger statements in changed TypeScript and React files.
+ *
+ * @remarks
+ * Uses AST to find `DebuggerStatement` nodes on added lines.
  */
 export const debuggerStatementRule: StatelessRule = {
   kind: "stateless",
@@ -181,30 +220,279 @@ export const debuggerStatementRule: StatelessRule = {
   analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
     const findings: Finding[] = [];
 
-    for (const addedLine of collectAddedLines(context, TYPE_SCRIPT_REACT_FILE_PATTERN)) {
-      if (!containsDebuggerStatement(addedLine.sanitizedContent)) {
-        continue;
+    for (const parsedFile of parseChangedFiles(context)) {
+      const astFindings = findAddedNodesWhere(parsedFile, (node) =>
+        ts.isDebuggerStatement(node),
+      );
+
+      for (const match of astFindings) {
+        const patchPreview = ONLY_DEBUGGER_STATEMENT_PATTERN.test(match.evidence)
+          ? { hunkHeader: match.hunkHeader, removedLines: [match.evidence], addedLines: [] as string[] }
+          : undefined;
+
+        findings.push(
+          buildFinding(context, {
+            ruleId: DEBUGGER_STATEMENT_RULE_IDENTIFIER,
+            category: "clean",
+            filePath: parsedFile.filePath,
+            line: match.lineNumber,
+            evidence: match.evidence,
+            recommendation:
+              "Remove debugger statements before merge. Keep temporary debugging local and use logging or tests for persistent diagnostics.",
+            patchPreview,
+            confidence: 0.97,
+          }),
+        );
       }
+    }
 
-      const patchPreview = buildDebuggerPatchPreview(
-        addedLine.hunkHeader,
-        addedLine.evidence,
-        addedLine.sanitizedContent,
+    return findings;
+  },
+};
+
+/**
+ * Stateless rule that flags `as unknown as T` type assertion chains.
+ *
+ * @remarks
+ * Double type assertions bypass the type system entirely. This pattern is a
+ * stronger red flag than a single `as` cast because it signals intentional
+ * circumvention of type safety rather than a simple widening.
+ */
+export const typeAssertionChainRule: StatelessRule = {
+  kind: "stateless",
+  metadata: {
+    ruleId: TYPE_ASSERTION_CHAIN_RULE_IDENTIFIER,
+    name: "Type assertion chain",
+    category: "safety",
+    languages: ["typescript", "tsx"],
+    description: "Detects double type assertions (as unknown as T) that bypass the type system.",
+  },
+  analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
+    const findings: Finding[] = [];
+
+    for (const parsedFile of parseChangedFiles(context)) {
+      const seen = new Set<number>();
+
+      const astFindings = findAddedNodesWhere(parsedFile, (node) => {
+        if (!ts.isAsExpression(node)) return false;
+        return ts.isAsExpression(node.expression);
+      });
+
+      for (const match of astFindings) {
+        if (seen.has(match.lineNumber)) continue;
+        seen.add(match.lineNumber);
+
+        findings.push(
+          buildFinding(context, {
+            ruleId: TYPE_ASSERTION_CHAIN_RULE_IDENTIFIER,
+            category: "safety",
+            filePath: parsedFile.filePath,
+            line: match.lineNumber,
+            evidence: match.evidence,
+            recommendation:
+              "Double type assertions (`as X as Y`) bypass the type system entirely. Introduce a proper type guard, generic constraint, or redesign the types so the compiler can verify the conversion without a forced cast chain.",
+            confidence: 0.95,
+          }),
+        );
+      }
+    }
+
+    return findings;
+  },
+};
+
+/**
+ * Stateless rule that flags `enum` declarations in favour of `as const` objects.
+ *
+ * @remarks
+ * TypeScript enums produce runtime code, have surprising structural typing
+ * behaviour, and cannot be tree-shaken. The modern idiomatic alternative
+ * is a plain object with `as const` and a derived union type.
+ */
+export const enumDeclarationRule: StatelessRule = {
+  kind: "stateless",
+  metadata: {
+    ruleId: ENUM_DECLARATION_RULE_IDENTIFIER,
+    name: "Enum declaration",
+    category: "idiomatic",
+    languages: ["typescript", "tsx"],
+    description: "Detects enum declarations where as-const objects are preferred.",
+  },
+  analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
+    const findings: Finding[] = [];
+
+    for (const parsedFile of parseChangedFiles(context)) {
+      const astFindings = findAddedNodesWhere(parsedFile, (node) =>
+        ts.isEnumDeclaration(node),
       );
 
-      findings.push(
-        buildFinding(context, {
-          ruleId: DEBUGGER_STATEMENT_RULE_IDENTIFIER,
-          category: "clean",
-          filePath: addedLine.filePath,
-          line: addedLine.lineNumber,
-          evidence: addedLine.evidence,
-          recommendation:
-            "Remove debugger statements before merge. Keep temporary debugging local and use logging or tests for persistent diagnostics.",
-          patchPreview,
-          confidence: 0.97,
-        }),
-      );
+      for (const match of astFindings) {
+        findings.push(
+          buildFinding(context, {
+            ruleId: ENUM_DECLARATION_RULE_IDENTIFIER,
+            category: "idiomatic",
+            filePath: parsedFile.filePath,
+            line: match.lineNumber,
+            evidence: match.evidence,
+            recommendation:
+              "Prefer `as const` objects over enums. Enums produce runtime code, have surprising nominal typing behaviour, and prevent tree-shaking. Use `const Status = { Active: 'active', Inactive: 'inactive' } as const` with `type Status = typeof Status[keyof typeof Status]` instead.",
+            confidence: 0.88,
+          }),
+        );
+      }
+    }
+
+    return findings;
+  },
+};
+
+/**
+ * Stateless rule that flags nested ternary expressions.
+ *
+ * @remarks
+ * Nested ternaries reduce readability significantly. This is especially
+ * problematic in JSX where they create deeply nested conditional rendering.
+ */
+export const nestedTernaryRule: StatelessRule = {
+  kind: "stateless",
+  metadata: {
+    ruleId: NESTED_TERNARY_RULE_IDENTIFIER,
+    name: "Nested ternary expression",
+    category: "clean",
+    languages: ["typescript", "tsx"],
+    description: "Detects nested ternary expressions that reduce readability.",
+  },
+  analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
+    const findings: Finding[] = [];
+
+    for (const parsedFile of parseChangedFiles(context)) {
+      const seen = new Set<number>();
+
+      const astFindings = findAddedNodesWhere(parsedFile, (node) => {
+        if (!ts.isConditionalExpression(node)) return false;
+        return containsNestedConditional(node.whenTrue) ||
+          containsNestedConditional(node.whenFalse);
+      });
+
+      for (const match of astFindings) {
+        if (seen.has(match.lineNumber)) continue;
+        seen.add(match.lineNumber);
+
+        const isJsx = isInsideJsxExpression(match.node);
+
+        findings.push(
+          buildFinding(context, {
+            ruleId: NESTED_TERNARY_RULE_IDENTIFIER,
+            category: "clean",
+            filePath: parsedFile.filePath,
+            line: match.lineNumber,
+            evidence: match.evidence,
+            recommendation: isJsx
+              ? "Nested ternaries in JSX create unreadable conditional rendering. Extract conditions into early returns, a lookup object, or a dedicated component that handles each branch."
+              : "Nested ternary expressions are difficult to read and maintain. Use if/else statements, early returns, or a mapping object instead.",
+            confidence: 0.9,
+          }),
+        );
+      }
+    }
+
+    return findings;
+  },
+};
+
+/**
+ * Stateless rule that flags `if (!condition)` with an else branch.
+ *
+ * @remarks
+ * Negated conditions with else branches force readers to perform double
+ * negation mentally. Flipping the branches improves readability.
+ */
+export const negatedConditionRule: StatelessRule = {
+  kind: "stateless",
+  metadata: {
+    ruleId: NEGATED_CONDITION_RULE_IDENTIFIER,
+    name: "Negated condition with else",
+    category: "clean",
+    languages: ["typescript", "tsx"],
+    description: "Detects negated if-conditions that have else branches, suggesting the positive path first.",
+  },
+  analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
+    const findings: Finding[] = [];
+
+    for (const parsedFile of parseChangedFiles(context)) {
+      const astFindings = findAddedNodesWhere(parsedFile, (node) => {
+        if (!ts.isIfStatement(node)) return false;
+        if (!node.elseStatement) return false;
+        if (ts.isIfStatement(node.elseStatement)) return false;
+        return isNegatedExpression(node.expression);
+      });
+
+      for (const match of astFindings) {
+        findings.push(
+          buildFinding(context, {
+            ruleId: NEGATED_CONDITION_RULE_IDENTIFIER,
+            category: "clean",
+            filePath: parsedFile.filePath,
+            line: match.lineNumber,
+            evidence: match.evidence,
+            recommendation:
+              "Avoid negated conditions when an else branch exists. Flip the condition to test the positive case first so readers avoid mental double-negation.",
+            confidence: 0.85,
+          }),
+        );
+      }
+    }
+
+    return findings;
+  },
+};
+
+/**
+ * Stateless rule that flags deeply chained optional access (`?.`).
+ *
+ * @remarks
+ * Chains of three or more optional accesses signal that the data model
+ * is poorly typed or that the code is defensively programming around
+ * nullable values instead of narrowing them up front.
+ */
+export const excessiveOptionalChainingRule: StatelessRule = {
+  kind: "stateless",
+  metadata: {
+    ruleId: EXCESSIVE_OPTIONAL_CHAIN_RULE_IDENTIFIER,
+    name: "Excessive optional chaining",
+    category: "idiomatic",
+    languages: ["typescript", "tsx"],
+    description: "Detects deeply chained optional access (3+ levels) suggesting poor nullability modelling.",
+  },
+  analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
+    const findings: Finding[] = [];
+
+    for (const parsedFile of parseChangedFiles(context)) {
+      const seen = new Set<number>();
+
+      const astFindings = findAddedNodesWhere(parsedFile, (node) => {
+        if (!node.parent) return false;
+        if (isOptionalChainNode(node.parent)) return false;
+        return countOptionalChainDepth(node) >= 3;
+      });
+
+      for (const match of astFindings) {
+        if (seen.has(match.lineNumber)) continue;
+        seen.add(match.lineNumber);
+
+        findings.push(
+          buildFinding(context, {
+            ruleId: EXCESSIVE_OPTIONAL_CHAIN_RULE_IDENTIFIER,
+            category: "idiomatic",
+            filePath: parsedFile.filePath,
+            line: match.lineNumber,
+            evidence: match.evidence,
+            recommendation:
+              "Deeply chained optional access (`?.?.?.`) suggests the types allow too many nullable intermediate values. Narrow nullability earlier with a guard or redesign the data model so intermediate objects are non-optional.",
+            confidence: 0.82,
+          }),
+        );
+      }
     }
 
     return findings;
@@ -219,15 +507,67 @@ export const tsReactRules: readonly StatelessRule[] = [
   nonNullAssertionRule,
   arrayIndexKeyRule,
   debuggerStatementRule,
+  typeAssertionChainRule,
+  enumDeclarationRule,
+  nestedTernaryRule,
+  negatedConditionRule,
+  excessiveOptionalChainingRule,
 ];
 
-/**
- * Collects added lines for files matching one path pattern.
- *
- * @param context - Rule execution context with changed file hunks.
- * @param filePattern - Pattern used to select relevant files.
- * @returns Added line records with line numbers and sanitized content.
- */
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+function buildFinding(
+  context: AnalysisContext,
+  findingCore: {
+    ruleId: string;
+    category: Finding["category"];
+    filePath: string;
+    line: number;
+    evidence: string;
+    recommendation: string;
+    patchPreview?: PatchPreview;
+    confidence: number;
+  },
+): Finding {
+  const findingIdentifier = `${findingCore.ruleId}:${context.pullRequest.repo}:${context.pullRequest.prNumber}:${findingCore.filePath}:${findingCore.line}`;
+
+  return {
+    findingId: findingIdentifier,
+    installationId: context.pullRequest.installationId,
+    repo: context.pullRequest.repo,
+    prNumber: context.pullRequest.prNumber,
+    language: "typescript",
+    ruleId: findingCore.ruleId,
+    category: findingCore.category,
+    filePath: findingCore.filePath,
+    line: findingCore.line,
+    evidence: findingCore.evidence,
+    recommendation: findingCore.recommendation,
+    patchPreview: findingCore.patchPreview,
+    confidence: findingCore.confidence,
+    status: "posted",
+  };
+}
+
+function buildPatchPreview(
+  hunkHeader: string,
+  removedLine: string,
+  addedLine: string,
+): PatchPreview {
+  return {
+    hunkHeader,
+    removedLines: [removedLine],
+    addedLines: [addedLine],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// unsafe-any helpers (kept regex-based – AST `any` keyword detection
+// requires type-checker program which is unavailable in diff-only context)
+// ---------------------------------------------------------------------------
+
 function* collectAddedLines(
   context: AnalysisContext,
   filePattern: RegExp,
@@ -269,34 +609,6 @@ function* collectAddedLines(
   }
 }
 
-/**
- * Parses the starting target line number from a unified diff hunk header.
- *
- * @param header - Unified diff hunk header.
- * @returns Added-side starting line number or `null` when parsing fails.
- */
-function parseHunkStartingLine(header: string): number | null {
-  const headerMatch = HUNK_HEADER_PATTERN.exec(header);
-  if (!headerMatch) {
-    return null;
-  }
-
-  const lineCapture = headerMatch[1];
-  if (!lineCapture) {
-    return null;
-  }
-
-  const parsedValue = Number.parseInt(lineCapture, 10);
-  return Number.isNaN(parsedValue) ? null : parsedValue;
-}
-
-/**
- * Removes string literal and comment text from one added source line.
- *
- * @param sourceLine - Added source line without leading diff marker.
- * @param lineScanState - Mutable scanner state for block comment continuity.
- * @returns Source content with non-code segments stripped.
- */
 function stripNonCodeContent(sourceLine: string, lineScanState: LineScanState): string {
   let cursorIndex = 0;
   let sanitizedContent = "";
@@ -342,14 +654,6 @@ function stripNonCodeContent(sourceLine: string, lineScanState: LineScanState): 
   return sanitizedContent;
 }
 
-/**
- * Advances the cursor past one quoted string literal, handling escape sequences.
- *
- * @param sourceLine - Added source line without leading diff marker.
- * @param startIndex - Index of the opening quote character.
- * @param quoteCharacter - Quote delimiter used by the literal.
- * @returns Next index after the closing quote or end-of-line.
- */
 function skipStringLiteral(
   sourceLine: string,
   startIndex: number,
@@ -374,13 +678,6 @@ function skipStringLiteral(
   return cursorIndex;
 }
 
-/**
- * Builds a manual replacement starting point for explicit `any` usages.
- *
- * @param evidence - Original added source line.
- * @param sanitizedContent - Source line with string and comment segments removed.
- * @returns Suggested manual replacement or `null` when no candidate is available.
- */
 function buildManualReplacementCandidate(
   evidence: string,
   sanitizedContent: string,
@@ -407,12 +704,6 @@ function buildManualReplacementCandidate(
   return replacementCandidate === evidence ? null : replacementCandidate;
 }
 
-/**
- * Builds recommendation text for one `any` finding.
- *
- * @param suggestedReplacement - Optional manual replacement candidate.
- * @returns Recommendation text with explicit non-automatic guidance.
- */
 function buildUnsafeAnyRecommendation(suggestedReplacement: string | null): string {
   const baseRecommendation =
     "Explicit any is disallowed. Replace with a concrete type, unknown, or a constrained generic, then add the required narrowing. This is a manual change and no automatic patch is applied because unknown substitutions can require follow-up edits to keep compilation safe.";
@@ -424,178 +715,106 @@ function buildUnsafeAnyRecommendation(suggestedReplacement: string | null): stri
   return `${baseRecommendation} Possible manual starting point: \`${suggestedReplacement}\``;
 }
 
-/**
- * Builds a patch preview for one-line suggestions.
- *
- * @param hunkHeader - Unified diff hunk header.
- * @param removedLine - Original added source line.
- * @param addedLine - Suggested replacement line.
- * @returns Structured patch preview.
- */
-function buildPatchPreview(
-  hunkHeader: string,
-  removedLine: string,
-  addedLine: string,
-): PatchPreview {
-  return {
-    hunkHeader,
-    removedLines: [removedLine],
-    addedLines: [addedLine],
-  };
+// ---------------------------------------------------------------------------
+// non-null assertion AST helpers
+// ---------------------------------------------------------------------------
+
+function isDefiniteAssignmentContext(node: ts.Node): boolean {
+  if (!node.parent || !ts.isPropertyDeclaration(node.parent)) return false;
+  return node.parent.exclamationToken !== undefined;
 }
 
-/**
- * Builds debugger-specific patch previews only when the full line is the statement.
- *
- * @param hunkHeader - Unified diff hunk header.
- * @param evidence - Original added source line.
- * @param sanitizedContent - Line content with comments and strings removed.
- * @returns Patch preview when safe, otherwise `undefined`.
- */
-function buildDebuggerPatchPreview(
-  hunkHeader: string,
+function buildNonNullAssertionReplacement(
   evidence: string,
-  sanitizedContent: string,
-): PatchPreview | undefined {
-  if (!ONLY_DEBUGGER_STATEMENT_PATTERN.test(sanitizedContent)) {
-    return undefined;
-  }
+  scriptKind: ts.ScriptKind,
+): string | null {
+  const sourceFile = ts.createSourceFile(
+    "added-line.ts",
+    evidence,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKind,
+  );
+  const exclamationIndexes: number[] = [];
 
-  return {
-    hunkHeader,
-    removedLines: [evidence],
-    addedLines: [],
+  const visitNode = (node: ts.Node): void => {
+    if (ts.isNonNullExpression(node)) {
+      exclamationIndexes.push(node.expression.end);
+    }
+    ts.forEachChild(node, visitNode);
   };
-}
+  visitNode(sourceFile);
 
-/**
- * Returns whether one sanitized line declares a class field using a definite-assignment assertion.
- *
- * @param sanitizedContent - Line content with comments and strings removed.
- * @returns `true` when the line matches `field!: Type` declaration shape.
- */
-function isDefiniteAssignmentAssertion(sanitizedContent: string): boolean {
-  return DEFINITE_ASSIGNMENT_ASSERTION_PATTERN.test(sanitizedContent);
-}
+  if (exclamationIndexes.length === 0) {
+    return null;
+  }
 
-/**
- * Returns whether one sanitized line contains a `debugger` keyword in statement position.
- *
- * @param sanitizedContent - Line content with comments and strings removed.
- * @returns `true` when at least one token is statement-position `debugger`.
- */
-function containsDebuggerStatement(sanitizedContent: string): boolean {
-  for (const debuggerMatch of sanitizedContent.matchAll(DEBUGGER_TOKEN_PATTERN)) {
-    const matchIndex = debuggerMatch.index;
-    if (matchIndex === undefined) {
-      continue;
-    }
-
-    const tokenStartIndex = matchIndex;
-    const tokenEndIndex = tokenStartIndex + "debugger".length;
-
-    const previousCharacter = findPreviousNonWhitespaceCharacter(sanitizedContent, tokenStartIndex - 1);
-    const nextCharacter = findNextNonWhitespaceCharacter(sanitizedContent, tokenEndIndex);
-
-    if (previousCharacter === "." || nextCharacter === "." || nextCharacter === ":") {
-      continue;
-    }
-
-    const statementStart =
-      previousCharacter === null ||
-      previousCharacter === ";" ||
-      previousCharacter === "{" ||
-      previousCharacter === "}" ||
-      previousCharacter === "(" ||
-      previousCharacter === ")";
-    const statementEnd = nextCharacter === null || nextCharacter === ";" || nextCharacter === "}";
-
-    if (statementStart && statementEnd) {
-      return true;
+  let result = evidence;
+  for (const exclamationIndex of [...exclamationIndexes].sort((left, right) => right - left)) {
+    if (result[exclamationIndex] === "!") {
+      result = result.slice(0, exclamationIndex) + result.slice(exclamationIndex + 1);
     }
   }
 
+  return result === evidence ? null : result;
+}
+
+// ---------------------------------------------------------------------------
+// Nested ternary helpers
+// ---------------------------------------------------------------------------
+
+function containsNestedConditional(node: ts.Node): boolean {
+  if (ts.isConditionalExpression(node)) return true;
+  if (ts.isParenthesizedExpression(node)) return containsNestedConditional(node.expression);
   return false;
 }
 
-/**
- * Finds the previous non-whitespace character in one string.
- *
- * @param source - Source string.
- * @param startIndex - Index to start scanning backwards from.
- * @returns Previous non-whitespace character, or `null` when none exists.
- */
-function findPreviousNonWhitespaceCharacter(source: string, startIndex: number): string | null {
-  let currentIndex = startIndex;
-
-  while (currentIndex >= 0) {
-    const character = source[currentIndex];
-    if (character && !/\s/.test(character)) {
-      return character;
-    }
-    currentIndex -= 1;
+function isInsideJsxExpression(node: ts.Node): boolean {
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    if (ts.isJsxExpression(current)) return true;
+    current = current.parent;
   }
-
-  return null;
+  return false;
 }
 
-/**
- * Finds the next non-whitespace character in one string.
- *
- * @param source - Source string.
- * @param startIndex - Index to start scanning forward from.
- * @returns Next non-whitespace character, or `null` when none exists.
- */
-function findNextNonWhitespaceCharacter(source: string, startIndex: number): string | null {
-  let currentIndex = startIndex;
+// ---------------------------------------------------------------------------
+// Negated condition helpers
+// ---------------------------------------------------------------------------
 
-  while (currentIndex < source.length) {
-    const character = source[currentIndex];
-    if (character && !/\s/.test(character)) {
-      return character;
-    }
-    currentIndex += 1;
+function isNegatedExpression(node: ts.Expression): boolean {
+  if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
+    return true;
   }
-
-  return null;
+  if (ts.isParenthesizedExpression(node)) {
+    return isNegatedExpression(node.expression);
+  }
+  return false;
 }
 
-/**
- * Builds one finding with shared pull request attribution fields.
- *
- * @param context - Rule execution context.
- * @param findingCore - Rule-specific finding fields.
- * @returns Structured finding payload.
- */
-function buildFinding(
-  context: AnalysisContext,
-  findingCore: {
-    ruleId: string;
-    category: Finding["category"];
-    filePath: string;
-    line: number;
-    evidence: string;
-    recommendation: string;
-    patchPreview?: PatchPreview;
-    confidence: number;
-  },
-): Finding {
-  const findingIdentifier = `${findingCore.ruleId}:${context.pullRequest.repo}:${context.pullRequest.prNumber}:${findingCore.filePath}:${findingCore.line}`;
+// ---------------------------------------------------------------------------
+// Optional chaining helpers
+// ---------------------------------------------------------------------------
 
-  return {
-    findingId: findingIdentifier,
-    installationId: context.pullRequest.installationId,
-    repo: context.pullRequest.repo,
-    prNumber: context.pullRequest.prNumber,
-    language: "typescript",
-    ruleId: findingCore.ruleId,
-    category: findingCore.category,
-    filePath: findingCore.filePath,
-    line: findingCore.line,
-    evidence: findingCore.evidence,
-    recommendation: findingCore.recommendation,
-    patchPreview: findingCore.patchPreview,
-    confidence: findingCore.confidence,
-    status: "posted",
-  };
+function isOptionalChainNode(node: ts.Node): boolean {
+  if (ts.isPropertyAccessExpression(node) && node.questionDotToken) return true;
+  if (ts.isElementAccessExpression(node) && node.questionDotToken) return true;
+  if (ts.isCallExpression(node) && node.questionDotToken) return true;
+  return false;
+}
+
+function countOptionalChainDepth(node: ts.Node): number {
+  let depth = 0;
+  let current: ts.Node = node;
+
+  while (
+    ts.isPropertyAccessExpression(current) ||
+    ts.isElementAccessExpression(current) ||
+    ts.isCallExpression(current)
+  ) {
+    if (current.questionDotToken) depth += 1;
+    current = current.expression;
+  }
+
+  return depth;
 }
