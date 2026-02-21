@@ -1,0 +1,10 @@
+{
+  "name": "@mergewise/llm-reviewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "module": "src/index.ts",
+  "dependencies": {
+    "openai": "^6.22.0"
+  }
+}
