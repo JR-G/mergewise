@@ -199,6 +199,26 @@ describe("rule-ts-react non-null assertion", () => {
     expect(findings).toEqual([]);
   });
 
+  test("reports non-null assertions inside JSX in tsx files", async () => {
+    const context = makeAnalysisContext([
+      makeFileDiff("src/component.tsx", [
+        makeDiffHunk("@@ -5,0 +5,1 @@", [
+          "+return <span>{user!.name}</span>;",
+        ]),
+      ]),
+    ]);
+
+    const findings = await nonNullAssertionRule.analyse(context);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.evidence).toContain("user!.name");
+    expect(findings[0]!.patchPreview).toEqual({
+      hunkHeader: "@@ -5,0 +5,1 @@",
+      removedLines: ["return <span>{user!.name}</span>;"],
+      addedLines: ["return <span>{user.name}</span>;"],
+    });
+  });
+
   test("excludes definite-assignment assertions on class fields", async () => {
     const context = makeAnalysisContext([
       makeFileDiff("src/example.ts", [

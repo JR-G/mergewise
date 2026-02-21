@@ -116,26 +116,30 @@ export const nonNullAssertionRule: StatelessRule = {
               return;
             }
             seen.add(lineInfo.lineNumber);
-            const replacementLine = buildNonNullAssertionReplacement(lineInfo.evidence);
-            if (replacementLine) {
-              findings.push(
-                buildFinding(context, {
-                  ruleId: NON_NULL_ASSERTION_RULE_IDENTIFIER,
-                  category: "safety",
-                  filePath: parsedFile.filePath,
-                  line: lineInfo.lineNumber,
-                  evidence: lineInfo.evidence,
-                  recommendation:
-                    "Avoid non-null assertions. Add an explicit null guard or narrow the value before access so runtime null cases stay safe.",
-                  patchPreview: buildPatchPreview(
-                    lineInfo.hunkHeader,
-                    lineInfo.evidence,
-                    replacementLine,
-                  ),
-                  confidence: 0.92,
-                }),
-              );
-            }
+            const scriptKind = parsedFile.filePath.endsWith(".tsx")
+              ? ts.ScriptKind.TSX
+              : ts.ScriptKind.TS;
+            const replacementLine = buildNonNullAssertionReplacement(
+              lineInfo.evidence,
+              scriptKind,
+            );
+            const patchPreview = replacementLine
+              ? buildPatchPreview(lineInfo.hunkHeader, lineInfo.evidence, replacementLine)
+              : undefined;
+
+            findings.push(
+              buildFinding(context, {
+                ruleId: NON_NULL_ASSERTION_RULE_IDENTIFIER,
+                category: "safety",
+                filePath: parsedFile.filePath,
+                line: lineInfo.lineNumber,
+                evidence: lineInfo.evidence,
+                recommendation:
+                  "Avoid non-null assertions. Add an explicit null guard or narrow the value before access so runtime null cases stay safe.",
+                patchPreview,
+                confidence: 0.92,
+              }),
+            );
           }
         }
         ts.forEachChild(node, visit);
@@ -719,13 +723,16 @@ function isDefiniteAssignmentContext(node: ts.Node): boolean {
   return false;
 }
 
-function buildNonNullAssertionReplacement(evidence: string): string | null {
+function buildNonNullAssertionReplacement(
+  evidence: string,
+  scriptKind: ts.ScriptKind,
+): string | null {
   const sourceFile = ts.createSourceFile(
     "added-line.ts",
     evidence,
     ts.ScriptTarget.Latest,
     true,
-    ts.ScriptKind.TS,
+    scriptKind,
   );
   const exclamationIndexes: number[] = [];
 
@@ -741,15 +748,14 @@ function buildNonNullAssertionReplacement(evidence: string): string | null {
     return null;
   }
 
-  const evidenceCharacters = [...evidence];
+  let result = evidence;
   for (const exclamationIndex of [...exclamationIndexes].sort((left, right) => right - left)) {
-    if (evidenceCharacters[exclamationIndex] === "!") {
-      evidenceCharacters.splice(exclamationIndex, 1);
+    if (result[exclamationIndex] === "!") {
+      result = result.slice(0, exclamationIndex) + result.slice(exclamationIndex + 1);
     }
   }
 
-  const replacementLine = evidenceCharacters.join("");
-  return replacementLine === evidence ? null : replacementLine;
+  return result === evidence ? null : result;
 }
 
 // ---------------------------------------------------------------------------
