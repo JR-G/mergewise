@@ -23,6 +23,35 @@ export interface MergewiseGatingConfigV1 {
 }
 
 /**
+ * LLM reviewer settings for AI-powered code review.
+ */
+export interface MergewiseLlmConfigV1 {
+  /**
+   * Whether LLM review is enabled.
+   *
+   * @remarks
+   * Defaults to `true` when the `LLM_API_KEY` environment variable is set.
+   */
+  enabled: boolean;
+  /**
+   * Model identifier passed to the LLM provider.
+   */
+  model: string;
+  /**
+   * Maximum estimated tokens across all files selected for review.
+   */
+  tokenBudget: number;
+  /**
+   * Base URL for the OpenAI-compatible API endpoint.
+   *
+   * @remarks
+   * Override this when using non-OpenAI providers (e.g. Anthropic's
+   * OpenAI-compatible endpoint, Ollama, OpenRouter).
+   */
+  baseUrl: string;
+}
+
+/**
  * Mergewise rule selection settings.
  */
 export interface MergewiseRulesConfigV1 {
@@ -54,6 +83,10 @@ export interface MergewiseConfigV1 {
    * Rule selection lists.
    */
   rules: MergewiseRulesConfigV1;
+  /**
+   * LLM reviewer settings.
+   */
+  llm: MergewiseLlmConfigV1;
 }
 
 /**
@@ -79,6 +112,11 @@ export type MergewiseGatingConfig = MergewiseGatingConfigV1;
  * Backward-compatible alias for the v1 rule selection config shape.
  */
 export type MergewiseRulesConfig = MergewiseRulesConfigV1;
+
+/**
+ * Backward-compatible alias for the v1 LLM config shape.
+ */
+export type MergewiseLlmConfig = MergewiseLlmConfigV1;
 
 /**
  * Backward-compatible alias for the v1 normalized config shape.
@@ -169,6 +207,12 @@ export const DEFAULT_MERGEWISE_CONFIG: MergewiseConfig = {
     include: [],
     exclude: [],
   },
+  llm: {
+    enabled: false,
+    model: "gpt-4o",
+    tokenBudget: 30_000,
+    baseUrl: "https://api.openai.com/v1",
+  },
 };
 
 interface RawMergewiseConfig {
@@ -179,6 +223,12 @@ interface RawMergewiseConfig {
   rules?: {
     include?: unknown;
     exclude?: unknown;
+  };
+  llm?: {
+    enabled?: unknown;
+    model?: unknown;
+    tokenBudget?: unknown;
+    baseUrl?: unknown;
   };
 }
 
@@ -193,6 +243,7 @@ function cloneDefaults(): MergewiseConfig {
       include: [...DEFAULT_MERGEWISE_CONFIG.rules.include],
       exclude: [...DEFAULT_MERGEWISE_CONFIG.rules.exclude],
     },
+    llm: { ...DEFAULT_MERGEWISE_CONFIG.llm },
   };
 }
 
@@ -283,6 +334,59 @@ function applyRules(
   }
 }
 
+function applyLlm(
+  rawConfig: RawMergewiseConfig,
+  normalizedConfig: MergewiseConfig,
+  filePath: string,
+): void {
+  if (rawConfig.llm === undefined) {
+    return;
+  }
+
+  if (!isPlainObject(rawConfig.llm)) {
+    throw new MergewiseConfigValidationError(filePath, "llm must be an object");
+  }
+
+  const enabled = rawConfig.llm.enabled;
+  if (enabled !== undefined) {
+    if (typeof enabled !== "boolean") {
+      throw new MergewiseConfigValidationError(filePath, "llm.enabled must be a boolean");
+    }
+    normalizedConfig.llm.enabled = enabled;
+  }
+
+  const model = rawConfig.llm.model;
+  if (model !== undefined) {
+    if (typeof model !== "string" || !model.trim()) {
+      throw new MergewiseConfigValidationError(filePath, "llm.model must be a non-empty string");
+    }
+    normalizedConfig.llm.model = model.trim();
+  }
+
+  const tokenBudget = rawConfig.llm.tokenBudget;
+  if (tokenBudget !== undefined) {
+    if (
+      typeof tokenBudget !== "number" ||
+      !Number.isInteger(tokenBudget) ||
+      tokenBudget < 1000
+    ) {
+      throw new MergewiseConfigValidationError(
+        filePath,
+        "llm.tokenBudget must be an integer greater than or equal to 1000",
+      );
+    }
+    normalizedConfig.llm.tokenBudget = tokenBudget;
+  }
+
+  const baseUrl = rawConfig.llm.baseUrl;
+  if (baseUrl !== undefined) {
+    if (typeof baseUrl !== "string" || !baseUrl.trim()) {
+      throw new MergewiseConfigValidationError(filePath, "llm.baseUrl must be a non-empty string");
+    }
+    normalizedConfig.llm.baseUrl = baseUrl.trim();
+  }
+}
+
 function parseRawConfig(filePath: string): unknown {
   let rawYaml: string;
   try {
@@ -313,6 +417,7 @@ function normalizeConfig(rawValue: unknown, filePath: string): MergewiseConfig {
 
   applyGating(rawConfig, normalizedConfig, filePath);
   applyRules(rawConfig, normalizedConfig, filePath);
+  applyLlm(rawConfig, normalizedConfig, filePath);
 
   return normalizedConfig;
 }
