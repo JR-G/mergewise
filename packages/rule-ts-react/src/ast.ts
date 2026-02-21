@@ -84,7 +84,7 @@ export function parseChangedFiles(
     parseCache.set(context, contextCache);
   }
 
-  const cacheKey = filePattern.source + filePattern.flags;
+  const cacheKey = `${filePattern.source}\0${filePattern.flags}`;
   const cached = contextCache.get(cacheKey);
   if (cached) {
     return cached;
@@ -107,6 +107,22 @@ export function parseChangedFiles(
   return results;
 }
 
+/**
+ * Parses one file diff into a TypeScript source file with added-line tracking.
+ *
+ * @remarks
+ * Concatenates added lines (`+` prefix, excluding `+++`) and context lines
+ * (space prefix) across all hunks into a single source text. Deleted lines
+ * (`-` prefix) are skipped entirely. `sourceLineIndex` is a running counter
+ * across all hunks (not reset between them), while `currentLineNumber` is
+ * reinitialised from each hunk header. Hunks with unparseable headers are
+ * silently ignored. Returns `null` when no source lines are collected.
+ * `ScriptKind` is set to `TSX` for `.tsx` files (case-insensitive) and
+ * `TS` for everything else.
+ *
+ * @param fileDiff - Parsed file diff from the analysis context.
+ * @returns Parsed file with AST and line map, or `null` when empty.
+ */
 function parseFileDiff(fileDiff: FileDiff): ParsedFile | null {
   const sourceLines: string[] = [];
   const addedLineMap = new Map<number, AddedLineInfo>();
@@ -147,7 +163,7 @@ function parseFileDiff(fileDiff: FileDiff): ParsedFile | null {
   }
 
   const sourceText = sourceLines.join("\n");
-  const scriptKind = fileDiff.filePath.endsWith(".tsx")
+  const scriptKind = TYPE_SCRIPT_JSX_FILE_PATTERN.test(fileDiff.filePath)
     ? ts.ScriptKind.TSX
     : ts.ScriptKind.TS;
 
@@ -182,7 +198,9 @@ export function findAddedNodesWhere(
 
   const visit = (node: ts.Node): void => {
     if (predicate(node)) {
-      const sourceLine = parsedFile.sourceFile.getLineAndCharacterOfPosition(node.getStart());
+      const sourceLine = parsedFile.sourceFile.getLineAndCharacterOfPosition(
+        node.getStart(parsedFile.sourceFile),
+      );
       const lineInfo = parsedFile.addedLineMap.get(sourceLine.line);
       if (lineInfo) {
         findings.push({
@@ -208,7 +226,9 @@ export function findAddedNodesWhere(
  * @returns Line info when the node starts on an added line, or `null` for context lines.
  */
 export function isOnAddedLine(parsedFile: ParsedFile, node: ts.Node): AddedLineInfo | null {
-  const sourceLine = parsedFile.sourceFile.getLineAndCharacterOfPosition(node.getStart());
+  const sourceLine = parsedFile.sourceFile.getLineAndCharacterOfPosition(
+    node.getStart(parsedFile.sourceFile),
+  );
   return parsedFile.addedLineMap.get(sourceLine.line) ?? null;
 }
 

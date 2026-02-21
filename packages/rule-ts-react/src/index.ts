@@ -24,6 +24,7 @@ const EXCESSIVE_OPTIONAL_CHAIN_RULE_IDENTIFIER = "ts-react/no-excessive-optional
 
 const UNSAFE_ANY_PATTERN = /(?:\bas\s+any\b|:\s*any\b|<\s*any\s*>|\bany\s*\[\s*\]|\bArray\s*<\s*any\s*>|\bReadonlyArray\s*<\s*any\s*>|\bPromise\s*<\s*any\s*>)/;
 const ONLY_DEBUGGER_STATEMENT_PATTERN = /^\s*debugger\s*;?\s*$/;
+const INDEX_VARIABLE_NAMES = new Set(["index", "idx", "i"]);
 
 type LineScanState = {
   insideBlockComment: boolean;
@@ -116,7 +117,7 @@ export const nonNullAssertionRule: StatelessRule = {
               return;
             }
             seen.add(lineInfo.lineNumber);
-            const scriptKind = parsedFile.filePath.endsWith(".tsx")
+            const scriptKind = TYPE_SCRIPT_JSX_FILE_PATTERN.test(parsedFile.filePath)
               ? ts.ScriptKind.TSX
               : ts.ScriptKind.TS;
             const replacementLine = buildNonNullAssertionReplacement(
@@ -170,16 +171,15 @@ export const arrayIndexKeyRule: StatelessRule = {
   },
   analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
     const findings: Finding[] = [];
-    const indexNames = new Set(["index", "idx", "i"]);
 
     for (const parsedFile of parseChangedFiles(context, TYPE_SCRIPT_JSX_FILE_PATTERN)) {
       const astFindings = findAddedNodesWhere(parsedFile, (node) => {
         if (!ts.isJsxAttribute(node)) return false;
         if (!ts.isIdentifier(node.name) || node.name.text !== "key") return false;
         if (!node.initializer || !ts.isJsxExpression(node.initializer)) return false;
-        const expr = node.initializer.expression;
-        if (!expr || !ts.isIdentifier(expr)) return false;
-        return indexNames.has(expr.text);
+        const expression = node.initializer.expression;
+        if (!expression || !ts.isIdentifier(expression)) return false;
+        return INDEX_VARIABLE_NAMES.has(expression.text);
       });
 
       for (const match of astFindings) {
@@ -806,23 +806,13 @@ function countOptionalChainDepth(node: ts.Node): number {
   let depth = 0;
   let current: ts.Node = node;
 
-  while (true) {
-    if (ts.isPropertyAccessExpression(current)) {
-      if (current.questionDotToken) depth += 1;
-      current = current.expression;
-      continue;
-    }
-    if (ts.isElementAccessExpression(current)) {
-      if (current.questionDotToken) depth += 1;
-      current = current.expression;
-      continue;
-    }
-    if (ts.isCallExpression(current)) {
-      if (current.questionDotToken) depth += 1;
-      current = current.expression;
-      continue;
-    }
-    break;
+  while (
+    ts.isPropertyAccessExpression(current) ||
+    ts.isElementAccessExpression(current) ||
+    ts.isCallExpression(current)
+  ) {
+    if (current.questionDotToken) depth += 1;
+    current = current.expression;
   }
 
   return depth;
