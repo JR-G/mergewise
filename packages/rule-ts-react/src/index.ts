@@ -271,12 +271,17 @@ export const typeAssertionChainRule: StatelessRule = {
     const findings: Finding[] = [];
 
     for (const parsedFile of parseChangedFiles(context)) {
+      const seen = new Set<number>();
+
       const astFindings = findAddedNodesWhere(parsedFile, (node) => {
         if (!ts.isAsExpression(node)) return false;
         return ts.isAsExpression(node.expression);
       });
 
       for (const match of astFindings) {
+        if (seen.has(match.lineNumber)) continue;
+        seen.add(match.lineNumber);
+
         findings.push(
           buildFinding(context, {
             ruleId: TYPE_ASSERTION_CHAIN_RULE_IDENTIFIER,
@@ -715,12 +720,8 @@ function buildUnsafeAnyRecommendation(suggestedReplacement: string | null): stri
 // ---------------------------------------------------------------------------
 
 function isDefiniteAssignmentContext(node: ts.Node): boolean {
-  let current: ts.Node | undefined = node.parent;
-  while (current) {
-    if (ts.isPropertyDeclaration(current)) return true;
-    current = current.parent;
-  }
-  return false;
+  if (!node.parent || !ts.isPropertyDeclaration(node.parent)) return false;
+  return node.parent.exclamationToken !== undefined;
 }
 
 function buildNonNullAssertionReplacement(
