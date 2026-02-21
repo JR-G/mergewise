@@ -1,4 +1,5 @@
 import type { AnalysisContext, Finding, PatchPreview, StatelessRule } from "@mergewise/shared-types";
+import ts from "typescript";
 
 const TYPE_SCRIPT_REACT_FILE_PATTERN = /\.(ts|tsx)$/i;
 const TYPE_SCRIPT_JSX_FILE_PATTERN = /\.tsx$/i;
@@ -9,8 +10,6 @@ const UNSAFE_ANY_RULE_IDENTIFIER = "ts-react/no-unsafe-any";
 const UNSAFE_ANY_PATTERN = /(?:\bas\s+any\b|:\s*any\b|<\s*any\s*>|\bany\s*\[\s*\]|\bArray\s*<\s*any\s*>|\bReadonlyArray\s*<\s*any\s*>|\bPromise\s*<\s*any\s*>)/;
 
 const NON_NULL_ASSERTION_RULE_IDENTIFIER = "ts-react/no-non-null-assertion";
-const NON_NULL_ASSERTION_PATTERN = /([)\]}\w$])!\s*(?=[.\[\]),;:?]|$)/;
-
 const ARRAY_INDEX_KEY_RULE_IDENTIFIER = "ts-react/no-array-index-key";
 const ARRAY_INDEX_KEY_PATTERN = /\bkey\s*=\s*{\s*(?:index|idx|i)\s*}/;
 
@@ -19,7 +18,6 @@ const DEBUGGER_TOKEN_PATTERN = /\bdebugger\b/g;
 const ONLY_DEBUGGER_STATEMENT_PATTERN = /^\s*debugger\s*;?\s*$/;
 const DEFINITE_ASSIGNMENT_ASSERTION_PATTERN =
   /^\s*(?:(?:public|private|protected|readonly|static|declare|abstract|override)\s+)*(?:#?[A-Za-z_$][\w$]*)\s*!\s*:\s*/;
-
 type LineScanState = {
   insideBlockComment: boolean;
 };
@@ -95,19 +93,13 @@ export const nonNullAssertionRule: StatelessRule = {
     const findings: Finding[] = [];
 
     for (const addedLine of collectAddedLines(context, TYPE_SCRIPT_REACT_FILE_PATTERN)) {
-      if (!NON_NULL_ASSERTION_PATTERN.test(addedLine.sanitizedContent)) {
+      if (DEFINITE_ASSIGNMENT_ASSERTION_PATTERN.test(addedLine.evidence)) {
         continue;
       }
-
-      if (isDefiniteAssignmentAssertion(addedLine.sanitizedContent)) {
+      const replacementLine = buildNonNullAssertionReplacement(addedLine.evidence);
+      if (!replacementLine) {
         continue;
       }
-
-      const replacementLine = addedLine.evidence.replace(NON_NULL_ASSERTION_PATTERN, "$1");
-      const patchPreview =
-        replacementLine === addedLine.evidence
-          ? undefined
-          : buildPatchPreview(addedLine.hunkHeader, addedLine.evidence, replacementLine);
 
       findings.push(
         buildFinding(context, {
@@ -118,7 +110,11 @@ export const nonNullAssertionRule: StatelessRule = {
           evidence: addedLine.evidence,
           recommendation:
             "Avoid non-null assertions. Add an explicit null guard or narrow the value before access so runtime null cases stay safe.",
-          patchPreview,
+          patchPreview: buildPatchPreview(
+            addedLine.hunkHeader,
+            addedLine.evidence,
+            replacementLine,
+          ),
           confidence: 0.92,
         }),
       );
@@ -468,14 +464,42 @@ function buildDebuggerPatchPreview(
   };
 }
 
-/**
- * Returns whether one sanitized line declares a class field using a definite-assignment assertion.
- *
- * @param sanitizedContent - Line content with comments and strings removed.
- * @returns `true` when the line matches `field!: Type` declaration shape.
- */
-function isDefiniteAssignmentAssertion(sanitizedContent: string): boolean {
-  return DEFINITE_ASSIGNMENT_ASSERTION_PATTERN.test(sanitizedContent);
+function buildNonNullAssertionReplacement(evidence: string): string | null {
+  const sourceFile = ts.createSourceFile(
+    "added-line.ts",
+    evidence,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const exclamationIndexes = collectNonNullAssertionIndexes(sourceFile);
+  if (exclamationIndexes.length === 0) {
+    return null;
+  }
+
+  const evidenceCharacters = [...evidence];
+  for (const exclamationIndex of [...exclamationIndexes].sort((left, right) => right - left)) {
+    if (evidenceCharacters[exclamationIndex] === "!") {
+      evidenceCharacters.splice(exclamationIndex, 1);
+    }
+  }
+
+  const replacementLine = evidenceCharacters.join("");
+  return replacementLine === evidence ? null : replacementLine;
+}
+
+function collectNonNullAssertionIndexes(sourceFile: ts.SourceFile): number[] {
+  const exclamationIndexes: number[] = [];
+
+  const visitNode = (node: ts.Node): void => {
+    if (ts.isNonNullExpression(node)) {
+      exclamationIndexes.push(node.expression.end);
+    }
+    ts.forEachChild(node, visitNode);
+  };
+
+  visitNode(sourceFile);
+  return exclamationIndexes;
 }
 
 /**
