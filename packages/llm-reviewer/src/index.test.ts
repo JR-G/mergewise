@@ -1,9 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type {
+  CodebaseContext,
   FileDiff,
   DiffHunk,
   PullRequestMetadata,
 } from "@mergewise/shared-types";
+type TestServer = ReturnType<typeof Bun.serve>;
 import {
   selectFilesForReview,
   extractAddedLineNumbers,
@@ -11,7 +13,10 @@ import {
   buildSystemPrompt,
   buildFileReviewPrompt,
   extractStructuralSignals,
+  createLlmReviewerRule,
+  createReviewClient,
 } from "./index";
+import { reviewFile } from "./review-file";
 
 function makeHunk(header: string, lines: string[]): DiffHunk {
   return { header, lines };
@@ -27,6 +32,14 @@ const PR_METADATA: PullRequestMetadata = {
   headSha: "abc123",
   installationId: 1,
 };
+
+function makeMockCodebaseContext(files: Record<string, string> = {}): CodebaseContext {
+  return {
+    symbols: [],
+    conventions: new Map(),
+    readFile: async (path: string) => files[path] ?? null,
+  };
+}
 
 describe("selectFilesForReview", () => {
   test("skips test files", () => {
@@ -358,5 +371,380 @@ describe("extractStructuralSignals", () => {
 
     const signals = extractStructuralSignals(diff);
     expect(signals.maxNestingDepth).toBeGreaterThanOrEqual(3);
+  });
+});
+
+function buildCompletionResponse(content: string): string {
+  return JSON.stringify({
+    id: "chatcmpl-test",
+    object: "chat.completion",
+    created: 1700000000,
+    model: "test-model",
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content },
+        finish_reason: "stop",
+      },
+    ],
+    usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
+  });
+}
+
+describe("ReviewClient (via fake HTTP server)", () => {
+  let server: TestServer;
+  let serverUrl: string;
+  let lastRequestBody: Record<string, unknown> | null = null;
+  let responseContent = '{"findings": []}';
+
+  beforeAll(() => {
+    server = Bun.serve({
+      port: 0,
+      fetch: async (request) => {
+        const body = await request.json() as Record<string, unknown>;
+        lastRequestBody = body;
+        return new Response(buildCompletionResponse(responseContent), {
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+    serverUrl = `http://localhost:${server.port}/v1`;
+  });
+
+  afterAll(async () => {
+    await server.stop(true);
+  });
+
+  test("sends correct request structure to OpenAI-compatible endpoint", async () => {
+    responseContent = JSON.stringify({ findings: [] });
+
+    const client = createReviewClient({
+      apiKey: "test-api-key",
+      baseUrl: serverUrl,
+      model: "test-model",
+    });
+
+    await client.complete("system prompt", "user prompt", 1024);
+
+    expect(lastRequestBody).not.toBeNull();
+    expect(lastRequestBody!["model"]).toBe("test-model");
+    expect(lastRequestBody!["temperature"]).toBe(0.2);
+    expect(lastRequestBody!["max_tokens"]).toBe(1024);
+
+    const messages = lastRequestBody!["messages"] as Array<{ role: string; content: string }>;
+    expect(messages).toHaveLength(2);
+    expect(messages[0]!.role).toBe("system");
+    expect(messages[0]!.content).toBe("system prompt");
+    expect(messages[1]!.role).toBe("user");
+    expect(messages[1]!.content).toBe("user prompt");
+  });
+
+  test("returns parsed content from the LLM response", async () => {
+    responseContent = JSON.stringify({ findings: [{ line: 1 }] });
+
+    const client = createReviewClient({
+      apiKey: "test-key",
+      baseUrl: serverUrl,
+      model: "test-model",
+    });
+
+    const result = await client.complete("sys", "usr", 512);
+    const parsed = JSON.parse(result) as { findings: Array<{ line: number }> };
+    expect(parsed.findings).toHaveLength(1);
+    expect(parsed.findings[0]!.line).toBe(1);
+  });
+
+  test("throws on empty response content", async () => {
+    const emptyServer = Bun.serve({
+      port: 0,
+      fetch: () =>
+        new Response(
+          JSON.stringify({
+            id: "chatcmpl-empty",
+            object: "chat.completion",
+            created: 1700000000,
+            model: "test-model",
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: null },
+                finish_reason: "stop",
+              },
+            ],
+            usage: { prompt_tokens: 10, completion_tokens: 0, total_tokens: 10 },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        ),
+    });
+
+    const client = createReviewClient({
+      apiKey: "test-key",
+      baseUrl: `http://localhost:${emptyServer.port}/v1`,
+      model: "test-model",
+    });
+
+    await expect(client.complete("sys", "usr", 512)).rejects.toThrow(
+      "LLM returned empty response",
+    );
+
+    await emptyServer.stop(true);
+  });
+});
+
+describe("reviewFile (via fake HTTP server)", () => {
+  let server: TestServer;
+  let serverUrl: string;
+  let nextResponse = '{"findings": []}';
+
+  beforeAll(() => {
+    server = Bun.serve({
+      port: 0,
+      fetch: () => {
+        const content = nextResponse;
+        return new Response(buildCompletionResponse(content), {
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+    serverUrl = `http://localhost:${server.port}/v1`;
+  });
+
+  afterAll(async () => {
+    await server.stop(true);
+  });
+
+  test("returns validated findings through the full pipeline", async () => {
+    const diff = makeDiff("src/app.ts", [
+      makeHunk("@@ -0,0 +1,3 @@", [
+        "+const data = fetch()",
+        "+const info = parse(data)",
+        "+export default info",
+      ]),
+    ]);
+
+    nextResponse = JSON.stringify({
+      findings: [
+        {
+          line: 1,
+          category: "idiomatic",
+          confidence: 0.85,
+          evidence: "const data = fetch()",
+          recommendation: "Rename 'data' to describe what is being fetched.",
+        },
+      ],
+    });
+
+    const client = createReviewClient({
+      apiKey: "test-key",
+      baseUrl: serverUrl,
+      model: "test-model",
+      maxRetries: 0,
+    });
+
+    const codebaseContext = makeMockCodebaseContext({
+      "src/app.ts": "const data = fetch()\nconst info = parse(data)\nexport default info",
+    });
+
+    const findings = await reviewFile(diff, PR_METADATA, codebaseContext, client);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.line).toBe(1);
+    expect(findings[0]!.category).toBe("idiomatic");
+    expect(findings[0]!.confidence).toBe(0.85);
+    expect(findings[0]!.ruleId).toBe("llm/reviewer");
+    expect(findings[0]!.filePath).toBe("src/app.ts");
+    expect(findings[0]!.patchSuggestionPolicy).toBe("manual-only");
+    expect(findings[0]!.status).toBe("posted");
+  });
+
+  test("returns empty array when LLM finds nothing", async () => {
+    const diff = makeDiff("src/clean.ts", [
+      makeHunk("@@ -0,0 +1,1 @@", ["+export const VERSION = '1.0.0'"]),
+    ]);
+
+    nextResponse = JSON.stringify({ findings: [] });
+
+    const client = createReviewClient({
+      apiKey: "test-key",
+      baseUrl: serverUrl,
+      model: "test-model",
+      maxRetries: 0,
+    });
+
+    const findings = await reviewFile(diff, PR_METADATA, makeMockCodebaseContext(), client);
+    expect(findings).toHaveLength(0);
+  });
+
+  test("discards hallucinated line numbers from LLM", async () => {
+    const diff = makeDiff("src/file.ts", [
+      makeHunk("@@ -0,0 +1,1 @@", ["+const valid = true"]),
+    ]);
+
+    nextResponse = JSON.stringify({
+      findings: [
+        { line: 999, category: "clean", confidence: 0.9, evidence: "ghost", recommendation: "Does not exist." },
+      ],
+    });
+
+    const client = createReviewClient({
+      apiKey: "test-key",
+      baseUrl: serverUrl,
+      model: "test-model",
+      maxRetries: 0,
+    });
+
+    const findings = await reviewFile(diff, PR_METADATA, makeMockCodebaseContext(), client);
+    expect(findings).toHaveLength(0);
+  });
+
+  test("handles file not found in codebase gracefully", async () => {
+    const diff = makeDiff("src/new-file.ts", [
+      makeHunk("@@ -0,0 +1,1 @@", ["+export const NEW = true"]),
+    ]);
+
+    nextResponse = JSON.stringify({ findings: [] });
+
+    const client = createReviewClient({
+      apiKey: "test-key",
+      baseUrl: serverUrl,
+      model: "test-model",
+      maxRetries: 0,
+    });
+
+    const emptyContext = makeMockCodebaseContext();
+    const findings = await reviewFile(diff, PR_METADATA, emptyContext, client);
+    expect(findings).toHaveLength(0);
+  });
+});
+
+describe("createLlmReviewerRule", () => {
+  test("returns a codebase-aware rule with correct metadata", () => {
+    const rule = createLlmReviewerRule({
+      clientConfig: { apiKey: "test-key" },
+    });
+
+    expect(rule.kind).toBe("codebase-aware");
+    expect(rule.metadata.ruleId).toBe("llm/reviewer");
+    expect(rule.metadata.category).toBe("idiomatic");
+    expect(rule.metadata.languages).toContain("typescript");
+  });
+
+  test("returns empty findings when no files match selection criteria", async () => {
+    const rule = createLlmReviewerRule({
+      clientConfig: { apiKey: "test-key" },
+    });
+
+    const context = {
+      diffs: [
+        makeDiff("README.md", [makeHunk("@@ -0,0 +1,1 @@", ["+# Hello"])]),
+        makeDiff("src/app.test.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+test()"])]),
+      ],
+      pullRequest: PR_METADATA,
+    };
+
+    const codebaseContext = makeMockCodebaseContext();
+    const findings = await rule.analyse(context, codebaseContext);
+    expect(findings).toHaveLength(0);
+  });
+
+  test("analyses selected files and returns findings via fake server", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: () =>
+        new Response(
+          buildCompletionResponse(
+            JSON.stringify({
+              findings: [
+                {
+                  line: 1,
+                  category: "clean",
+                  confidence: 0.88,
+                  evidence: "const result = processData()",
+                  recommendation: "Rename 'result' to describe the processed output.",
+                },
+              ],
+            }),
+          ),
+          { headers: { "Content-Type": "application/json" } },
+        ),
+    });
+
+    const rule = createLlmReviewerRule({
+      clientConfig: {
+        apiKey: "test-key",
+        baseUrl: `http://localhost:${server.port}/v1`,
+        model: "test-model",
+      },
+    });
+
+    const context = {
+      diffs: [
+        makeDiff("src/service.ts", [
+          makeHunk("@@ -0,0 +1,2 @@", [
+            "+const result = processData()",
+            "+export default result",
+          ]),
+        ]),
+      ],
+      pullRequest: PR_METADATA,
+    };
+
+    const codebaseContext = makeMockCodebaseContext({
+      "src/service.ts": "const result = processData()\nexport default result",
+    });
+
+    const findings = await rule.analyse(context, codebaseContext);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.ruleId).toBe("llm/reviewer");
+    expect(findings[0]!.filePath).toBe("src/service.ts");
+    expect(findings[0]!.line).toBe(1);
+    expect(findings[0]!.category).toBe("clean");
+    expect(findings[0]!.confidence).toBe(0.88);
+
+    await server.stop(true);
+  });
+
+  test("reviews multiple files and flattens findings", async () => {
+    let callCount = 0;
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => {
+        callCount += 1;
+        const findingsForCall =
+          callCount === 1
+            ? [{ line: 1, category: "idiomatic", confidence: 0.8, evidence: "a", recommendation: "fix a" }]
+            : [{ line: 1, category: "safety", confidence: 0.9, evidence: "b", recommendation: "fix b" }];
+
+        return new Response(
+          buildCompletionResponse(JSON.stringify({ findings: findingsForCall })),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      },
+    });
+
+    const rule = createLlmReviewerRule({
+      clientConfig: {
+        apiKey: "test-key",
+        baseUrl: `http://localhost:${server.port}/v1`,
+        model: "test-model",
+      },
+    });
+
+    const context = {
+      diffs: [
+        makeDiff("src/a.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const aa = 1"])]),
+        makeDiff("src/b.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const bb = 2"])]),
+      ],
+      pullRequest: PR_METADATA,
+    };
+
+    const findings = await rule.analyse(context, makeMockCodebaseContext());
+
+    expect(findings).toHaveLength(2);
+    expect(findings[0]!.filePath).toBe("src/a.ts");
+    expect(findings[1]!.filePath).toBe("src/b.ts");
+
+    await server.stop(true);
   });
 });
