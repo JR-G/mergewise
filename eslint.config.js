@@ -38,7 +38,7 @@ export default [
         "error",
         {
           selector:
-            "IfStatement IfStatement:not(:matches(IfStatement > IfStatement.alternate))",
+            "IfStatement > IfStatement.consequent, IfStatement > BlockStatement.consequent > IfStatement",
           message:
             "Nested if statements are not allowed. Prefer guard clauses or early returns.",
         },

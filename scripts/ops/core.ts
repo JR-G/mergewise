@@ -448,12 +448,12 @@ function parseScopePaths(scopeValue: string): string[] {
  *
  * @param taskIdentifier - Unique task identifier.
  * @param fallbackScopeName - Fallback scope when no backlog contract is required.
- * @returns Scope paths and the string persisted in board/task metadata.
+ * @returns Scope string persisted in board/task metadata.
  */
 function resolveTaskScopeContract(
   taskIdentifier: string,
   fallbackScopeName: string,
-): { scopePaths: string[]; scopeName: string } {
+): { scopeName: string } {
   const backlogEntry = resolveRequiredBacklogEntry(taskIdentifier);
   const scopeInput = backlogEntry?.scope ?? fallbackScopeName;
   const missingScopeMessage = backlogEntry
@@ -465,7 +465,6 @@ function resolveTaskScopeContract(
   }
 
   return {
-    scopePaths,
     scopeName: scopePaths.join(", "),
   };
 }
@@ -1888,7 +1887,7 @@ function startAgentSession(argumentsList: string[]): void {
  * @param commandLabel - Command label used in the missing-argument error message.
  * @returns Required task identifier.
  */
-function requireTaskIdentifierArgument(argumentsList: string[], commandLabel: string): string {
+function requireTaskIdentifierArgument(argumentsList: readonly string[], commandLabel: string): string {
   const [taskIdentifier] = argumentsList;
   if (!taskIdentifier) {
     usage();

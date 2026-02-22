@@ -2,6 +2,8 @@ import { extname, join, normalize } from "node:path";
 
 const siteRootPath = join(import.meta.dir);
 const defaultFileName = "index.html";
+const fallbackHandle = Bun.file(join(siteRootPath, defaultFileName));
+const fallbackExists = await fallbackHandle.exists();
 
 const contentTypeByExtension: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -55,11 +57,8 @@ Bun.serve({
       const fileHandle = Bun.file(filePath);
 
       if (!(await fileHandle.exists())) {
-        const fallbackHandle = requestUrl.pathname === "/"
-          ? null
-          : Bun.file(join(siteRootPath, defaultFileName));
-        const fallbackExists = fallbackHandle ? await fallbackHandle.exists() : false;
-        return fallbackHandle && fallbackExists
+        const shouldServeFallback = requestUrl.pathname !== "/" && fallbackExists;
+        return shouldServeFallback
           ? new Response(fallbackHandle, {
             headers: { "content-type": "text/html; charset=utf-8" },
           })

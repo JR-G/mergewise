@@ -2193,9 +2193,12 @@ function parsePatchToDiffHunks(patch: string | undefined): readonly DiffHunk[] {
   let currentLines: string[] = [];
 
   for (const line of lines) {
-    if (!line.startsWith("@@")) {
-      const shouldAppendCurrentLine = currentHeader !== null;
-      currentLines = shouldAppendCurrentLine ? [...currentLines, line] : currentLines;
+    const isHunkHeader = line.startsWith("@@");
+    const shouldAppendCurrentLine = !isHunkHeader && currentHeader !== null;
+    if (shouldAppendCurrentLine) {
+      currentLines.push(line);
+    }
+    if (!isHunkHeader) {
       continue;
     }
 

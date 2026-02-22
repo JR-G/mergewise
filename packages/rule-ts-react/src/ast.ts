@@ -198,22 +198,22 @@ export function findAddedNodesWhere(
 
   const visit = (node: ts.Node): void => {
     const matchesPredicate = predicate(node);
-    if (!matchesPredicate) {
-      ts.forEachChild(node, visit);
-      return;
-    }
-
-    const sourceLine = parsedFile.sourceFile.getLineAndCharacterOfPosition(
-      node.getStart(parsedFile.sourceFile),
-    );
-    const lineInfo = parsedFile.addedLineMap.get(sourceLine.line);
-    if (lineInfo) {
-      findings.push({
+    const sourceLine = matchesPredicate
+      ? parsedFile.sourceFile.getLineAndCharacterOfPosition(
+        node.getStart(parsedFile.sourceFile),
+      )
+      : null;
+    const lineInfo = sourceLine ? parsedFile.addedLineMap.get(sourceLine.line) : undefined;
+    const finding = lineInfo
+      ? {
         node,
         lineNumber: lineInfo.lineNumber,
         evidence: lineInfo.evidence,
         hunkHeader: lineInfo.hunkHeader,
-      });
+      }
+      : null;
+    if (finding) {
+      findings.push(finding);
     }
 
     ts.forEachChild(node, visit);
