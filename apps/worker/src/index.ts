@@ -1478,7 +1478,7 @@ export async function processAnalyzePullRequestJob(
             });
           } catch (caughtError) {
             const detail = caughtError instanceof Error ? caughtError.message : String(caughtError);
-            warnLogger(
+            errorLogger(
               `[worker] readFile failed trace=${traceId} job=${job.job_id} file=${relativePath} ref=${job.head_sha} repo=${githubAnalysisContext.owner}/${githubAnalysisContext.repository}: ${detail}`,
             );
             throw new Error(
