@@ -134,7 +134,7 @@ export function createShutdownSignalHandler(
         infoLogger(`[worker] graceful shutdown complete: ${signal}`);
         exitFn(0);
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         const details = error instanceof Error ? error.stack ?? error.message : String(error);
         errorLogger(`[worker] graceful shutdown failed: ${details}`);
         exitFn(1);

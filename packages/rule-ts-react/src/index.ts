@@ -26,17 +26,17 @@ const UNSAFE_ANY_PATTERN = /(?:\bas\s+any\b|:\s*any\b|<\s*any\s*>|\bany\s*\[\s*\
 const ONLY_DEBUGGER_STATEMENT_PATTERN = /^\s*debugger\s*;?\s*$/;
 const INDEX_VARIABLE_NAMES = new Set(["index", "idx", "i"]);
 
-type LineScanState = {
+interface LineScanState {
   insideBlockComment: boolean;
-};
+}
 
-type AddedLine = {
+interface AddedLine {
   filePath: string;
   lineNumber: number;
   evidence: string;
   sanitizedContent: string;
   hunkHeader: string;
-};
+}
 
 /**
  * Stateless rule that flags explicit `any` usage in changed TypeScript and React files.
@@ -50,7 +50,7 @@ export const unsafeAnyUsageRule: StatelessRule = {
     languages: ["typescript", "tsx"],
     description: "Detects explicit any usage in added TypeScript and TSX lines.",
   },
-  analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
+  analyse: (context: AnalysisContext): Promise<readonly Finding[]> => {
     const findings: Finding[] = [];
 
     for (const addedLine of collectAddedLines(context, TYPE_SCRIPT_FILE_PATTERN)) {
@@ -81,7 +81,7 @@ export const unsafeAnyUsageRule: StatelessRule = {
       );
     }
 
-    return findings;
+    return Promise.resolve(findings);
   },
 };
 
@@ -102,7 +102,7 @@ export const nonNullAssertionRule: StatelessRule = {
     languages: ["typescript", "tsx"],
     description: "Detects non-null assertions in added TypeScript and TSX lines.",
   },
-  analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
+  analyse: (context: AnalysisContext): Promise<readonly Finding[]> => {
     const findings: Finding[] = [];
 
     for (const parsedFile of parseChangedFiles(context)) {
@@ -149,7 +149,7 @@ export const nonNullAssertionRule: StatelessRule = {
       visit(parsedFile.sourceFile);
     }
 
-    return findings;
+    return Promise.resolve(findings);
   },
 };
 
@@ -169,7 +169,7 @@ export const arrayIndexKeyRule: StatelessRule = {
     languages: ["tsx"],
     description: "Detects JSX key props that use array index variables.",
   },
-  analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
+  analyse: (context: AnalysisContext): Promise<readonly Finding[]> => {
     const findings: Finding[] = [];
 
     for (const parsedFile of parseChangedFiles(context, TYPE_SCRIPT_JSX_FILE_PATTERN)) {
@@ -198,7 +198,7 @@ export const arrayIndexKeyRule: StatelessRule = {
       }
     }
 
-    return findings;
+    return Promise.resolve(findings);
   },
 };
 
@@ -217,7 +217,7 @@ export const debuggerStatementRule: StatelessRule = {
     languages: ["typescript", "tsx"],
     description: "Detects debugger statements in added TypeScript and TSX lines.",
   },
-  analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
+  analyse: (context: AnalysisContext): Promise<readonly Finding[]> => {
     const findings: Finding[] = [];
 
     for (const parsedFile of parseChangedFiles(context)) {
@@ -246,7 +246,7 @@ export const debuggerStatementRule: StatelessRule = {
       }
     }
 
-    return findings;
+    return Promise.resolve(findings);
   },
 };
 
@@ -267,7 +267,7 @@ export const typeAssertionChainRule: StatelessRule = {
     languages: ["typescript", "tsx"],
     description: "Detects double type assertions (as unknown as T) that bypass the type system.",
   },
-  analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
+  analyse: (context: AnalysisContext): Promise<readonly Finding[]> => {
     const findings: Finding[] = [];
 
     for (const parsedFile of parseChangedFiles(context)) {
@@ -297,7 +297,7 @@ export const typeAssertionChainRule: StatelessRule = {
       }
     }
 
-    return findings;
+    return Promise.resolve(findings);
   },
 };
 
@@ -318,7 +318,7 @@ export const enumDeclarationRule: StatelessRule = {
     languages: ["typescript", "tsx"],
     description: "Detects enum declarations where as-const objects are preferred.",
   },
-  analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
+  analyse: (context: AnalysisContext): Promise<readonly Finding[]> => {
     const findings: Finding[] = [];
 
     for (const parsedFile of parseChangedFiles(context)) {
@@ -342,7 +342,7 @@ export const enumDeclarationRule: StatelessRule = {
       }
     }
 
-    return findings;
+    return Promise.resolve(findings);
   },
 };
 
@@ -362,7 +362,7 @@ export const nestedTernaryRule: StatelessRule = {
     languages: ["typescript", "tsx"],
     description: "Detects nested ternary expressions that reduce readability.",
   },
-  analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
+  analyse: (context: AnalysisContext): Promise<readonly Finding[]> => {
     const findings: Finding[] = [];
 
     for (const parsedFile of parseChangedFiles(context)) {
@@ -396,7 +396,7 @@ export const nestedTernaryRule: StatelessRule = {
       }
     }
 
-    return findings;
+    return Promise.resolve(findings);
   },
 };
 
@@ -416,7 +416,7 @@ export const negatedConditionRule: StatelessRule = {
     languages: ["typescript", "tsx"],
     description: "Detects negated if-conditions that have else branches, suggesting the positive path first.",
   },
-  analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
+  analyse: (context: AnalysisContext): Promise<readonly Finding[]> => {
     const findings: Finding[] = [];
 
     for (const parsedFile of parseChangedFiles(context)) {
@@ -443,7 +443,7 @@ export const negatedConditionRule: StatelessRule = {
       }
     }
 
-    return findings;
+    return Promise.resolve(findings);
   },
 };
 
@@ -464,14 +464,14 @@ export const excessiveOptionalChainingRule: StatelessRule = {
     languages: ["typescript", "tsx"],
     description: "Detects deeply chained optional access (3+ levels) suggesting poor nullability modelling.",
   },
-  analyse: async (context: AnalysisContext): Promise<readonly Finding[]> => {
+  analyse: (context: AnalysisContext): Promise<readonly Finding[]> => {
     const findings: Finding[] = [];
 
     for (const parsedFile of parseChangedFiles(context)) {
       const seen = new Set<number>();
 
       const astFindings = findAddedNodesWhere(parsedFile, (node) => {
-        if (!node.parent) return false;
+        if (!node.parent) return false; // eslint-disable-line @typescript-eslint/no-unnecessary-condition -- parent may be undefined at AST root
         if (isOptionalChainNode(node.parent)) return false;
         return countOptionalChainDepth(node) >= 3;
       });
@@ -495,7 +495,7 @@ export const excessiveOptionalChainingRule: StatelessRule = {
       }
     }
 
-    return findings;
+    return Promise.resolve(findings);
   },
 };
 
@@ -647,7 +647,7 @@ function stripNonCodeContent(sourceLine: string, lineScanState: LineScanState): 
       continue;
     }
 
-    sanitizedContent += currentCharacter;
+    sanitizedContent += currentCharacter ?? "";
     cursorIndex += 1;
   }
 
@@ -720,7 +720,7 @@ function buildUnsafeAnyRecommendation(suggestedReplacement: string | null): stri
 // ---------------------------------------------------------------------------
 
 function isDefiniteAssignmentContext(node: ts.Node): boolean {
-  if (!node.parent || !ts.isPropertyDeclaration(node.parent)) return false;
+  if (!node.parent || !ts.isPropertyDeclaration(node.parent)) return false; // eslint-disable-line @typescript-eslint/no-unnecessary-condition -- parent may be undefined at AST root
   return node.parent.exclamationToken !== undefined;
 }
 
@@ -770,7 +770,7 @@ function containsNestedConditional(node: ts.Node): boolean {
 }
 
 function isInsideJsxExpression(node: ts.Node): boolean {
-  let current: ts.Node | undefined = node.parent;
+  let current: ts.Node | undefined = node.parent as ts.Node | undefined;
   while (current) {
     if (ts.isJsxExpression(current)) return true;
     current = current.parent;

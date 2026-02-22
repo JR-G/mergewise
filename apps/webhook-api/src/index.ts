@@ -133,8 +133,8 @@ export function getRequestId(request: Request): string {
  * @param requestId - Correlation request id.
  * @returns JSON response with `x-request-id` header.
  */
-export function createWebhookJsonResponse<T>(
-  body: T,
+export function createWebhookJsonResponse(
+  body: unknown,
   status: number,
   requestId: string,
 ): Response {
@@ -161,7 +161,7 @@ export function createWebhookErrorResponse(
   status: number,
   requestId: string,
 ): Response {
-  return createWebhookJsonResponse<WebhookErrorEnvelope>(
+  return createWebhookJsonResponse(
     {
       status: "error",
       request_id: requestId,
@@ -383,7 +383,7 @@ export function isPullRequestWebhookEvent(
     typeof event.action === "string" &&
     typeof event.repository?.full_name === "string" &&
     typeof event.pull_request?.number === "number" &&
-    typeof event.pull_request?.head?.sha === "string"
+    typeof event.pull_request?.head?.sha === "string" // eslint-disable-line @typescript-eslint/no-unnecessary-condition -- head is nested inside optional pull_request
   );
 }
 

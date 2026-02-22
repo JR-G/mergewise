@@ -611,12 +611,12 @@ export async function listPullRequestInlineComments(
   return collectedComments;
 }
 
-type HeaderBuildOptions = {
+interface HeaderBuildOptions {
   authorization: string;
   userAgent?: string;
   contentType?: string;
   traceId?: string;
-};
+}
 
 function buildHeaders(options: HeaderBuildOptions): Record<string, string> {
   const headers: Record<string, string> = {

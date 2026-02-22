@@ -30,8 +30,13 @@ function makeJob(overrides: Partial<AnalyzePullRequestJob> = {}): AnalyzePullReq
   };
 }
 
-function collectSkips(): { callback: OnSkippedLine; skips: Array<{ lineNumber: number; reason: string }> } {
-  const skips: Array<{ lineNumber: number; reason: string }> = [];
+interface Skip {
+  lineNumber: number;
+  reason: string;
+}
+
+function collectSkips(): { callback: OnSkippedLine; skips: Skip[] } {
+  const skips: Skip[] = [];
   const callback: OnSkippedLine = (lineNumber, reason) => {
     skips.push({ lineNumber, reason });
   };
@@ -69,8 +74,8 @@ describe("job-store", () => {
 
     expect(lines).toHaveLength(3);
     expect(lines[2]).toBe("");
-    expect(JSON.parse(lines[0]!).job_id).toBe("aaa");
-    expect(JSON.parse(lines[1]!).job_id).toBe("bbb");
+    expect((JSON.parse(lines[0]!) as { job_id: string }).job_id).toBe("aaa");
+    expect((JSON.parse(lines[1]!) as { job_id: string }).job_id).toBe("bbb");
   });
 
   test("returns empty array when file is missing", () => {

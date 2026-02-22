@@ -18,7 +18,7 @@ export function hasPlaceholderGoal(taskFileContents: string): boolean {
  * @returns Goal section text when found.
  */
 export function extractTaskGoal(taskFileContents: string): string | null {
-  const goalSectionMatch = taskFileContents.match(/## Goal\s+([\s\S]*?)(?:\n## |$)/);
+  const goalSectionMatch = /## Goal\s+([\s\S]*?)(?:\n## |$)/.exec(taskFileContents);
   if (!goalSectionMatch) {
     return null;
   }

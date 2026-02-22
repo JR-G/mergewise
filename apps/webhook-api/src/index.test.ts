@@ -130,7 +130,7 @@ describe("SUPPORTED_PULL_REQUEST_ACTIONS", () => {
   });
 
   test("excludes closed and other actions", () => {
-    const actions = SUPPORTED_PULL_REQUEST_ACTIONS as ReadonlySet<string>;
+    const actions = SUPPORTED_PULL_REQUEST_ACTIONS;
     expect(actions.has("closed")).toBe(false);
     expect(actions.has("edited")).toBe(false);
   });
