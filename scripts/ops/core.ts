@@ -558,18 +558,20 @@ function resolveTaskOptions(taskIdentifier: string): StartCommandOptions {
   };
 }
 
+type EnsureTaskFileCallerContext =
+  | { fileExists: true; body?: string }
+  | { fileExists: false };
+
 /**
  * Ensures a task file exists for the provided task options.
  *
  * @param options - Inputs used to resolve and create the task file.
- * @param existingTaskBody - Existing task file body when already read by caller.
- * @param taskFileExists - Existing task file presence when already determined by caller.
+ * @param callerContext - Optional file-existence context supplied by caller.
  * @returns Absolute path to the task file.
  */
 function ensureTaskFile(
   options: StartCommandOptions,
-  existingTaskBody?: string,
-  taskFileExists?: boolean,
+  callerContext?: EnsureTaskFileCallerContext,
 ): string {
   try {
     if (!existsSync(taskTemplatePath)) {
@@ -581,7 +583,10 @@ function ensureTaskFile(
     const taskFilePath = resolve(tasksDirectoryPath, `${options.taskIdentifier}.md`);
     const templateBody = readFileSync(taskTemplatePath, "utf8");
     const backlogEntry = resolveBacklogEntry(options.taskIdentifier);
-    const resolvedTaskFileExists = taskFileExists ?? existsSync(taskFilePath);
+    if (callerContext?.fileExists === true && callerContext.body === undefined) {
+      throw new Error("ensureTaskFile invariant violation: existing file context requires body");
+    }
+    const resolvedTaskFileExists = callerContext?.fileExists ?? existsSync(taskFilePath);
 
     if (!resolvedTaskFileExists) {
       const preparedBody = renderTaskFileBody(templateBody, options, backlogEntry);
@@ -589,7 +594,9 @@ function ensureTaskFile(
       return taskFilePath;
     }
 
-    const taskBody = existingTaskBody ?? readFileSync(taskFilePath, "utf8");
+    const taskBody = callerContext?.fileExists
+      ? (callerContext.body ?? "")
+      : readFileSync(taskFilePath, "utf8");
     if (hasPlaceholderGoal(taskBody)) {
       const preparedBody = renderTaskFileBody(templateBody, options, backlogEntry);
       writeFileSync(taskFilePath, preparedBody, "utf8");
@@ -765,7 +772,10 @@ function loadTaskFile(taskIdentifier: string): string {
     const existingTaskBody = taskFileExists ? readFileSync(taskFilePath, "utf8") : "";
     const shouldHydrateTaskFile = !taskFileExists || hasPlaceholderGoal(existingTaskBody);
     if (shouldHydrateTaskFile) {
-      ensureTaskFile(taskOptions, existingTaskBody, taskFileExists);
+      const callerContext: EnsureTaskFileCallerContext = taskFileExists
+        ? { fileExists: true, body: existingTaskBody }
+        : { fileExists: false };
+      ensureTaskFile(taskOptions, callerContext);
     }
 
     if (shouldHydrateTaskFile && !existsSync(taskFilePath)) {
@@ -1922,12 +1932,7 @@ function main(): void {
 
   if (commandName === "prompt") {
     const taskIdentifier = requireTaskIdentifierArgument(argumentsList, "ops:prompt");
-
-    try {
-      printPrompt(taskIdentifier);
-    } catch (caughtError) {
-      fail(`prompt command failed for ${taskIdentifier}: ${formatError(caughtError)}`);
-    }
+    printPrompt(taskIdentifier);
     return;
   }
 
