@@ -34,6 +34,15 @@ export default [
         "warn",
         { terms: ["todo", "fixme", "xxx"], location: "anywhere" },
       ],
+      "no-restricted-syntax": [
+        "warn",
+        {
+          selector:
+            "IfStatement IfStatement:not(:matches(IfStatement > IfStatement.alternate))",
+          message:
+            "Nested if statements are not allowed. Prefer guard clauses or early returns.",
+        },
+      ],
       "no-restricted-imports": [
         "error",
         {
