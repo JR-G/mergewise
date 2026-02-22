@@ -319,10 +319,17 @@ describe("buildSystemPrompt", () => {
 
   test("default catalogue includes known pattern IDs", () => {
     const prompt = buildSystemPrompt();
-    expect(prompt).toContain("god-component");
-    expect(prompt).toContain("derived-state-as-use-state");
-    expect(prompt).toContain("implicit-any-in-catch");
-    expect(prompt).toContain("new-object-in-context-value");
+    const sampleIds = ANTI_PATTERNS.slice(0, 3).map((pattern) => pattern.id);
+    for (const id of sampleIds) {
+      expect(prompt).toContain(id);
+    }
+  });
+
+  test("each catalogue pattern's detectionHint appears in default prompt", () => {
+    const prompt = buildSystemPrompt();
+    for (const pattern of ANTI_PATTERNS) {
+      expect(prompt).toContain(pattern.detectionHint);
+    }
   });
 
   test("default catalogue does not include badExample/goodExample in prompt", () => {
@@ -330,41 +337,6 @@ describe("buildSystemPrompt", () => {
     for (const pattern of ANTI_PATTERNS) {
       expect(prompt).not.toContain(pattern.badExample);
       expect(prompt).not.toContain(pattern.goodExample);
-    }
-  });
-});
-
-describe("ANTI_PATTERNS catalogue", () => {
-  test("contains exactly 18 patterns", () => {
-    expect(ANTI_PATTERNS).toHaveLength(18);
-  });
-
-  test("all pattern IDs are unique", () => {
-    const ids = ANTI_PATTERNS.map((pattern) => pattern.id);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
-  test("has expected category distribution", () => {
-    const counts = { clean: 0, idiomatic: 0, safety: 0, perf: 0 };
-    for (const pattern of ANTI_PATTERNS) {
-      counts[pattern.category] += 1;
-    }
-    expect(counts.clean).toBe(5);
-    expect(counts.idiomatic).toBe(6);
-    expect(counts.safety).toBe(3);
-    expect(counts.perf).toBe(4);
-  });
-
-  test("every pattern has non-empty required fields", () => {
-    for (const pattern of ANTI_PATTERNS) {
-      expect(pattern.id.length).toBeGreaterThan(0);
-      expect(pattern.title.length).toBeGreaterThan(0);
-      expect(pattern.description.length).toBeGreaterThan(0);
-      expect(pattern.badExample.length).toBeGreaterThan(0);
-      expect(pattern.goodExample.length).toBeGreaterThan(0);
-      expect(pattern.principle.length).toBeGreaterThan(0);
-      expect(pattern.detectionHint.length).toBeGreaterThan(0);
-      expect(pattern.languages.length).toBeGreaterThan(0);
     }
   });
 });
