@@ -81,7 +81,7 @@ describe("webhook-to-worker pipeline", () => {
     process.env.GITHUB_APP_ID = "123";
     process.env.GITHUB_APP_PRIVATE_KEY = "private-key-placeholder";
 
-    let summary = null as Awaited<ReturnType<typeof processAnalyzePullRequestJob>> | null;
+    let summary: Awaited<ReturnType<typeof processAnalyzePullRequestJob>>;
     try {
       summary = await processAnalyzePullRequestJob(jobs[0]!, {
         logInfo: () => {},
@@ -124,14 +124,13 @@ describe("webhook-to-worker pipeline", () => {
       }
     }
 
-    expect(summary).not.toBeNull();
-    expect(summary!.jobId).toBe(job.job_id);
-    expect(summary!.repository).toBe("acme/widget");
-    expect(summary!.pullRequestNumber).toBe(1);
-    expect(summary!.idempotencyKey).toBe(buildIdempotencyKey(job));
-    expect(summary!.totalRules).toBe(0);
-    expect(summary!.failedRules).toBe(0);
-    expect(summary!.totalFindings).toBe(0);
+    expect(summary.jobId).toBe(job.job_id);
+    expect(summary.repository).toBe("acme/widget");
+    expect(summary.pullRequestNumber).toBe(1);
+    expect(summary.idempotencyKey).toBe(buildIdempotencyKey(job));
+    expect(summary.totalRules).toBe(0);
+    expect(summary.failedRules).toBe(0);
+    expect(summary.totalFindings).toBe(0);
   });
 
   test("multiple payloads produce multiple jobs", () => {
@@ -162,7 +161,7 @@ describe("webhook-to-worker pipeline", () => {
   test("unsupported action is filtered by supported actions set", () => {
     expect(isPullRequestWebhookEvent(invalidWrongAction)).toBe(true);
 
-    const actions = SUPPORTED_PULL_REQUEST_ACTIONS as ReadonlySet<string>;
+    const actions = SUPPORTED_PULL_REQUEST_ACTIONS;
     expect(actions.has(invalidWrongAction.action)).toBe(false);
   });
 

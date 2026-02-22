@@ -15,13 +15,13 @@ import {
 
 type FetchMock = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
-type FetchCall = {
+interface FetchCall {
   input: string | URL;
   init?: RequestInit;
-};
+}
 
-function decodeJwtPart<TDecoded>(value: string): TDecoded {
-  return JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as TDecoded;
+function decodeJwtPart(value: string): unknown {
+  return JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as unknown;
 }
 
 function makeJsonResponse(body: unknown, status = 200): Response {
@@ -51,17 +51,19 @@ describe("github-client", () => {
 
     const token = createGitHubAppJwt({
       appId: 12345,
-      privateKeyPem: privateKeyPem.toString(),
+      privateKeyPem,
       nowSeconds: 1_700_000_000,
     });
     const tokenParts = token.split(".");
 
     expect(tokenParts).toHaveLength(3);
 
-    const header = decodeJwtPart<{ alg: string; typ: string }>(tokenParts[0]!);
-    const payload = decodeJwtPart<{ iat: number; exp: number; iss: string }>(
-      tokenParts[1]!,
-    );
+    const header = decodeJwtPart(tokenParts[0]!) as { alg: string; typ: string };
+    const payload = decodeJwtPart(tokenParts[1]!) as {
+      iat: number;
+      exp: number;
+      iss: string;
+    };
     expect(header.alg).toBe("RS256");
     expect(header.typ).toBe("JWT");
     expect(payload.iat).toBe(1_699_999_940);

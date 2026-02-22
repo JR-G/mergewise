@@ -816,8 +816,9 @@ export function prepareFindingDelivery(
   const groupedFindings = [...groupedByFileRule.values()];
   const selectedGroups = groupedFindings.slice(0, options.maxComments);
   const skippedByCap = Math.max(groupedFindings.length - selectedGroups.length, 0);
-  const comments = selectedGroups.map((group) => {
-    const primaryFinding = group[0]!;
+  const comments = selectedGroups.flatMap((group) => {
+    const primaryFinding = group[0];
+    if (!primaryFinding) return [];
     const dedupeKey = buildFindingDedupeKey(primaryFinding);
     return {
       dedupeKey,
@@ -1400,7 +1401,7 @@ export async function processAnalyzePullRequestJob(
   const traceId = resolveJobTraceId(job);
   const infoLogger = dependencies.logInfo ?? console.log;
   const errorLogger = dependencies.logError ?? console.error;
-  const warnLogger = dependencies.logWarn ?? infoLogger ?? errorLogger;
+  const warnLogger = dependencies.logWarn ?? infoLogger;
   const rules = dependencies.rules ?? tsReactRules;
   const mergewiseConfig = dependencies.mergewiseConfig ?? DEFAULT_MERGEWISE_CONFIG;
   const selectedRules = selectRulesForExecution(rules, mergewiseConfig);
@@ -1537,10 +1538,10 @@ export function createPollingLoopController(
 ): PollingLoopController {
   const setIntervalFn: NonNullable<PollingLoopDependencies["setIntervalFn"]> =
     dependencies.setIntervalFn ??
-    ((callback, delayMs) => setInterval(callback, delayMs) as WorkerPollingTimerHandle);
+    ((callback, delayMs) => setInterval(callback, delayMs));
   const clearIntervalFn: NonNullable<PollingLoopDependencies["clearIntervalFn"]> =
     dependencies.clearIntervalFn ??
-    ((timerHandle) => clearInterval(timerHandle as ReturnType<typeof setInterval>));
+    ((timerHandle) => { clearInterval(timerHandle); });
   const errorLogger = dependencies.logError ?? console.error;
 
   let timerHandle: WorkerPollingTimerHandle | null = null;
@@ -1553,7 +1554,7 @@ export function createPollingLoopController(
       return;
     }
 
-    const pendingPollPromise = pollCycle().catch((error) => {
+    const pendingPollPromise = pollCycle().catch((error: unknown) => {
       const details = error instanceof Error ? error.stack ?? error.message : String(error);
       errorLogger(`[worker] poll cycle failed: ${details}`);
     });
@@ -1947,7 +1948,8 @@ function buildWhyThisMattersText(category: FindingCategory): string {
  */
 function buildRefactorSteps(finding: Finding): readonly string[] {
   const normalizedRecommendation = finding.recommendation.trim();
-  const firstSentenceMatch = normalizedRecommendation.match(/^(.+?[.!?])(\s|$)/);
+  const firstSentenceMatch = /^(.+?[.!?])(\s|$)/.exec(normalizedRecommendation);
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty-string fallthrough is intentional
   const firstStep = firstSentenceMatch?.[1]?.trim() || normalizedRecommendation || "Apply the recommended refactor.";
   const secondStep = "Update related tests to lock the new behavior and prevent regressions.";
 
@@ -2194,6 +2196,7 @@ function loadGitHubAppCredentials(): Readonly<{ appId: number; privateKeyPem: st
       );
       throw new Error(
         `[worker] failed to read GITHUB_APP_PRIVATE_KEY_PATH (${privateKeyPath}): ${details}`,
+        { cause: caughtError },
       );
     }
   }

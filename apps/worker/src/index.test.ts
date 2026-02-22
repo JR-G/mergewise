@@ -304,7 +304,7 @@ describe("runPollCycleWithInFlightGuard", () => {
 
 describe("createPollingLoopController", () => {
   test("starts interval once and clears it on stop", async () => {
-    const scheduledCallbacks: Array<() => void> = [];
+    const scheduledCallbacks: (() => void)[] = [];
     const clearedTimers: WorkerPollingTimerHandle[] = [];
     const timerHandle = {} as WorkerPollingTimerHandle;
     let runCount = 0;
@@ -340,7 +340,7 @@ describe("createPollingLoopController", () => {
   });
 
   test("stop waits for in-flight poll cycle completion", async () => {
-    const scheduledCallbacks: Array<() => void> = [];
+    const scheduledCallbacks: (() => void)[] = [];
     let releasePollCycle: () => void = () => {};
     const pollCycleStarted = new Promise<void>((resolve) => {
       releasePollCycle = resolve;
@@ -605,7 +605,7 @@ describe("processAnalyzePullRequestJob", () => {
     );
 
     const analysisContext = capturedContexts[0] as {
-      diffs: Array<{ filePath: string; hunks: Array<{ header: string; lines: string[] }> }>;
+      diffs: { filePath: string; hunks: { header: string; lines: string[] }[] }[];
     };
 
     expect(analysisContext.diffs).toHaveLength(1);

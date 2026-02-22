@@ -171,7 +171,7 @@ export const DEFAULT_MERGEWISE_CONFIG: MergewiseConfig = {
   },
 };
 
-type RawMergewiseConfig = {
+interface RawMergewiseConfig {
   gating?: {
     confidenceThreshold?: unknown;
     maxComments?: unknown;
@@ -180,7 +180,7 @@ type RawMergewiseConfig = {
     include?: unknown;
     exclude?: unknown;
   };
-};
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -284,7 +284,7 @@ function applyRules(
 }
 
 function parseRawConfig(filePath: string): unknown {
-  let rawYaml = "";
+  let rawYaml: string;
   try {
     rawYaml = readFileSync(filePath, "utf8");
   } catch (caughtError) {

@@ -201,7 +201,7 @@ function loadOwnershipEntries(): OwnershipEntry[] {
       fail(`loadOwnershipEntries failed: invalid YAML in ${ownershipFilePath}`);
     }
 
-    const parsedOwnership = ownershipDocument.toJSON();
+    const parsedOwnership: unknown = ownershipDocument.toJSON();
     if (!isPlainObject(parsedOwnership)) {
       return [];
     }
@@ -365,7 +365,7 @@ function loadBacklogEntries(): BacklogEntry[] {
     const tableLinePattern = /^\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|$/;
 
     for (const backlogLine of backlogContents.split("\n")) {
-      const parsedLine = backlogLine.match(tableLinePattern);
+      const parsedLine = tableLinePattern.exec(backlogLine);
       if (!parsedLine) {
         continue;
       }
@@ -684,7 +684,7 @@ function removeBoardRowsForTask(boardContents: string, taskIdentifier: string): 
   const filteredLines: string[] = [];
 
   for (const boardLine of boardContents.split("\n")) {
-    const parsedLine = boardLine.match(tableLinePattern);
+    const parsedLine = tableLinePattern.exec(boardLine);
     if (!parsedLine) {
       filteredLines.push(boardLine);
       continue;
@@ -812,7 +812,7 @@ function loadTaskBoardEntries(): TaskBoardEntry[] {
     const boardEntries: TaskBoardEntry[] = [];
 
     for (const boardLine of boardContents.split("\n")) {
-      const parsedLine = boardLine.match(tableLinePattern);
+      const parsedLine = tableLinePattern.exec(boardLine);
       if (!parsedLine) {
         continue;
       }
@@ -1193,6 +1193,7 @@ function buildPullRequestBody(
   } catch (caughtError) {
     throw new Error(
       `Failed to read task file for ${boardEntry.taskIdentifier} (${boardEntry.scopeName}): ${formatError(caughtError)}`,
+      { cause: caughtError },
     );
   }
   const changedPathList = changedPaths
@@ -1247,7 +1248,7 @@ function findPullRequestByHead(branchName: string): PullRequestReference | null 
       },
     );
 
-    const parsedResult = JSON.parse(rawResult) as Array<Partial<PullRequestReference>>;
+    const parsedResult = JSON.parse(rawResult) as Partial<PullRequestReference>[];
     const firstPullRequest = parsedResult[0];
     if (
       firstPullRequest &&
@@ -1266,11 +1267,13 @@ function findPullRequestByHead(branchName: string): PullRequestReference | null 
     if (errorText.includes("error connecting to api.github.com")) {
       throw new Error(
         `findPullRequestByHead(${branchName}) failed in ${repositoryRoot}: GitHub API is unreachable`,
+        { cause: caughtError },
       );
     }
 
     throw new Error(
       `findPullRequestByHead(${branchName}) failed in ${repositoryRoot}: ${errorText}`,
+      { cause: caughtError },
     );
   }
 }
@@ -1650,9 +1653,9 @@ function startTmuxBatch(argumentsList: string[]): void {
 
     const monitorWindowCommand =
       `cd ${JSON.stringify(sharedRepositoryRoot)} && ` +
-      `echo \"Tech Lead Monitor\" && ` +
-      `echo \"- bun run ops:status\" && ` +
-      `echo \"- bun run ops:review-ready -- <task-id> && bun run ops:open-pr -- <task-id>\" && ` +
+      `echo "Tech Lead Monitor" && ` +
+      `echo "- bun run ops:status" && ` +
+      `echo "- bun run ops:review-ready -- <task-id> && bun run ops:open-pr -- <task-id>" && ` +
       loginShellCommand;
     execFileSync(
       "tmux",

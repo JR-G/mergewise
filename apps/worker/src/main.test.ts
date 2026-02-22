@@ -142,7 +142,7 @@ describe("startWorkerProcess", () => {
     ];
     const processedJobIds: string[] = [];
     const errorLogs: string[] = [];
-    const intervalCallbacks: Array<() => void> = [];
+    const intervalCallbacks: (() => void)[] = [];
 
     const processHandle = startWorkerProcess({
       loadConfigFn: () => ({
@@ -283,7 +283,7 @@ describe("startWorkerProcess", () => {
     };
     const infoLogs: string[] = [];
     const errorLogs: string[] = [];
-    const intervalCallbacks: Array<() => void> = [];
+    const intervalCallbacks: (() => void)[] = [];
     let releaseProcessing: () => void = () => {};
     const processingGate = new Promise<void>((resolve) => {
       releaseProcessing = resolve;
@@ -361,7 +361,7 @@ describe("startWorkerProcess", () => {
     const originalProcessOn = process.on;
     const originalProcessExit = process.exit;
     const registeredSignals: WorkerShutdownSignal[] = [];
-    const registeredSignalHandlers: Array<(signal: WorkerShutdownSignal) => void> = [];
+    const registeredSignalHandlers: ((signal: WorkerShutdownSignal) => void)[] = [];
     const exitCodes: number[] = [];
 
     process.on = ((signal: NodeJS.Signals, listener: NodeJS.SignalsListener) => {
