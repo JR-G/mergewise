@@ -9,12 +9,11 @@ on:
     paths:
       - package.json
 
-permissions:
-  contents: write
-
 jobs:
   sync_bun_lock:
     if: github.actor == 'dependabot[bot]'
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
