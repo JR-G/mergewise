@@ -883,6 +883,12 @@ describe("processAnalyzePullRequestJob", () => {
             include: ["rule-a", "rule-c"],
             exclude: ["rule-c"],
           },
+          llm: {
+            enabled: false,
+            model: "gpt-4o",
+            tokenBudget: 30_000,
+            baseUrl: "https://api.openai.com/v1",
+          },
         },
         createGitHubAppJwtFn: () => "jwt",
         exchangeInstallationAccessTokenFn: async () => ({
@@ -938,6 +944,12 @@ describe("processAnalyzePullRequestJob", () => {
           rules: {
             include: [],
             exclude: [],
+          },
+          llm: {
+            enabled: false,
+            model: "gpt-4o",
+            tokenBudget: 30_000,
+            baseUrl: "https://api.openai.com/v1",
           },
         },
         rules: [],
@@ -1004,6 +1016,12 @@ describe("applyFindingGates", () => {
         include: [],
         exclude: [],
       },
+      llm: {
+        enabled: false,
+        model: "gpt-4o",
+        tokenBudget: 30_000,
+        baseUrl: "https://api.openai.com/v1",
+      },
     });
 
     expect(gatedResult.findings.map((finding) => finding.findingId)).toEqual([
@@ -1029,6 +1047,12 @@ describe("applyFindingGates", () => {
       rules: {
         include: [],
         exclude: [],
+      },
+      llm: {
+        enabled: false,
+        model: "gpt-4o",
+        tokenBudget: 30_000,
+        baseUrl: "https://api.openai.com/v1",
       },
     });
 
@@ -1056,6 +1080,12 @@ describe("applyFindingGates", () => {
       rules: {
         include: [],
         exclude: [],
+      },
+      llm: {
+        enabled: false,
+        model: "gpt-4o",
+        tokenBudget: 30_000,
+        baseUrl: "https://api.openai.com/v1",
       },
     });
 

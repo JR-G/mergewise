@@ -14,6 +14,7 @@ import {
   type ListPullRequestCommentsOptions,
   type PostPullRequestInlineCommentOptions,
   type PostPullRequestSummaryCommentOptions,
+  fetchFileContent,
 } from "@mergewise/github-client";
 import { readFileSync } from "node:fs";
 import {
@@ -23,9 +24,11 @@ import {
 import type { RuleExecutionResult } from "@mergewise/rule-engine";
 import { executeRules } from "@mergewise/rule-engine";
 import { tsReactRules } from "@mergewise/rule-ts-react";
+import { createLlmReviewerRule } from "@mergewise/llm-reviewer";
 import type {
   AnalysisContext,
   AnalyzePullRequestJob,
+  CodebaseContext,
   DiffHunk,
   FileDiff,
   Finding,
@@ -484,6 +487,7 @@ export interface WorkerProcessingDependencies {
     options: {
       readonly context: AnalysisContext;
       readonly rules: readonly Rule[];
+      readonly codebaseContext?: CodebaseContext;
       readonly onRuleExecutionError?: (rule: Rule, error: unknown) => void;
     },
   ) => Promise<RuleExecutionResult>;
@@ -1402,7 +1406,29 @@ export async function processAnalyzePullRequestJob(
   const infoLogger = dependencies.logInfo ?? console.log;
   const errorLogger = dependencies.logError ?? console.error;
   const warnLogger = dependencies.logWarn ?? infoLogger;
-  const rules = dependencies.rules ?? tsReactRules;
+  const llmConfig = (dependencies.mergewiseConfig ?? DEFAULT_MERGEWISE_CONFIG).llm;
+  const llmApiKey = process.env.LLM_API_KEY;
+  const llmEnabled = llmConfig.enabled && llmApiKey !== undefined && llmApiKey.length > 0;
+
+  const baseLlmRules: readonly Rule[] = llmEnabled && llmApiKey
+    ? [
+        createLlmReviewerRule({
+          clientConfig: {
+            apiKey: llmApiKey,
+            baseUrl: llmConfig.baseUrl,
+            model: llmConfig.model,
+          },
+          tokenBudget: llmConfig.tokenBudget,
+          onFileReviewError: (filePath, error) => {
+            warnLogger(
+              `[worker] llm review failed trace=${traceId} file=${filePath} error=${error instanceof Error ? error.message : String(error)}`,
+            );
+          },
+        }),
+      ]
+    : [];
+
+  const rules = dependencies.rules ?? [...tsReactRules, ...baseLlmRules];
   const mergewiseConfig = dependencies.mergewiseConfig ?? DEFAULT_MERGEWISE_CONFIG;
   const selectedRules = selectRulesForExecution(rules, mergewiseConfig);
   const executeRulesFn = dependencies.executeRulesFn ?? executeRules;
@@ -1432,9 +1458,42 @@ export async function processAnalyzePullRequestJob(
     },
   );
 
+  const hasCodebaseAwareRules = selectedRules.some((rule) => rule.kind === "codebase-aware");
+  const codebaseContext: CodebaseContext | undefined = hasCodebaseAwareRules
+    ? {
+        symbols: [],
+        conventions: new Map<string, string>(),
+        readFile: async (relativePath: string) => {
+          try {
+            return await fetchFileContent({
+              owner: githubAnalysisContext.owner,
+              repository: githubAnalysisContext.repository,
+              path: relativePath,
+              ref: job.head_sha,
+              installationAccessToken: githubAnalysisContext.installationAccessToken,
+              apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+              userAgent: githubFetchOptions.githubUserAgent,
+              requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+              traceId,
+            });
+          } catch (caughtError) {
+            const detail = caughtError instanceof Error ? caughtError.message : String(caughtError);
+            errorLogger(
+              `[worker] readFile failed trace=${traceId} job=${job.job_id} file=${relativePath} ref=${job.head_sha} repo=${githubAnalysisContext.owner}/${githubAnalysisContext.repository}: ${detail}`,
+            );
+            throw new Error(
+              `Failed to read ${relativePath} at ${job.head_sha} for ${githubAnalysisContext.owner}/${githubAnalysisContext.repository}`,
+              { cause: caughtError },
+            );
+          }
+        },
+      }
+    : undefined;
+
   const executionResult = await executeRulesFn({
     context: githubAnalysisContext.analysisContext,
     rules: selectedRules,
+    codebaseContext,
     onRuleExecutionError: (rule, error) => {
       const detail = error instanceof Error ? error.stack ?? error.message : String(error);
       errorLogger(

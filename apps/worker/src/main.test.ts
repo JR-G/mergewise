@@ -94,6 +94,12 @@ describe("startWorkerProcess", () => {
           include: [],
           exclude: [],
         },
+        llm: {
+          enabled: false,
+          model: "gpt-4o",
+          tokenBudget: 30_000,
+          baseUrl: "https://api.openai.com/v1",
+        },
       }),
       readAllAnalyzePullRequestJobsFn: () => [],
       processAnalyzePullRequestJobFn: async () => {
@@ -165,6 +171,12 @@ describe("startWorkerProcess", () => {
         rules: {
           include: [],
           exclude: [],
+        },
+        llm: {
+          enabled: false,
+          model: "gpt-4o",
+          tokenBudget: 30_000,
+          baseUrl: "https://api.openai.com/v1",
         },
       }),
       readAllAnalyzePullRequestJobsFn: () => queuedJobs,
@@ -238,6 +250,12 @@ describe("startWorkerProcess", () => {
           include: [],
           exclude: [],
         },
+        llm: {
+          enabled: false,
+          model: "gpt-4o",
+          tokenBudget: 30_000,
+          baseUrl: "https://api.openai.com/v1",
+        },
       }),
       readAllAnalyzePullRequestJobsFn: () => {
         throw new Error("queue read failed");
@@ -310,6 +328,12 @@ describe("startWorkerProcess", () => {
         rules: {
           include: [],
           exclude: [],
+        },
+        llm: {
+          enabled: false,
+          model: "gpt-4o",
+          tokenBudget: 30_000,
+          baseUrl: "https://api.openai.com/v1",
         },
       }),
       readAllAnalyzePullRequestJobsFn: () => [queuedJob],
@@ -397,6 +421,12 @@ describe("startWorkerProcess", () => {
           rules: {
             include: [],
             exclude: [],
+          },
+          llm: {
+            enabled: false,
+            model: "gpt-4o",
+            tokenBudget: 30_000,
+            baseUrl: "https://api.openai.com/v1",
           },
         }),
         readAllAnalyzePullRequestJobsFn: () => [],

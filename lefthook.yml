@@ -1,3 +1,13 @@
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      run: bun run lint
+    typecheck:
+      run: bun run typecheck
+    test:
+      run: bun run test
+
 pre-push:
   parallel: true
   commands:

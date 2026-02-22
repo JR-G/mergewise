@@ -611,6 +611,80 @@ export async function listPullRequestInlineComments(
   return collectedComments;
 }
 
+/**
+ * Request options for fetching a single file's content from a repository.
+ */
+export interface FetchFileContentOptions extends GitHubApiOptions {
+  /**
+   * Repository owner.
+   */
+  owner: string;
+  /**
+   * Repository name.
+   */
+  repository: string;
+  /**
+   * File path relative to repository root.
+   */
+  path: string;
+  /**
+   * Git ref (branch, tag, or SHA) to read the file at.
+   */
+  ref: string;
+  /**
+   * Installation access token used for API authentication.
+   */
+  installationAccessToken: string;
+}
+
+/**
+ * Fetches a single file's content from a repository via the GitHub Contents API.
+ *
+ * @param options - File content request options.
+ * @returns Decoded file content as a string, or `null` if the file does not exist (404).
+ * @throws {@link GitHubApiError} when GitHub returns a non-success status other than 404.
+ */
+export async function fetchFileContent(
+  options: FetchFileContentOptions,
+): Promise<string | null> {
+  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
+  const apiBaseUrl = trimTrailingSlash(
+    options.apiBaseUrl ?? "https://api.github.com",
+  );
+  const endpointUrl =
+    `${apiBaseUrl}/repos/${encodeURIComponent(options.owner)}` +
+    `/${encodeURIComponent(options.repository)}` +
+    `/contents/${options.path.split("/").map(encodeURIComponent).join("/")}` +
+    `?ref=${encodeURIComponent(options.ref)}`;
+
+  const response = await fetch(endpointUrl, {
+    method: "GET",
+    headers: buildHeaders({
+      authorization: `Bearer ${options.installationAccessToken}`,
+      userAgent: options.userAgent,
+      traceId: options.traceId,
+    }),
+    signal: AbortSignal.timeout(requestTimeoutMs),
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const responseBody = await response.text();
+    throw new GitHubApiError(response.status, "GET", endpointUrl, responseBody);
+  }
+
+  const body = (await response.json()) as { content?: string; encoding?: string };
+
+  if (body.encoding !== "base64" || typeof body.content !== "string") {
+    return null;
+  }
+
+  return Buffer.from(body.content, "base64").toString("utf8");
+}
+
 interface HeaderBuildOptions {
   authorization: string;
   userAgent?: string;
