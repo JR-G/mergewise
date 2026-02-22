@@ -42,6 +42,12 @@ export default [
           message:
             "Nested if statements are not allowed. Prefer guard clauses or early returns.",
         },
+        {
+          selector:
+            "IfStatement > IfStatement.alternate[alternate.type='IfStatement']",
+          message:
+            "More than one else-if branch detected. Prefer a switch statement when branching on one value.",
+        },
       ],
       "no-restricted-imports": [
         "error",
