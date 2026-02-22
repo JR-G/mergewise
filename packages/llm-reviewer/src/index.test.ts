@@ -415,6 +415,23 @@ describe("extractStructuralSignals", () => {
     expect(signals.functionCount).toBe(2);
   });
 
+  test("does not count control-flow blocks as functions", () => {
+    const diff = makeDiff("src/file.ts", [
+      makeHunk("@@ -0,0 +1,6 @@", [
+        "+if (flag) {",
+        "+  runTask()",
+        "+}",
+        "+for (const value of values) {",
+        "+  consume(value)",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractStructuralSignals(diff);
+    expect(signals.functionCount).toBe(0);
+    expect(signals.maxParameterCount).toBe(0);
+  });
+
   test("tracks max function line count", () => {
     const diff = makeDiff("src/file.ts", [
       makeHunk("@@ -0,0 +1,8 @@", [

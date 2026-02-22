@@ -1987,17 +1987,28 @@ function buildAntiPatternText(finding: Finding): string {
  * @returns Category-specific impact statement.
  */
 function buildWhyThisMattersText(category: FindingCategory): string {
-  if (category === "safety") {
-    return "This pattern increases the chance of runtime failures and weakens confidence in behavior under edge cases.";
+  switch (category) {
+    case "safety":
+      return "This pattern increases the chance of runtime failures and weakens confidence in behavior under edge cases.";
+    case "perf":
+      return "This pattern can add avoidable compute cost and make performance regressions harder to detect.";
+    case "idiomatic":
+      return "Idiomatic code follows established language and framework conventions. Deviating raises onboarding cost and makes the codebase inconsistent.";
+    case "clean":
+      return "Clean code is easier to read, test, and refactor. This pattern increases cognitive load and makes future changes riskier.";
+    default:
+      return assertUnreachableFindingCategory(category);
   }
-  if (category === "perf") {
-    return "This pattern can add avoidable compute cost and make performance regressions harder to detect.";
-  }
-  if (category === "idiomatic") {
-    return "Idiomatic code follows established language and framework conventions. Deviating raises onboarding cost and makes the codebase inconsistent.";
-  }
+}
 
-  return "Clean code is easier to read, test, and refactor. This pattern increases cognitive load and makes future changes riskier.";
+/**
+ * Raises a runtime error for unreachable finding categories.
+ *
+ * @param category - Category value that should be impossible at compile time.
+ * @returns This function never returns.
+ */
+function assertUnreachableFindingCategory(category: never): never {
+  throw new Error(`Unhandled finding category: ${String(category)}`);
 }
 
 /**

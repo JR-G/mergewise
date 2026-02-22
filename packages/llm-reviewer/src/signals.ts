@@ -20,7 +20,7 @@ const IMPORT_PATTERN = /^[+ ]import\s/;
 const COMPONENT_PATTERN = /(?:function\s+\w+|const\s+\w+\s*=\s*(?:\([^)]*\)|[^=])*=>)/;
 const NESTING_OPENERS = /[({]/g;
 const NESTING_CLOSERS = /[)}]/g;
-const FUNCTION_DECLARATION_PATTERN = /(?:^|\s)(?:function\s+\w+|(?:async\s+)?(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?\(|(?:public|private|protected|static|async)\s+\w+\s*\(|\w+\s*\([^)]*\)\s*(?::\s*\w[^{]*)?{)/;
+const FUNCTION_DECLARATION_PATTERN = /(?:^|\s)(?:function\s+\w+|(?:async\s+)?(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?\(|(?:public|private|protected|static|async)\s+\w+\s*\(|(?!\b(?:if|for|while|switch|catch)\b)\w+\s*\([^)]*\)\s*(?::\s*\w[^{]*)?{)/;
 const CLASS_DECLARATION_PATTERN = /(?:^|\s)class\s+\w+/;
 const TYPE_ASSERTION_PATTERN = /\bas\s+\w/g;
 const PARAM_LIST_PATTERN = /\(([^)]*)\)/;
@@ -48,6 +48,7 @@ export function extractStructuralSignals(diff: FileDiff): StructuralSignals {
   let currentFunctionLineCount = 0;
   let inFunction = false;
   let functionBraceDepth = 0;
+  let functionBraceDepthEverPositive = false;
   let maxParameterCount = 0;
   let classCount = 0;
   let typeAssertionCount = 0;
@@ -103,6 +104,7 @@ export function extractStructuralSignals(diff: FileDiff): StructuralSignals {
         inFunction = true;
         currentFunctionLineCount = 0;
         functionBraceDepth = 0;
+        functionBraceDepthEverPositive = false;
       }
 
       if (inFunction) {
@@ -110,11 +112,18 @@ export function extractStructuralSignals(diff: FileDiff): StructuralSignals {
         const openerCount = (content.match(/\{/g) ?? []).length;
         const closerCount = (content.match(/\}/g) ?? []).length;
         functionBraceDepth += openerCount - closerCount;
-        if (functionBraceDepth <= 0 && currentFunctionLineCount > 1) {
+        if (functionBraceDepth > 0) {
+          functionBraceDepthEverPositive = true;
+        }
+        if (
+          functionBraceDepth <= 0 &&
+          (currentFunctionLineCount > 1 || functionBraceDepthEverPositive)
+        ) {
           if (currentFunctionLineCount > maxFunctionLineCount) {
             maxFunctionLineCount = currentFunctionLineCount;
           }
           inFunction = false;
+          functionBraceDepthEverPositive = false;
         }
       }
 
