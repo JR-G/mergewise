@@ -4,7 +4,7 @@ Refactoring-focused code review tool for PRs. TypeScript and React first.
 
 ## Project Structure
 
-Monorepo with tsconfig path aliases (not Bun workspaces).
+Monorepo with tsconfig path aliases.
 
 - `apps/webhook-api` — validates GitHub webhooks, enqueues jobs
 - `apps/worker` — polls jobs, runs analysis pipeline, posts PR comments + check output
