@@ -24,6 +24,7 @@ const DEFAULT_TOKEN_BUDGET = 30_000;
 export interface LlmReviewerConfig {
   readonly clientConfig: ReviewClientConfig;
   readonly tokenBudget?: number;
+  readonly onFileReviewError?: (filePath: string, error: unknown) => void;
 }
 
 /**
@@ -44,6 +45,7 @@ export function createLlmReviewerRule(
 ): CodebaseAwareRule {
   const client = createReviewClient(config.clientConfig);
   const tokenBudget = config.tokenBudget ?? DEFAULT_TOKEN_BUDGET;
+  const onFileReviewError = config.onFileReviewError ?? (() => {});
 
   return {
     kind: "codebase-aware",
@@ -76,7 +78,8 @@ export function createLlmReviewerRule(
             client,
           );
           allFindings.push(...findings);
-        } catch {
+        } catch (error) {
+          onFileReviewError(fileDiff.filePath, error);
           continue;
         }
       }

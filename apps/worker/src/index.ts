@@ -1419,6 +1419,11 @@ export async function processAnalyzePullRequestJob(
             model: llmConfig.model,
           },
           tokenBudget: llmConfig.tokenBudget,
+          onFileReviewError: (filePath, error) => {
+            warnLogger(
+              `[worker] llm review failed trace=${traceId} file=${filePath} error=${error instanceof Error ? error.message : String(error)}`,
+            );
+          },
         }),
       ]
     : [];
