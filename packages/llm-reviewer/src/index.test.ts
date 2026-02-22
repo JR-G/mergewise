@@ -264,11 +264,26 @@ describe("parseLlmResponse", () => {
 describe("buildSystemPrompt", () => {
   test("includes key review focus areas", () => {
     const prompt = buildSystemPrompt();
-    expect(prompt).toContain("SOLID");
+    expect(prompt).toContain("Responsibility & structure");
+    expect(prompt).toContain("SRP");
+    expect(prompt).toContain("Design patterns & composition");
+    expect(prompt).toContain("Duplication & abstraction");
     expect(prompt).toContain("DRY");
-    expect(prompt).toContain("KISS");
+    expect(prompt).toContain("Naming & readability");
+    expect(prompt).toContain("Idiomatic TypeScript/React");
     expect(prompt).toContain("AI slop");
-    expect(prompt).toContain("Naming quality");
+    expect(prompt).toContain("Complexity");
+  });
+
+  test("frames findings as refactoring suggestions", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("refactoring suggestions");
+    expect(prompt).toContain("Name the principle");
+  });
+
+  test("sets recommendation max to 500 chars", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("Max 500 chars");
   });
 
   test("excludes lint/formatting concerns", () => {
@@ -278,18 +293,25 @@ describe("buildSystemPrompt", () => {
   });
 });
 
+const EMPTY_SIGNALS = {
+  componentLineCount: 0,
+  hookCount: 0,
+  importCount: 0,
+  maxNestingDepth: 0,
+  functionCount: 0,
+  maxFunctionLineCount: 0,
+  maxParameterCount: 0,
+  classCount: 0,
+  typeAssertionCount: 0,
+};
+
 describe("buildFileReviewPrompt", () => {
   test("includes diff content and file path", () => {
     const diff = makeDiff("src/app.tsx", [
       makeHunk("@@ -1,2 +1,3 @@", [" import React", "+const App = () => {", "+}"]),
     ]);
 
-    const prompt = buildFileReviewPrompt(diff, null, {
-      componentLineCount: 0,
-      hookCount: 0,
-      importCount: 0,
-      maxNestingDepth: 0,
-    });
+    const prompt = buildFileReviewPrompt(diff, null, EMPTY_SIGNALS);
 
     expect(prompt).toContain("src/app.tsx");
     expect(prompt).toContain("const App = () => {");
@@ -300,12 +322,7 @@ describe("buildFileReviewPrompt", () => {
       makeHunk("@@ -1,1 +1,2 @@", [" export function foo() {}", "+export function bar() {}"]),
     ]);
 
-    const prompt = buildFileReviewPrompt(diff, "full file content here", {
-      componentLineCount: 0,
-      hookCount: 0,
-      importCount: 0,
-      maxNestingDepth: 0,
-    });
+    const prompt = buildFileReviewPrompt(diff, "full file content here", EMPTY_SIGNALS);
 
     expect(prompt).toContain("full file content here");
     expect(prompt).toContain("Full file content");
@@ -317,16 +334,27 @@ describe("buildFileReviewPrompt", () => {
     ]);
 
     const prompt = buildFileReviewPrompt(diff, null, {
+      ...EMPTY_SIGNALS,
       componentLineCount: 150,
       hookCount: 8,
       importCount: 12,
       maxNestingDepth: 4,
+      functionCount: 5,
+      maxFunctionLineCount: 60,
+      maxParameterCount: 7,
+      classCount: 2,
+      typeAssertionCount: 3,
     });
 
     expect(prompt).toContain("Component line count: 150");
     expect(prompt).toContain("useState/useEffect calls: 8");
     expect(prompt).toContain("Import statements: 12");
     expect(prompt).toContain("Max callback/promise nesting depth: 4");
+    expect(prompt).toContain("Function/method declarations: 5");
+    expect(prompt).toContain("Longest function body (approx lines): 60");
+    expect(prompt).toContain("Max parameter count: 7");
+    expect(prompt).toContain("Class declarations: 2");
+    expect(prompt).toContain("Type assertions (as casts): 3");
   });
 });
 
@@ -371,6 +399,79 @@ describe("extractStructuralSignals", () => {
 
     const signals = extractStructuralSignals(diff);
     expect(signals.maxNestingDepth).toBeGreaterThanOrEqual(3);
+  });
+
+  test("counts function declarations", () => {
+    const diff = makeDiff("src/file.ts", [
+      makeHunk("@@ -0,0 +1,4 @@", [
+        "+function alpha() {",
+        "+}",
+        "+function beta() {",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractStructuralSignals(diff);
+    expect(signals.functionCount).toBe(2);
+  });
+
+  test("tracks max function line count", () => {
+    const diff = makeDiff("src/file.ts", [
+      makeHunk("@@ -0,0 +1,8 @@", [
+        "+function short() {",
+        "+  return 1",
+        "+}",
+        "+function long() {",
+        "+  const a = 1",
+        "+  const b = 2",
+        "+  return a + b",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractStructuralSignals(diff);
+    expect(signals.maxFunctionLineCount).toBeGreaterThanOrEqual(4);
+  });
+
+  test("tracks max parameter count", () => {
+    const diff = makeDiff("src/file.ts", [
+      makeHunk("@@ -0,0 +1,4 @@", [
+        "+function one(a: string) {",
+        "+}",
+        "+function three(a: string, b: number, c: boolean) {",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractStructuralSignals(diff);
+    expect(signals.maxParameterCount).toBe(3);
+  });
+
+  test("counts class declarations", () => {
+    const diff = makeDiff("src/file.ts", [
+      makeHunk("@@ -0,0 +1,4 @@", [
+        "+class Foo {",
+        "+}",
+        "+class Bar {",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractStructuralSignals(diff);
+    expect(signals.classCount).toBe(2);
+  });
+
+  test("counts type assertions", () => {
+    const diff = makeDiff("src/file.ts", [
+      makeHunk("@@ -0,0 +1,3 @@", [
+        "+const x = value as string",
+        "+const y = other as number",
+        "+const z = 42",
+      ]),
+    ]);
+
+    const signals = extractStructuralSignals(diff);
+    expect(signals.typeAssertionCount).toBe(2);
   });
 });
 

@@ -41,6 +41,7 @@ const DEFAULT_ALLOWED_POST_CATEGORIES: readonly FindingCategory[] = [
   "safety",
   "perf",
   "idiomatic",
+  "clean",
 ];
 const DEFAULT_BLOCKED_POST_RULE_IDS: readonly string[] = [
   "ts-react/no-non-null-assertion",
@@ -1993,10 +1994,10 @@ function buildWhyThisMattersText(category: FindingCategory): string {
     return "This pattern can add avoidable compute cost and make performance regressions harder to detect.";
   }
   if (category === "idiomatic") {
-    return "This pattern is non-idiomatic for the language/framework and raises maintenance cost for future contributors.";
+    return "Idiomatic code follows established language and framework conventions. Deviating raises onboarding cost and makes the codebase inconsistent.";
   }
 
-  return "This pattern makes the codebase harder to read and evolve safely over time.";
+  return "Clean code is easier to read, test, and refactor. This pattern increases cognitive load and makes future changes riskier.";
 }
 
 /**
