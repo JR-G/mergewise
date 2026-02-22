@@ -49,14 +49,19 @@ export function extractAddedLineNumbers(diff: FileDiff): Set<number> {
     for (const line of hunk.lines) {
       if (line.startsWith("\\")) {
         continue;
-      } else if (line.startsWith("+")) {
+      }
+
+      if (line.startsWith("+")) {
         added.add(currentLine);
         currentLine += 1;
-      } else if (line.startsWith("-")) {
         continue;
-      } else {
-        currentLine += 1;
       }
+
+      if (line.startsWith("-")) {
+        continue;
+      }
+
+      currentLine += 1;
     }
   }
 

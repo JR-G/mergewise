@@ -34,6 +34,21 @@ export default [
         "warn",
         { terms: ["todo", "fixme", "xxx"], location: "anywhere" },
       ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "IfStatement > IfStatement.consequent, IfStatement > BlockStatement.consequent > IfStatement",
+          message:
+            "Nested if statements are not allowed. Prefer guard clauses or early returns.",
+        },
+        {
+          selector:
+            "IfStatement > IfStatement.alternate[alternate.type='IfStatement']",
+          message:
+            "More than one else-if branch detected. Prefer a switch statement when branching on one value.",
+        },
+      ],
       "no-restricted-imports": [
         "error",
         {

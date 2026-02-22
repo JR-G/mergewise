@@ -41,6 +41,7 @@ const DEFAULT_ALLOWED_POST_CATEGORIES: readonly FindingCategory[] = [
   "safety",
   "perf",
   "idiomatic",
+  "clean",
 ];
 const DEFAULT_BLOCKED_POST_RULE_IDS: readonly string[] = [
   "ts-react/no-non-null-assertion",
@@ -1986,17 +1987,28 @@ function buildAntiPatternText(finding: Finding): string {
  * @returns Category-specific impact statement.
  */
 function buildWhyThisMattersText(category: FindingCategory): string {
-  if (category === "safety") {
-    return "This pattern increases the chance of runtime failures and weakens confidence in behavior under edge cases.";
+  switch (category) {
+    case "safety":
+      return "This pattern increases the chance of runtime failures and weakens confidence in behavior under edge cases.";
+    case "perf":
+      return "This pattern can add avoidable compute cost and make performance regressions harder to detect.";
+    case "idiomatic":
+      return "Idiomatic code follows established language and framework conventions. Deviating raises onboarding cost and makes the codebase inconsistent.";
+    case "clean":
+      return "Clean code is easier to read, test, and refactor. This pattern increases cognitive load and makes future changes riskier.";
+    default:
+      return assertUnreachableFindingCategory(category);
   }
-  if (category === "perf") {
-    return "This pattern can add avoidable compute cost and make performance regressions harder to detect.";
-  }
-  if (category === "idiomatic") {
-    return "This pattern is non-idiomatic for the language/framework and raises maintenance cost for future contributors.";
-  }
+}
 
-  return "This pattern makes the codebase harder to read and evolve safely over time.";
+/**
+ * Raises a runtime error for unreachable finding categories.
+ *
+ * @param category - Category value that should be impossible at compile time.
+ * @returns This function never returns.
+ */
+function assertUnreachableFindingCategory(category: never): never {
+  throw new Error(`Unhandled finding category: ${String(category)}`);
 }
 
 /**
@@ -2181,18 +2193,20 @@ function parsePatchToDiffHunks(patch: string | undefined): readonly DiffHunk[] {
   let currentLines: string[] = [];
 
   for (const line of lines) {
-    if (line.startsWith("@@")) {
-      if (currentHeader !== null) {
-        hunks.push({ header: currentHeader, lines: currentLines });
-      }
-      currentHeader = line;
-      currentLines = [];
+    const isHunkHeader = line.startsWith("@@");
+    const shouldAppendCurrentLine = !isHunkHeader && currentHeader !== null;
+    if (shouldAppendCurrentLine) {
+      currentLines.push(line);
+    }
+    if (!isHunkHeader) {
       continue;
     }
 
     if (currentHeader !== null) {
-      currentLines.push(line);
+      hunks.push({ header: currentHeader, lines: currentLines });
     }
+    currentHeader = line;
+    currentLines = [];
   }
 
   if (currentHeader !== null) {
@@ -2243,10 +2257,12 @@ function loadGitHubAppCredentials(): Readonly<{ appId: number; privateKeyPem: st
   const privateKeyPath = privateKeyPathRaw?.trim();
   const legacyPrivateKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY_PEM;
   let privateKeyRaw = preferredPrivateKeyRaw ?? legacyPrivateKeyRaw;
+  let privateKeyLoadedFromPath = false;
 
   if (privateKeyRaw === undefined && privateKeyPath) {
     try {
       privateKeyRaw = readFileSync(privateKeyPath, "utf8");
+      privateKeyLoadedFromPath = true;
     } catch (caughtError) {
       const details =
         caughtError instanceof Error ? caughtError.message : String(caughtError);
@@ -2268,11 +2284,12 @@ function loadGitHubAppCredentials(): Readonly<{ appId: number; privateKeyPem: st
 
   const privateKeyPem = privateKeyRaw.replace(/\\n/g, "\n").trim();
   if (!privateKeyPem) {
-    if (preferredPrivateKeyRaw !== undefined) {
-      throw new Error("[worker] invalid GITHUB_APP_PRIVATE_KEY value: empty");
-    }
-
-    throw new Error("[worker] invalid GITHUB_APP_PRIVATE_KEY_PEM value: empty");
+    const invalidKeyVariableName = preferredPrivateKeyRaw !== undefined
+      ? "GITHUB_APP_PRIVATE_KEY"
+      : privateKeyLoadedFromPath
+      ? "GITHUB_APP_PRIVATE_KEY_PATH"
+      : "GITHUB_APP_PRIVATE_KEY_PEM";
+    throw new Error(`[worker] invalid ${invalidKeyVariableName} value: empty`);
   }
 
   return { appId, privateKeyPem };

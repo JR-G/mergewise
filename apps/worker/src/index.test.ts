@@ -1275,7 +1275,7 @@ describe("finding delivery", () => {
     expect(delivery.comments[0]!.body).toContain("`src/a.ts:25`");
   });
 
-  test("prepareFindingDelivery applies default high-value category post policy", () => {
+  test("prepareFindingDelivery includes clean category in default post policy", () => {
     const delivery = prepareFindingDelivery(
       [
         {
@@ -1296,8 +1296,8 @@ describe("finding delivery", () => {
       },
     );
 
-    expect(delivery.comments).toHaveLength(0);
-    expect(delivery.skippedByPolicy).toBe(1);
+    expect(delivery.comments).toHaveLength(1);
+    expect(delivery.skippedByPolicy).toBe(0);
   });
 
   test("prepareFindingDelivery applies default blocked-rule post policy", () => {

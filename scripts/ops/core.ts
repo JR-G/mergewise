@@ -303,15 +303,16 @@ function resolveSessionStartOptions(
 
   const ownerName = positionalArgumentsWithoutBranchKind[0] ?? inferredOwnerName;
   const scopeName = positionalArgumentsWithoutBranchKind[1] ?? scopeContract.scopeName;
-  if (isManagedTaskIdentifier(taskIdentifier)) {
-    const normalizedProvidedScopeName = normalizeScopeName(scopeName);
-    const normalizedContractScopeName = normalizeScopeName(scopeContract.scopeName);
-    if (normalizedProvidedScopeName !== normalizedContractScopeName) {
-      fail(
-        `scope override is not allowed for managed task ${taskIdentifier}: ` +
-        `provided=${normalizedProvidedScopeName} contract=${normalizedContractScopeName}`,
-      );
-    }
+  const normalizedProvidedScopeName = normalizeScopeName(scopeName);
+  const normalizedContractScopeName = normalizeScopeName(scopeContract.scopeName);
+  if (
+    isManagedTaskIdentifier(taskIdentifier) &&
+    normalizedProvidedScopeName !== normalizedContractScopeName
+  ) {
+    fail(
+      `scope override is not allowed for managed task ${taskIdentifier}: ` +
+      `provided=${normalizedProvidedScopeName} contract=${normalizedContractScopeName}`,
+    );
   }
 
   return { ownerName, scopeName, branchKind };
@@ -447,33 +448,24 @@ function parseScopePaths(scopeValue: string): string[] {
  *
  * @param taskIdentifier - Unique task identifier.
  * @param fallbackScopeName - Fallback scope when no backlog contract is required.
- * @returns Scope paths and the string persisted in board/task metadata.
+ * @returns Scope string persisted in board/task metadata.
  */
 function resolveTaskScopeContract(
   taskIdentifier: string,
   fallbackScopeName: string,
-): { scopePaths: string[]; scopeName: string } {
+): { scopeName: string } {
   const backlogEntry = resolveRequiredBacklogEntry(taskIdentifier);
-  if (backlogEntry) {
-    const scopePaths = parseScopePaths(backlogEntry.scope);
-    if (scopePaths.length === 0) {
-      fail(`invalid backlog scope for ${taskIdentifier}: ${backlogEntry.scope}`);
-    }
-
-    return {
-      scopePaths,
-      scopeName: scopePaths.join(", "),
-    };
-  }
-
-  const fallbackScopePaths = parseScopePaths(fallbackScopeName);
-  if (fallbackScopePaths.length === 0) {
-    fail(`missing scope contract for ${taskIdentifier}`);
+  const scopeInput = backlogEntry?.scope ?? fallbackScopeName;
+  const missingScopeMessage = backlogEntry
+    ? `invalid backlog scope for ${taskIdentifier}: ${backlogEntry.scope}`
+    : `missing scope contract for ${taskIdentifier}`;
+  const scopePaths = parseScopePaths(scopeInput);
+  if (scopePaths.length === 0) {
+    fail(missingScopeMessage);
   }
 
   return {
-    scopePaths: fallbackScopePaths,
-    scopeName: fallbackScopePaths.join(", "),
+    scopeName: scopePaths.join(", "),
   };
 }
 
@@ -566,13 +558,21 @@ function resolveTaskOptions(taskIdentifier: string): StartCommandOptions {
   };
 }
 
+type EnsureTaskFileCallerContext =
+  | { fileExists: true; body?: string }
+  | { fileExists: false };
+
 /**
  * Ensures a task file exists for the provided task options.
  *
  * @param options - Inputs used to resolve and create the task file.
+ * @param callerContext - Optional file-existence context supplied by caller.
  * @returns Absolute path to the task file.
  */
-function ensureTaskFile(options: StartCommandOptions): string {
+function ensureTaskFile(
+  options: StartCommandOptions,
+  callerContext?: EnsureTaskFileCallerContext,
+): string {
   try {
     if (!existsSync(taskTemplatePath)) {
       fail(`ensureTaskFile(${options.taskIdentifier}, ${options.branchName}): missing template at ${taskTemplatePath}`);
@@ -583,15 +583,21 @@ function ensureTaskFile(options: StartCommandOptions): string {
     const taskFilePath = resolve(tasksDirectoryPath, `${options.taskIdentifier}.md`);
     const templateBody = readFileSync(taskTemplatePath, "utf8");
     const backlogEntry = resolveBacklogEntry(options.taskIdentifier);
+    if (callerContext?.fileExists === true && callerContext.body === undefined) {
+      throw new Error("ensureTaskFile invariant violation: existing file context requires body");
+    }
+    const resolvedTaskFileExists = callerContext?.fileExists ?? existsSync(taskFilePath);
 
-    if (!existsSync(taskFilePath)) {
+    if (!resolvedTaskFileExists) {
       const preparedBody = renderTaskFileBody(templateBody, options, backlogEntry);
       writeFileSync(taskFilePath, preparedBody, "utf8");
       return taskFilePath;
     }
 
-    const existingTaskBody = readFileSync(taskFilePath, "utf8");
-    if (hasPlaceholderGoal(existingTaskBody)) {
+    const taskBody = callerContext?.fileExists
+      ? (callerContext.body ?? "")
+      : readFileSync(taskFilePath, "utf8");
+    if (hasPlaceholderGoal(taskBody)) {
       const preparedBody = renderTaskFileBody(templateBody, options, backlogEntry);
       writeFileSync(taskFilePath, preparedBody, "utf8");
     }
@@ -762,16 +768,17 @@ function loadTaskFile(taskIdentifier: string): string {
   try {
     const taskOptions = resolveTaskOptions(taskIdentifier);
     const taskFilePath = resolve(tasksDirectoryPath, `${taskIdentifier}.md`);
-    if (!existsSync(taskFilePath)) {
-      ensureTaskFile(taskOptions);
-    } else {
-      const existingTaskBody = readFileSync(taskFilePath, "utf8");
-      if (hasPlaceholderGoal(existingTaskBody)) {
-        ensureTaskFile(taskOptions);
-      }
+    const taskFileExists = existsSync(taskFilePath);
+    const existingTaskBody = taskFileExists ? readFileSync(taskFilePath, "utf8") : "";
+    const shouldHydrateTaskFile = !taskFileExists || hasPlaceholderGoal(existingTaskBody);
+    if (shouldHydrateTaskFile) {
+      const callerContext: EnsureTaskFileCallerContext = taskFileExists
+        ? { fileExists: true, body: existingTaskBody }
+        : { fileExists: false };
+      ensureTaskFile(taskOptions, callerContext);
     }
 
-    if (!existsSync(taskFilePath)) {
+    if (shouldHydrateTaskFile && !existsSync(taskFilePath)) {
       fail(
         `loadTaskFile(${taskIdentifier}) failed: task file not found after hydration at ${taskFilePath}`,
       );
@@ -1891,6 +1898,23 @@ function startAgentSession(argumentsList: string[]): void {
 }
 
 /**
+ * Returns the required task identifier for commands that operate on one task.
+ *
+ * @param argumentsList - Positional arguments passed to the command.
+ * @param commandLabel - Command label used in the missing-argument error message.
+ * @returns Required task identifier.
+ */
+function requireTaskIdentifierArgument(argumentsList: readonly string[], commandLabel: string): string {
+  const [taskIdentifier] = argumentsList;
+  if (!taskIdentifier) {
+    usage();
+    fail(`missing task-id for ${commandLabel}`);
+  }
+
+  return taskIdentifier;
+}
+
+/**
  * Entrypoint for the ops CLI subcommands.
  */
 function main(): void {
@@ -1907,17 +1931,8 @@ function main(): void {
   }
 
   if (commandName === "prompt") {
-    const [taskIdentifier] = argumentsList;
-    if (!taskIdentifier) {
-      usage();
-      fail("missing task-id for ops:prompt");
-    }
-
-    try {
-      printPrompt(taskIdentifier);
-    } catch (caughtError) {
-      fail(`prompt command failed for ${taskIdentifier}: ${formatError(caughtError)}`);
-    }
+    const taskIdentifier = requireTaskIdentifierArgument(argumentsList, "ops:prompt");
+    printPrompt(taskIdentifier);
     return;
   }
 
@@ -1957,45 +1972,25 @@ function main(): void {
   }
 
   if (commandName === "launch-agent") {
-    const [taskIdentifier] = argumentsList;
-    if (!taskIdentifier) {
-      usage();
-      fail("missing task-id for ops:launch-agent");
-    }
-
+    const taskIdentifier = requireTaskIdentifierArgument(argumentsList, "ops:launch-agent");
     launchAgent(taskIdentifier);
     return;
   }
 
   if (commandName === "open-pr") {
-    const [taskIdentifier] = argumentsList;
-    if (!taskIdentifier) {
-      usage();
-      fail("missing task-id for ops:open-pr");
-    }
-
+    const taskIdentifier = requireTaskIdentifierArgument(argumentsList, "ops:open-pr");
     openPullRequestForTask(taskIdentifier);
     return;
   }
 
   if (commandName === "finish") {
-    const [taskIdentifier] = argumentsList;
-    if (!taskIdentifier) {
-      usage();
-      fail("missing task-id for ops:finish");
-    }
-
+    const taskIdentifier = requireTaskIdentifierArgument(argumentsList, "ops:finish");
     finishTask(taskIdentifier);
     return;
   }
 
   if (commandName === "review-ready") {
-    const [taskIdentifier] = argumentsList;
-    if (!taskIdentifier) {
-      usage();
-      fail("missing task-id for ops:review-ready");
-    }
-
+    const taskIdentifier = requireTaskIdentifierArgument(argumentsList, "ops:review-ready");
     reviewTaskReadiness(taskIdentifier);
     return;
   }
