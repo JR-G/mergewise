@@ -328,7 +328,8 @@ describe("buildSystemPrompt", () => {
   test("each catalogue pattern's detectionHint appears in default prompt", () => {
     const prompt = buildSystemPrompt();
     for (const pattern of ANTI_PATTERNS) {
-      expect(prompt).toContain(pattern.detectionHint);
+      const escaped = pattern.detectionHint.replaceAll("|", "\\|");
+      expect(prompt).toContain(escaped);
     }
   });
 

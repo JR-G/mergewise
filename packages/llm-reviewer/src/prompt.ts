@@ -9,9 +9,10 @@ function buildAntiPatternReferenceTable(
   if (patterns.length === 0) return "";
   const header =
     "| id | title | category | principle | detectionHint |\n| --- | --- | --- | --- | --- |";
+  const esc = (value: string): string => value.replaceAll("|", "\\|");
   const rows = patterns.map(
     (pattern) =>
-      `| ${pattern.id} | ${pattern.title} | ${pattern.category} | ${pattern.principle} | ${pattern.detectionHint} |`,
+      `| ${esc(pattern.id)} | ${esc(pattern.title)} | ${esc(pattern.category)} | ${esc(pattern.principle)} | ${esc(pattern.detectionHint)} |`,
   );
   return `## Anti-pattern reference
 
