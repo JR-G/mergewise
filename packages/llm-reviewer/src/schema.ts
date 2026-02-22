@@ -92,8 +92,8 @@ export function parseLlmResponse(
   const findings: Finding[] = [];
 
   for (let findingIndex = 0; findingIndex < parsed.findings.length; findingIndex += 1) {
-    const rawFinding = parsed.findings[findingIndex]!;
-    if (!isValidRawFinding(rawFinding, addedLines)) {
+    const rawFinding = parsed.findings[findingIndex];
+    if (!rawFinding || !isValidRawFinding(rawFinding, addedLines)) {
       continue;
     }
 
