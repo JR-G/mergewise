@@ -31,6 +31,8 @@ ${header}\n${rows.join("\n")}
  * a staff+ engineer gives about code structure, patterns, and craft. It
  * explicitly avoids flagging things that deterministic linters already handle
  * (formatting, type errors, unused vars).
+ *
+ * @param patterns - Anti-patterns to inject as a reference table. Defaults to {@link ANTI_PATTERNS}.
  */
 export function buildSystemPrompt(
   patterns: readonly AntiPattern[] = ANTI_PATTERNS,
