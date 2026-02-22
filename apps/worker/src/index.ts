@@ -2257,10 +2257,12 @@ function loadGitHubAppCredentials(): Readonly<{ appId: number; privateKeyPem: st
   const privateKeyPath = privateKeyPathRaw?.trim();
   const legacyPrivateKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY_PEM;
   let privateKeyRaw = preferredPrivateKeyRaw ?? legacyPrivateKeyRaw;
+  let privateKeyLoadedFromPath = false;
 
   if (privateKeyRaw === undefined && privateKeyPath) {
     try {
       privateKeyRaw = readFileSync(privateKeyPath, "utf8");
+      privateKeyLoadedFromPath = true;
     } catch (caughtError) {
       const details =
         caughtError instanceof Error ? caughtError.message : String(caughtError);
@@ -2284,6 +2286,8 @@ function loadGitHubAppCredentials(): Readonly<{ appId: number; privateKeyPem: st
   if (!privateKeyPem) {
     const invalidKeyVariableName = preferredPrivateKeyRaw !== undefined
       ? "GITHUB_APP_PRIVATE_KEY"
+      : privateKeyLoadedFromPath
+      ? "GITHUB_APP_PRIVATE_KEY_PATH"
       : "GITHUB_APP_PRIVATE_KEY_PEM";
     throw new Error(`[worker] invalid ${invalidKeyVariableName} value: empty`);
   }

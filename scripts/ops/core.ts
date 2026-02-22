@@ -562,9 +562,10 @@ function resolveTaskOptions(taskIdentifier: string): StartCommandOptions {
  * Ensures a task file exists for the provided task options.
  *
  * @param options - Inputs used to resolve and create the task file.
+ * @param existingTaskBody - Existing task file body when already read by caller.
  * @returns Absolute path to the task file.
  */
-function ensureTaskFile(options: StartCommandOptions): string {
+function ensureTaskFile(options: StartCommandOptions, existingTaskBody?: string): string {
   try {
     if (!existsSync(taskTemplatePath)) {
       fail(`ensureTaskFile(${options.taskIdentifier}, ${options.branchName}): missing template at ${taskTemplatePath}`);
@@ -575,15 +576,16 @@ function ensureTaskFile(options: StartCommandOptions): string {
     const taskFilePath = resolve(tasksDirectoryPath, `${options.taskIdentifier}.md`);
     const templateBody = readFileSync(taskTemplatePath, "utf8");
     const backlogEntry = resolveBacklogEntry(options.taskIdentifier);
+    const taskFileExists = existsSync(taskFilePath);
 
-    if (!existsSync(taskFilePath)) {
+    if (!taskFileExists) {
       const preparedBody = renderTaskFileBody(templateBody, options, backlogEntry);
       writeFileSync(taskFilePath, preparedBody, "utf8");
       return taskFilePath;
     }
 
-    const existingTaskBody = readFileSync(taskFilePath, "utf8");
-    if (hasPlaceholderGoal(existingTaskBody)) {
+    const taskBody = existingTaskBody ?? readFileSync(taskFilePath, "utf8");
+    if (hasPlaceholderGoal(taskBody)) {
       const preparedBody = renderTaskFileBody(templateBody, options, backlogEntry);
       writeFileSync(taskFilePath, preparedBody, "utf8");
     }
@@ -758,10 +760,10 @@ function loadTaskFile(taskIdentifier: string): string {
     const existingTaskBody = taskFileExists ? readFileSync(taskFilePath, "utf8") : "";
     const shouldHydrateTaskFile = !taskFileExists || hasPlaceholderGoal(existingTaskBody);
     if (shouldHydrateTaskFile) {
-      ensureTaskFile(taskOptions);
+      ensureTaskFile(taskOptions, existingTaskBody);
     }
 
-    if (!existsSync(taskFilePath)) {
+    if (shouldHydrateTaskFile && !existsSync(taskFilePath)) {
       fail(
         `loadTaskFile(${taskIdentifier}) failed: task file not found after hydration at ${taskFilePath}`,
       );

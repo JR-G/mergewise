@@ -204,16 +204,13 @@ export function findAddedNodesWhere(
       )
       : null;
     const lineInfo = sourceLine ? parsedFile.addedLineMap.get(sourceLine.line) : undefined;
-    const finding = lineInfo
-      ? {
+    if (lineInfo) {
+      findings.push({
         node,
         lineNumber: lineInfo.lineNumber,
         evidence: lineInfo.evidence,
         hunkHeader: lineInfo.hunkHeader,
-      }
-      : null;
-    if (finding) {
-      findings.push(finding);
+      });
     }
 
     ts.forEachChild(node, visit);
