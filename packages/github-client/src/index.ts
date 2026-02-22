@@ -654,23 +654,18 @@ export async function fetchFileContent(
   const endpointUrl =
     `${apiBaseUrl}/repos/${encodeURIComponent(options.owner)}` +
     `/${encodeURIComponent(options.repository)}` +
-    `/contents/${options.path}` +
+    `/contents/${options.path.split("/").map(encodeURIComponent).join("/")}` +
     `?ref=${encodeURIComponent(options.ref)}`;
 
-  let response: Response;
-  try {
-    response = await fetch(endpointUrl, {
-      method: "GET",
-      headers: buildHeaders({
-        authorization: `Bearer ${options.installationAccessToken}`,
-        userAgent: options.userAgent,
-        traceId: options.traceId,
-      }),
-      signal: AbortSignal.timeout(requestTimeoutMs),
-    });
-  } catch (error) {
-    throw error;
-  }
+  const response = await fetch(endpointUrl, {
+    method: "GET",
+    headers: buildHeaders({
+      authorization: `Bearer ${options.installationAccessToken}`,
+      userAgent: options.userAgent,
+      traceId: options.traceId,
+    }),
+    signal: AbortSignal.timeout(requestTimeoutMs),
+  });
 
   if (response.status === 404) {
     return null;

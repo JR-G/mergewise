@@ -1408,7 +1408,7 @@ export async function processAnalyzePullRequestJob(
   const warnLogger = dependencies.logWarn ?? infoLogger;
   const llmConfig = (dependencies.mergewiseConfig ?? DEFAULT_MERGEWISE_CONFIG).llm;
   const llmApiKey = process.env["LLM_API_KEY"];
-  const llmEnabled = llmConfig.enabled || (llmApiKey !== undefined && llmApiKey.length > 0);
+  const llmEnabled = llmConfig.enabled && llmApiKey !== undefined && llmApiKey.length > 0;
 
   const baseLlmRules: readonly Rule[] = llmEnabled && llmApiKey
     ? [
@@ -1468,6 +1468,7 @@ export async function processAnalyzePullRequestJob(
             apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
             userAgent: githubFetchOptions.githubUserAgent,
             requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+            traceId,
           }),
       }
     : undefined;

@@ -257,7 +257,7 @@ describe("parseLlmResponse", () => {
     });
 
     const result = parseLlmResponse(raw, diff, PR_METADATA);
-    expect(result[0]!.findingId).toBe("llm/reviewer:acme/widget:42:src/file.ts:3");
+    expect(result[0]!.findingId).toBe("llm/reviewer:acme/widget:42:src/file.ts:3:0");
   });
 });
 
@@ -429,7 +429,7 @@ describe("ReviewClient (via fake HTTP server)", () => {
     expect(lastRequestBody).not.toBeNull();
     expect(lastRequestBody!["model"]).toBe("test-model");
     expect(lastRequestBody!["temperature"]).toBe(0.2);
-    expect(lastRequestBody!["max_tokens"]).toBe(1024);
+    expect(lastRequestBody!["max_completion_tokens"]).toBe(1024);
 
     const messages = lastRequestBody!["messages"] as Array<{ role: string; content: string }>;
     expect(messages).toHaveLength(2);

@@ -26,17 +26,21 @@ export async function reviewFile(
   codebaseContext: CodebaseContext,
   client: ReviewClient,
 ): Promise<Finding[]> {
-  const fullContent = await codebaseContext.readFile(fileDiff.filePath);
-  const signals = extractStructuralSignals(fileDiff);
+  try {
+    const fullContent = await codebaseContext.readFile(fileDiff.filePath);
+    const signals = extractStructuralSignals(fileDiff);
 
-  const systemPrompt = buildSystemPrompt();
-  const userPrompt = buildFileReviewPrompt(fileDiff, fullContent, signals);
+    const systemPrompt = buildSystemPrompt();
+    const userPrompt = buildFileReviewPrompt(fileDiff, fullContent, signals);
 
-  const rawResponse = await client.complete(
-    systemPrompt,
-    userPrompt,
-    MAX_RESPONSE_TOKENS,
-  );
+    const rawResponse = await client.complete(
+      systemPrompt,
+      userPrompt,
+      MAX_RESPONSE_TOKENS,
+    );
 
-  return parseLlmResponse(rawResponse, fileDiff, pullRequest);
+    return parseLlmResponse(rawResponse, fileDiff, pullRequest);
+  } catch {
+    return [];
+  }
 }

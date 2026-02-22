@@ -91,13 +91,14 @@ export function parseLlmResponse(
   const addedLines = extractAddedLineNumbers(diff);
   const findings: Finding[] = [];
 
-  for (const rawFinding of parsed.findings) {
+  for (let findingIndex = 0; findingIndex < parsed.findings.length; findingIndex += 1) {
+    const rawFinding = parsed.findings[findingIndex]!;
     if (!isValidRawFinding(rawFinding, addedLines)) {
       continue;
     }
 
     findings.push({
-      findingId: `llm/reviewer:${pullRequest.repo}:${pullRequest.prNumber}:${diff.filePath}:${rawFinding.line}`,
+      findingId: `llm/reviewer:${pullRequest.repo}:${pullRequest.prNumber}:${diff.filePath}:${rawFinding.line}:${findingIndex}`,
       installationId: pullRequest.installationId,
       repo: pullRequest.repo,
       prNumber: pullRequest.prNumber,

@@ -30,7 +30,9 @@ export interface MergewiseLlmConfigV1 {
    * Whether LLM review is enabled.
    *
    * @remarks
-   * Defaults to `true` when the `LLM_API_KEY` environment variable is set.
+   * Defaults to `false`. Must be explicitly set to `true` in config, and
+   * the `LLM_API_KEY` environment variable must also be set for the
+   * reviewer to activate.
    */
   enabled: boolean;
   /**

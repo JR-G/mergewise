@@ -68,13 +68,17 @@ export function createLlmReviewerRule(
       const allFindings: Finding[] = [];
 
       for (const fileDiff of selectedFiles) {
-        const findings = await reviewFile(
-          fileDiff,
-          context.pullRequest,
-          codebaseContext,
-          client,
-        );
-        allFindings.push(...findings);
+        try {
+          const findings = await reviewFile(
+            fileDiff,
+            context.pullRequest,
+            codebaseContext,
+            client,
+          );
+          allFindings.push(...findings);
+        } catch {
+          continue;
+        }
       }
 
       return allFindings;

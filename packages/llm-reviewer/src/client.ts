@@ -52,7 +52,7 @@ export class ReviewClient {
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      max_tokens: maxTokens,
+      max_completion_tokens: maxTokens,
       temperature: 0.2,
       response_format: { type: "json_object" },
     });
