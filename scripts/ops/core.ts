@@ -563,9 +563,14 @@ function resolveTaskOptions(taskIdentifier: string): StartCommandOptions {
  *
  * @param options - Inputs used to resolve and create the task file.
  * @param existingTaskBody - Existing task file body when already read by caller.
+ * @param taskFileExists - Existing task file presence when already determined by caller.
  * @returns Absolute path to the task file.
  */
-function ensureTaskFile(options: StartCommandOptions, existingTaskBody?: string): string {
+function ensureTaskFile(
+  options: StartCommandOptions,
+  existingTaskBody?: string,
+  taskFileExists?: boolean,
+): string {
   try {
     if (!existsSync(taskTemplatePath)) {
       fail(`ensureTaskFile(${options.taskIdentifier}, ${options.branchName}): missing template at ${taskTemplatePath}`);
@@ -576,9 +581,9 @@ function ensureTaskFile(options: StartCommandOptions, existingTaskBody?: string)
     const taskFilePath = resolve(tasksDirectoryPath, `${options.taskIdentifier}.md`);
     const templateBody = readFileSync(taskTemplatePath, "utf8");
     const backlogEntry = resolveBacklogEntry(options.taskIdentifier);
-    const taskFileExists = existsSync(taskFilePath);
+    const resolvedTaskFileExists = taskFileExists ?? existsSync(taskFilePath);
 
-    if (!taskFileExists) {
+    if (!resolvedTaskFileExists) {
       const preparedBody = renderTaskFileBody(templateBody, options, backlogEntry);
       writeFileSync(taskFilePath, preparedBody, "utf8");
       return taskFilePath;
@@ -760,7 +765,7 @@ function loadTaskFile(taskIdentifier: string): string {
     const existingTaskBody = taskFileExists ? readFileSync(taskFilePath, "utf8") : "";
     const shouldHydrateTaskFile = !taskFileExists || hasPlaceholderGoal(existingTaskBody);
     if (shouldHydrateTaskFile) {
-      ensureTaskFile(taskOptions, existingTaskBody);
+      ensureTaskFile(taskOptions, existingTaskBody, taskFileExists);
     }
 
     if (shouldHydrateTaskFile && !existsSync(taskFilePath)) {

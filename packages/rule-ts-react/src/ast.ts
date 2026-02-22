@@ -198,12 +198,12 @@ export function findAddedNodesWhere(
 
   const visit = (node: ts.Node): void => {
     const matchesPredicate = predicate(node);
-    const sourceLine = matchesPredicate
+    const lineAndChar = matchesPredicate
       ? parsedFile.sourceFile.getLineAndCharacterOfPosition(
         node.getStart(parsedFile.sourceFile),
       )
       : null;
-    const lineInfo = sourceLine ? parsedFile.addedLineMap.get(sourceLine.line) : undefined;
+    const lineInfo = lineAndChar ? parsedFile.addedLineMap.get(lineAndChar.line) : undefined;
     if (lineInfo) {
       findings.push({
         node,
