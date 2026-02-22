@@ -257,7 +257,7 @@ describe("parseLlmResponse", () => {
     });
 
     const result = parseLlmResponse(raw, diff, PR_METADATA);
-    expect(result[0]!.findingId).toBe("llm/reviewer:acme/widget:42:src/file.ts:3:0");
+    expect(result[0]!.findingId).toBe("llm/reviewer:acme/widget:42:src/file.ts:3:safety");
   });
 });
 

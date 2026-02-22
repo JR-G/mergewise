@@ -5,12 +5,12 @@ import type {
   PullRequestMetadata,
 } from "@mergewise/shared-types";
 
-const VALID_CATEGORIES: ReadonlySet<string> = new Set([
+const VALID_CATEGORIES = new Set<FindingCategory>([
   "clean",
   "perf",
   "safety",
   "idiomatic",
-]);
+]) satisfies ReadonlySet<FindingCategory>;
 
 /**
  * Raw finding shape expected from the LLM response.
@@ -98,7 +98,7 @@ export function parseLlmResponse(
     }
 
     findings.push({
-      findingId: `llm/reviewer:${pullRequest.repo}:${pullRequest.prNumber}:${diff.filePath}:${rawFinding.line}:${findingIndex}`,
+      findingId: `llm/reviewer:${pullRequest.repo}:${pullRequest.prNumber}:${diff.filePath}:${rawFinding.line}:${rawFinding.category}`,
       installationId: pullRequest.installationId,
       repo: pullRequest.repo,
       prNumber: pullRequest.prNumber,
@@ -120,36 +120,38 @@ export function parseLlmResponse(
 
 function isLlmResponse(value: unknown): value is LlmResponse {
   if (typeof value !== "object" || value === null) return false;
-  const obj = value as Record<string, unknown>;
-  return Array.isArray(obj["findings"]);
+  const candidate = value as Record<string, unknown>;
+  return Array.isArray(candidate["findings"]);
 }
 
 function isValidRawFinding(
-  finding: RawLlmFinding,
+  finding: unknown,
   addedLines: Set<number>,
-): boolean {
-  if (typeof finding.line !== "number" || !Number.isInteger(finding.line)) {
+): finding is RawLlmFinding {
+  if (typeof finding !== "object" || finding === null) return false;
+  const candidate = finding as Record<string, unknown>;
+  if (typeof candidate.line !== "number" || !Number.isInteger(candidate.line)) {
     return false;
   }
-  if (!addedLines.has(finding.line)) {
+  if (!addedLines.has(candidate.line)) {
     return false;
   }
-  if (!VALID_CATEGORIES.has(finding.category)) {
+  if (typeof candidate.category !== "string" || !(VALID_CATEGORIES as ReadonlySet<string>).has(candidate.category)) {
     return false;
   }
   if (
-    typeof finding.confidence !== "number" ||
-    finding.confidence < 0 ||
-    finding.confidence > 1
+    typeof candidate.confidence !== "number" ||
+    candidate.confidence < 0 ||
+    candidate.confidence > 1
   ) {
     return false;
   }
-  if (typeof finding.evidence !== "string" || finding.evidence.length === 0) {
+  if (typeof candidate.evidence !== "string" || candidate.evidence.length === 0) {
     return false;
   }
   if (
-    typeof finding.recommendation !== "string" ||
-    finding.recommendation.length === 0
+    typeof candidate.recommendation !== "string" ||
+    candidate.recommendation.length === 0
   ) {
     return false;
   }
