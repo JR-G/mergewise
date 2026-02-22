@@ -1463,18 +1463,30 @@ export async function processAnalyzePullRequestJob(
     ? {
         symbols: [],
         conventions: new Map<string, string>(),
-        readFile: (relativePath: string) =>
-          fetchFileContent({
-            owner: githubAnalysisContext.owner,
-            repository: githubAnalysisContext.repository,
-            path: relativePath,
-            ref: job.head_sha,
-            installationAccessToken: githubAnalysisContext.installationAccessToken,
-            apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
-            userAgent: githubFetchOptions.githubUserAgent,
-            requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
-            traceId,
-          }),
+        readFile: async (relativePath: string) => {
+          try {
+            return await fetchFileContent({
+              owner: githubAnalysisContext.owner,
+              repository: githubAnalysisContext.repository,
+              path: relativePath,
+              ref: job.head_sha,
+              installationAccessToken: githubAnalysisContext.installationAccessToken,
+              apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+              userAgent: githubFetchOptions.githubUserAgent,
+              requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+              traceId,
+            });
+          } catch (caughtError) {
+            const detail = caughtError instanceof Error ? caughtError.message : String(caughtError);
+            warnLogger(
+              `[worker] readFile failed trace=${traceId} job=${job.job_id} file=${relativePath} ref=${job.head_sha} repo=${githubAnalysisContext.owner}/${githubAnalysisContext.repository}: ${detail}`,
+            );
+            throw new Error(
+              `Failed to read ${relativePath} at ${job.head_sha} for ${githubAnalysisContext.owner}/${githubAnalysisContext.repository}`,
+              { cause: caughtError },
+            );
+          }
+        },
       }
     : undefined;
 
