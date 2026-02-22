@@ -30,4 +30,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add bun.lock
           git commit -m "chore(deps): sync bun lockfile"
-          git push origin HEAD:${{ github.head_ref }}
+          git push origin "HEAD:${BRANCH_REF}"
+        env:
+          BRANCH_REF: ${{ github.head_ref }}
