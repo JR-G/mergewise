@@ -364,6 +364,7 @@ describe("startWorkerProcess", () => {
     const registeredSignalHandlers: ((signal: WorkerShutdownSignal) => void)[] = [];
     const exitCodes: number[] = [];
 
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- SignalsListener is the correct type for this mock
     process.on = ((signal: NodeJS.Signals, listener: NodeJS.SignalsListener) => {
       registeredSignals.push(signal as WorkerShutdownSignal);
       registeredSignalHandlers.push(listener as (signal: WorkerShutdownSignal) => void);

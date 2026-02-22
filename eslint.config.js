@@ -72,7 +72,6 @@ export default [
       "@typescript-eslint/no-empty-function": "off",
       "@typescript-eslint/no-confusing-void-expression": "off",
       "@typescript-eslint/unbound-method": "off",
-      "@typescript-eslint/no-deprecated": "off",
     },
   },
 ];
