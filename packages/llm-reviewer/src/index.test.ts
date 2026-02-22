@@ -26,7 +26,7 @@ function makeDiff(filePath: string, hunks: DiffHunk[]): FileDiff {
   return { filePath, previousPath: null, hunks };
 }
 
-const PR_METADATA: PullRequestMetadata = {
+const PULL_REQUEST_METADATA: PullRequestMetadata = {
   repo: "acme/widget",
   prNumber: 42,
   headSha: "abc123",
@@ -95,15 +95,15 @@ describe("selectFilesForReview", () => {
   });
 
   test("respects token budget", () => {
-    const file1 = makeDiff("src/a.ts", [makeHunk("@@ -0,0 +1,10 @@", Array.from({ length: 10 }, (_, idx) => `+line${idx}`))]);
-    const file2 = makeDiff("src/b.ts", [makeHunk("@@ -0,0 +1,10 @@", Array.from({ length: 10 }, (_, idx) => `+line${idx}`))]);
+    const file1 = makeDiff("src/a.ts", [makeHunk("@@ -0,0 +1,10 @@", Array.from({ length: 10 }, (_unused, index) => `+line${index}`))]);
+    const file2 = makeDiff("src/b.ts", [makeHunk("@@ -0,0 +1,10 @@", Array.from({ length: 10 }, (_unused, index) => `+line${index}`))]);
 
     const result = selectFilesForReview([file1, file2], 44);
     expect(result).toHaveLength(1);
   });
 
   test("always includes at least one file even if it exceeds budget", () => {
-    const bigFile = makeDiff("src/big.ts", [makeHunk("@@ -0,0 +1,100 @@", Array.from({ length: 100 }, (_, idx) => `+line${idx}`))]);
+    const bigFile = makeDiff("src/big.ts", [makeHunk("@@ -0,0 +1,100 @@", Array.from({ length: 100 }, (_unused, index) => `+line${index}`))]);
 
     const result = selectFilesForReview([bigFile], 10);
     expect(result).toHaveLength(1);
@@ -165,7 +165,7 @@ describe("parseLlmResponse", () => {
       ],
     });
 
-    const result = parseLlmResponse(raw, diff, PR_METADATA);
+    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
     expect(result).toHaveLength(1);
     expect(result[0]!.line).toBe(2);
     expect(result[0]!.category).toBe("idiomatic");
@@ -195,7 +195,7 @@ describe("parseLlmResponse", () => {
       ],
     });
 
-    const result = parseLlmResponse(raw, diff, PR_METADATA);
+    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
     expect(result).toHaveLength(0);
   });
 
@@ -212,7 +212,7 @@ describe("parseLlmResponse", () => {
       ],
     });
 
-    const result = parseLlmResponse(raw, diff, PR_METADATA);
+    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
     expect(result).toHaveLength(0);
   });
 
@@ -229,17 +229,17 @@ describe("parseLlmResponse", () => {
       ],
     });
 
-    const result = parseLlmResponse(raw, diff, PR_METADATA);
+    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
     expect(result).toHaveLength(0);
   });
 
   test("returns empty array for malformed JSON", () => {
-    const result = parseLlmResponse("not json at all", diff, PR_METADATA);
+    const result = parseLlmResponse("not json at all", diff, PULL_REQUEST_METADATA);
     expect(result).toHaveLength(0);
   });
 
   test("returns empty array for missing findings key", () => {
-    const result = parseLlmResponse('{"comments": []}', diff, PR_METADATA);
+    const result = parseLlmResponse('{"comments": []}', diff, PULL_REQUEST_METADATA);
     expect(result).toHaveLength(0);
   });
 
@@ -256,7 +256,7 @@ describe("parseLlmResponse", () => {
       ],
     });
 
-    const result = parseLlmResponse(raw, diff, PR_METADATA);
+    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
     expect(result[0]!.findingId).toBe("llm/reviewer:acme/widget:42:src/file.ts:3:safety");
   });
 });
@@ -401,8 +401,15 @@ describe("ReviewClient (via fake HTTP server)", () => {
     server = Bun.serve({
       port: 0,
       fetch: async (request) => {
-        const body = await request.json() as Record<string, unknown>;
-        lastRequestBody = body;
+        try {
+          lastRequestBody = await request.json() as Record<string, unknown>;
+        } catch {
+          lastRequestBody = null;
+          return new Response(JSON.stringify({ error: "invalid json" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
         return new Response(buildCompletionResponse(responseContent), {
           headers: { "Content-Type": "application/json" },
         });
@@ -545,7 +552,7 @@ describe("reviewFile (via fake HTTP server)", () => {
       "src/app.ts": "const data = fetch()\nconst info = parse(data)\nexport default info",
     });
 
-    const findings = await reviewFile(diff, PR_METADATA, codebaseContext, client);
+    const findings = await reviewFile(diff, PULL_REQUEST_METADATA, codebaseContext, client);
 
     expect(findings).toHaveLength(1);
     expect(findings[0]!.line).toBe(1);
@@ -571,7 +578,7 @@ describe("reviewFile (via fake HTTP server)", () => {
       maxRetries: 0,
     });
 
-    const findings = await reviewFile(diff, PR_METADATA, makeMockCodebaseContext(), client);
+    const findings = await reviewFile(diff, PULL_REQUEST_METADATA, makeMockCodebaseContext(), client);
     expect(findings).toHaveLength(0);
   });
 
@@ -593,7 +600,7 @@ describe("reviewFile (via fake HTTP server)", () => {
       maxRetries: 0,
     });
 
-    const findings = await reviewFile(diff, PR_METADATA, makeMockCodebaseContext(), client);
+    const findings = await reviewFile(diff, PULL_REQUEST_METADATA, makeMockCodebaseContext(), client);
     expect(findings).toHaveLength(0);
   });
 
@@ -612,7 +619,7 @@ describe("reviewFile (via fake HTTP server)", () => {
     });
 
     const emptyContext = makeMockCodebaseContext();
-    const findings = await reviewFile(diff, PR_METADATA, emptyContext, client);
+    const findings = await reviewFile(diff, PULL_REQUEST_METADATA, emptyContext, client);
     expect(findings).toHaveLength(0);
   });
 });
@@ -639,7 +646,7 @@ describe("createLlmReviewerRule", () => {
         makeDiff("README.md", [makeHunk("@@ -0,0 +1,1 @@", ["+# Hello"])]),
         makeDiff("src/app.test.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+test()"])]),
       ],
-      pullRequest: PR_METADATA,
+      pullRequest: PULL_REQUEST_METADATA,
     };
 
     const codebaseContext = makeMockCodebaseContext();
@@ -686,7 +693,7 @@ describe("createLlmReviewerRule", () => {
           ]),
         ]),
       ],
-      pullRequest: PR_METADATA,
+      pullRequest: PULL_REQUEST_METADATA,
     };
 
     const codebaseContext = makeMockCodebaseContext({
@@ -706,18 +713,18 @@ describe("createLlmReviewerRule", () => {
   });
 
   test("reviews multiple files and flattens findings", async () => {
-    let callCount = 0;
     const server = Bun.serve({
       port: 0,
-      fetch: () => {
-        callCount += 1;
-        const findingsForCall =
-          callCount === 1
-            ? [{ line: 1, category: "idiomatic", confidence: 0.8, evidence: "a", recommendation: "fix a" }]
-            : [{ line: 1, category: "safety", confidence: 0.9, evidence: "b", recommendation: "fix b" }];
+      fetch: async (request) => {
+        const body = await request.json() as { messages?: { content?: string }[] };
+        const userMessage = body.messages?.find((msg) => msg.content?.includes("## File:"))?.content ?? "";
+        const isFileA = userMessage.includes("## File: src/a.ts");
+        const findingsForFile = isFileA
+          ? [{ line: 1, category: "idiomatic", confidence: 0.8, evidence: "a", recommendation: "fix a" }]
+          : [{ line: 1, category: "safety", confidence: 0.9, evidence: "b", recommendation: "fix b" }];
 
         return new Response(
-          buildCompletionResponse(JSON.stringify({ findings: findingsForCall })),
+          buildCompletionResponse(JSON.stringify({ findings: findingsForFile })),
           { headers: { "Content-Type": "application/json" } },
         );
       },
@@ -736,14 +743,15 @@ describe("createLlmReviewerRule", () => {
         makeDiff("src/a.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const aa = 1"])]),
         makeDiff("src/b.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const bb = 2"])]),
       ],
-      pullRequest: PR_METADATA,
+      pullRequest: PULL_REQUEST_METADATA,
     };
 
     const findings = await rule.analyse(context, makeMockCodebaseContext());
 
     expect(findings).toHaveLength(2);
-    expect(findings[0]!.filePath).toBe("src/a.ts");
-    expect(findings[1]!.filePath).toBe("src/b.ts");
+    const filePaths = findings.map((finding) => finding.filePath);
+    expect(filePaths).toContain("src/a.ts");
+    expect(filePaths).toContain("src/b.ts");
 
     await server.stop(true);
   });
@@ -767,7 +775,7 @@ describe("createLlmReviewerRule", () => {
       diffs: [
         makeDiff("src/fail.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const x = 1"])]),
       ],
-      pullRequest: PR_METADATA,
+      pullRequest: PULL_REQUEST_METADATA,
     };
 
     const findings = await rule.analyse(context, makeMockCodebaseContext());
@@ -816,7 +824,7 @@ describe("createLlmReviewerRule", () => {
         makeDiff("src/fail.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const x = 1"])]),
         makeDiff("src/pass.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const y = 2"])]),
       ],
-      pullRequest: PR_METADATA,
+      pullRequest: PULL_REQUEST_METADATA,
     };
 
     const findings = await rule.analyse(context, makeMockCodebaseContext());

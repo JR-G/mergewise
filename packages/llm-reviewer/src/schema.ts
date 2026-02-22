@@ -45,7 +45,9 @@ export function extractAddedLineNumbers(diff: FileDiff): Set<number> {
 
     let currentLine = parseInt(match[1]!, 10);
     for (const line of hunk.lines) {
-      if (line.startsWith("+")) {
+      if (line.startsWith("\\")) {
+        continue;
+      } else if (line.startsWith("+")) {
         added.add(currentLine);
         currentLine += 1;
       } else if (line.startsWith("-")) {
