@@ -154,16 +154,17 @@ async function executeSingleRule(
   context: AnalysisContext,
   codebaseContext: CodebaseContext | undefined,
 ): Promise<readonly Finding[]> {
-  if (rule.kind === "codebase-aware") {
-    if (!codebaseContext) {
-      throw new Error(
-        `Rule ${rule.metadata.ruleId} requires codebaseContext but none was provided.`,
-      );
-    }
-    return rule.analyse(context, codebaseContext);
+  if (rule.kind !== "codebase-aware") {
+    return rule.analyse(context);
   }
 
-  return rule.analyse(context);
+  if (!codebaseContext) {
+    throw new Error(
+      `Rule ${rule.metadata.ruleId} requires codebaseContext but none was provided.`,
+    );
+  }
+
+  return rule.analyse(context, codebaseContext);
 }
 
 function enforcePatchSuggestionPolicy(finding: Finding): Finding {

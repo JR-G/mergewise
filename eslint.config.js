@@ -35,7 +35,7 @@ export default [
         { terms: ["todo", "fixme", "xxx"], location: "anywhere" },
       ],
       "no-restricted-syntax": [
-        "warn",
+        "error",
         {
           selector:
             "IfStatement IfStatement:not(:matches(IfStatement > IfStatement.alternate))",

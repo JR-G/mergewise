@@ -2193,18 +2193,17 @@ function parsePatchToDiffHunks(patch: string | undefined): readonly DiffHunk[] {
   let currentLines: string[] = [];
 
   for (const line of lines) {
-    if (line.startsWith("@@")) {
-      if (currentHeader !== null) {
-        hunks.push({ header: currentHeader, lines: currentLines });
-      }
-      currentHeader = line;
-      currentLines = [];
+    if (!line.startsWith("@@")) {
+      const shouldAppendCurrentLine = currentHeader !== null;
+      currentLines = shouldAppendCurrentLine ? [...currentLines, line] : currentLines;
       continue;
     }
 
     if (currentHeader !== null) {
-      currentLines.push(line);
+      hunks.push({ header: currentHeader, lines: currentLines });
     }
+    currentHeader = line;
+    currentLines = [];
   }
 
   if (currentHeader !== null) {
@@ -2280,11 +2279,10 @@ function loadGitHubAppCredentials(): Readonly<{ appId: number; privateKeyPem: st
 
   const privateKeyPem = privateKeyRaw.replace(/\\n/g, "\n").trim();
   if (!privateKeyPem) {
-    if (preferredPrivateKeyRaw !== undefined) {
-      throw new Error("[worker] invalid GITHUB_APP_PRIVATE_KEY value: empty");
-    }
-
-    throw new Error("[worker] invalid GITHUB_APP_PRIVATE_KEY_PEM value: empty");
+    const invalidKeyVariableName = preferredPrivateKeyRaw !== undefined
+      ? "GITHUB_APP_PRIVATE_KEY"
+      : "GITHUB_APP_PRIVATE_KEY_PEM";
+    throw new Error(`[worker] invalid ${invalidKeyVariableName} value: empty`);
   }
 
   return { appId, privateKeyPem };

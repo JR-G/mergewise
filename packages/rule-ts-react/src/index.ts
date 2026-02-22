@@ -109,40 +109,43 @@ export const nonNullAssertionRule: StatelessRule = {
       const seen = new Set<number>();
 
       const visit = (node: ts.Node): void => {
-        if (ts.isNonNullExpression(node)) {
-          const lineInfo = isOnAddedLine(parsedFile, node);
-          if (lineInfo && !seen.has(lineInfo.lineNumber)) {
-            if (isDefiniteAssignmentContext(node)) {
-              ts.forEachChild(node, visit);
-              return;
-            }
-            seen.add(lineInfo.lineNumber);
-            const scriptKind = TYPE_SCRIPT_JSX_FILE_PATTERN.test(parsedFile.filePath)
-              ? ts.ScriptKind.TSX
-              : ts.ScriptKind.TS;
-            const replacementLine = buildNonNullAssertionReplacement(
-              lineInfo.evidence,
-              scriptKind,
-            );
-            const patchPreview = replacementLine
-              ? buildPatchPreview(lineInfo.hunkHeader, lineInfo.evidence, replacementLine)
-              : undefined;
-
-            findings.push(
-              buildFinding(context, {
-                ruleId: NON_NULL_ASSERTION_RULE_IDENTIFIER,
-                category: "safety",
-                filePath: parsedFile.filePath,
-                line: lineInfo.lineNumber,
-                evidence: lineInfo.evidence,
-                recommendation:
-                  "Avoid non-null assertions. Add an explicit null guard or narrow the value before access so runtime null cases stay safe.",
-                patchPreview,
-                confidence: 0.92,
-              }),
-            );
-          }
+        if (!ts.isNonNullExpression(node)) {
+          ts.forEachChild(node, visit);
+          return;
         }
+
+        const lineInfo = isOnAddedLine(parsedFile, node);
+        if (!lineInfo || seen.has(lineInfo.lineNumber) || isDefiniteAssignmentContext(node)) {
+          ts.forEachChild(node, visit);
+          return;
+        }
+
+        seen.add(lineInfo.lineNumber);
+        const scriptKind = TYPE_SCRIPT_JSX_FILE_PATTERN.test(parsedFile.filePath)
+          ? ts.ScriptKind.TSX
+          : ts.ScriptKind.TS;
+        const replacementLine = buildNonNullAssertionReplacement(
+          lineInfo.evidence,
+          scriptKind,
+        );
+        const patchPreview = replacementLine
+          ? buildPatchPreview(lineInfo.hunkHeader, lineInfo.evidence, replacementLine)
+          : undefined;
+
+        findings.push(
+          buildFinding(context, {
+            ruleId: NON_NULL_ASSERTION_RULE_IDENTIFIER,
+            category: "safety",
+            filePath: parsedFile.filePath,
+            line: lineInfo.lineNumber,
+            evidence: lineInfo.evidence,
+            recommendation:
+              "Avoid non-null assertions. Add an explicit null guard or narrow the value before access so runtime null cases stay safe.",
+            patchPreview,
+            confidence: 0.92,
+          }),
+        );
+
         ts.forEachChild(node, visit);
       };
 
@@ -618,13 +621,11 @@ function stripNonCodeContent(sourceLine: string, lineScanState: LineScanState): 
     const nextCharacter = sourceLine[cursorIndex + 1];
 
     if (lineScanState.insideBlockComment) {
-      if (currentCharacter === "*" && nextCharacter === "/") {
-        lineScanState.insideBlockComment = false;
-        cursorIndex += 2;
-        continue;
-      }
-
-      cursorIndex += 1;
+      const closesBlockComment = currentCharacter === "*" && nextCharacter === "/";
+      lineScanState.insideBlockComment = closesBlockComment
+        ? false
+        : lineScanState.insideBlockComment;
+      cursorIndex += closesBlockComment ? 2 : 1;
       continue;
     }
 

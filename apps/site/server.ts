@@ -55,16 +55,15 @@ Bun.serve({
       const fileHandle = Bun.file(filePath);
 
       if (!(await fileHandle.exists())) {
-        if (requestUrl.pathname !== "/") {
-          const fallbackHandle = Bun.file(join(siteRootPath, defaultFileName));
-          if (await fallbackHandle.exists()) {
-            return new Response(fallbackHandle, {
-              headers: { "content-type": "text/html; charset=utf-8" },
-            });
-          }
-        }
-
-        return buildNotFoundResponse();
+        const fallbackHandle = requestUrl.pathname === "/"
+          ? null
+          : Bun.file(join(siteRootPath, defaultFileName));
+        const fallbackExists = fallbackHandle ? await fallbackHandle.exists() : false;
+        return fallbackHandle && fallbackExists
+          ? new Response(fallbackHandle, {
+            headers: { "content-type": "text/html; charset=utf-8" },
+          })
+          : buildNotFoundResponse();
       }
 
       return new Response(fileHandle, {

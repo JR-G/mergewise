@@ -197,20 +197,25 @@ export function findAddedNodesWhere(
   const findings: AstFinding[] = [];
 
   const visit = (node: ts.Node): void => {
-    if (predicate(node)) {
-      const sourceLine = parsedFile.sourceFile.getLineAndCharacterOfPosition(
-        node.getStart(parsedFile.sourceFile),
-      );
-      const lineInfo = parsedFile.addedLineMap.get(sourceLine.line);
-      if (lineInfo) {
-        findings.push({
-          node,
-          lineNumber: lineInfo.lineNumber,
-          evidence: lineInfo.evidence,
-          hunkHeader: lineInfo.hunkHeader,
-        });
-      }
+    const matchesPredicate = predicate(node);
+    if (!matchesPredicate) {
+      ts.forEachChild(node, visit);
+      return;
     }
+
+    const sourceLine = parsedFile.sourceFile.getLineAndCharacterOfPosition(
+      node.getStart(parsedFile.sourceFile),
+    );
+    const lineInfo = parsedFile.addedLineMap.get(sourceLine.line);
+    if (lineInfo) {
+      findings.push({
+        node,
+        lineNumber: lineInfo.lineNumber,
+        evidence: lineInfo.evidence,
+        hunkHeader: lineInfo.hunkHeader,
+      });
+    }
+
     ts.forEachChild(node, visit);
   };
 

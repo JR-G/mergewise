@@ -282,34 +282,32 @@ function applyGating(
   }
 
   const confidenceThreshold = rawConfig.gating.confidenceThreshold;
-  if (confidenceThreshold !== undefined) {
-    if (typeof confidenceThreshold !== "number" || Number.isNaN(confidenceThreshold)) {
-      throw new MergewiseConfigValidationError(filePath, "gating.confidenceThreshold must be a number");
-    }
-
-    if (confidenceThreshold < 0 || confidenceThreshold > 1) {
-      throw new MergewiseConfigValidationError(
-        filePath,
-        "gating.confidenceThreshold must be between 0 and 1",
-      );
-    }
-
+  const hasConfidenceThreshold = confidenceThreshold !== undefined;
+  if (hasConfidenceThreshold && (typeof confidenceThreshold !== "number" || Number.isNaN(confidenceThreshold))) {
+    throw new MergewiseConfigValidationError(filePath, "gating.confidenceThreshold must be a number");
+  }
+  if (hasConfidenceThreshold && (confidenceThreshold < 0 || confidenceThreshold > 1)) {
+    throw new MergewiseConfigValidationError(
+      filePath,
+      "gating.confidenceThreshold must be between 0 and 1",
+    );
+  }
+  if (hasConfidenceThreshold) {
     normalizedConfig.gating.confidenceThreshold = confidenceThreshold;
   }
 
   const maxComments = rawConfig.gating.maxComments;
-  if (maxComments !== undefined) {
-    if (
-      typeof maxComments !== "number" ||
-      !Number.isInteger(maxComments) ||
-      maxComments < 1
-    ) {
-      throw new MergewiseConfigValidationError(
-        filePath,
-        "gating.maxComments must be an integer greater than or equal to 1",
-      );
-    }
-
+  const hasMaxComments = maxComments !== undefined;
+  if (
+    hasMaxComments &&
+    (typeof maxComments !== "number" || !Number.isInteger(maxComments) || maxComments < 1)
+  ) {
+    throw new MergewiseConfigValidationError(
+      filePath,
+      "gating.maxComments must be an integer greater than or equal to 1",
+    );
+  }
+  if (hasMaxComments) {
     normalizedConfig.gating.maxComments = maxComments;
   }
 }
@@ -350,41 +348,44 @@ function applyLlm(
   }
 
   const enabled = rawConfig.llm.enabled;
-  if (enabled !== undefined) {
-    if (typeof enabled !== "boolean") {
-      throw new MergewiseConfigValidationError(filePath, "llm.enabled must be a boolean");
-    }
+  const hasEnabled = enabled !== undefined;
+  if (hasEnabled && typeof enabled !== "boolean") {
+    throw new MergewiseConfigValidationError(filePath, "llm.enabled must be a boolean");
+  }
+  if (hasEnabled) {
     normalizedConfig.llm.enabled = enabled;
   }
 
   const model = rawConfig.llm.model;
-  if (model !== undefined) {
-    if (typeof model !== "string" || !model.trim()) {
-      throw new MergewiseConfigValidationError(filePath, "llm.model must be a non-empty string");
-    }
+  const hasModel = model !== undefined;
+  if (hasModel && (typeof model !== "string" || !model.trim())) {
+    throw new MergewiseConfigValidationError(filePath, "llm.model must be a non-empty string");
+  }
+  if (hasModel) {
     normalizedConfig.llm.model = model.trim();
   }
 
   const tokenBudget = rawConfig.llm.tokenBudget;
-  if (tokenBudget !== undefined) {
-    if (
-      typeof tokenBudget !== "number" ||
-      !Number.isInteger(tokenBudget) ||
-      tokenBudget < 1000
-    ) {
-      throw new MergewiseConfigValidationError(
-        filePath,
-        "llm.tokenBudget must be an integer greater than or equal to 1000",
-      );
-    }
+  const hasTokenBudget = tokenBudget !== undefined;
+  if (
+    hasTokenBudget &&
+    (typeof tokenBudget !== "number" || !Number.isInteger(tokenBudget) || tokenBudget < 1000)
+  ) {
+    throw new MergewiseConfigValidationError(
+      filePath,
+      "llm.tokenBudget must be an integer greater than or equal to 1000",
+    );
+  }
+  if (hasTokenBudget) {
     normalizedConfig.llm.tokenBudget = tokenBudget;
   }
 
   const baseUrl = rawConfig.llm.baseUrl;
-  if (baseUrl !== undefined) {
-    if (typeof baseUrl !== "string" || !baseUrl.trim()) {
-      throw new MergewiseConfigValidationError(filePath, "llm.baseUrl must be a non-empty string");
-    }
+  const hasBaseUrl = baseUrl !== undefined;
+  if (hasBaseUrl && (typeof baseUrl !== "string" || !baseUrl.trim())) {
+    throw new MergewiseConfigValidationError(filePath, "llm.baseUrl must be a non-empty string");
+  }
+  if (hasBaseUrl) {
     normalizedConfig.llm.baseUrl = baseUrl.trim();
   }
 }

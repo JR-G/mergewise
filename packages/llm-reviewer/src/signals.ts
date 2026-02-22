@@ -91,16 +91,15 @@ export function extractStructuralSignals(diff: FileDiff): StructuralSignals {
         functionCount += 1;
 
         const paramMatch = PARAM_LIST_PATTERN.exec(content);
-        if (paramMatch?.[1]) {
-          const params = paramMatch[1].split(",").filter((param) => param.trim().length > 0);
-          if (params.length > maxParameterCount) {
-            maxParameterCount = params.length;
-          }
-        }
+        const parameterList = paramMatch?.[1];
+        const parameterCount = parameterList
+          ? parameterList.split(",").filter((param) => param.trim().length > 0).length
+          : 0;
+        maxParameterCount = Math.max(maxParameterCount, parameterCount);
 
-        if (inFunction && currentFunctionLineCount > maxFunctionLineCount) {
-          maxFunctionLineCount = currentFunctionLineCount;
-        }
+        maxFunctionLineCount = inFunction
+          ? Math.max(maxFunctionLineCount, currentFunctionLineCount)
+          : maxFunctionLineCount;
         inFunction = true;
         currentFunctionLineCount = 0;
         functionBraceDepth = 0;
@@ -112,19 +111,15 @@ export function extractStructuralSignals(diff: FileDiff): StructuralSignals {
         const openerCount = (content.match(/\{/g) ?? []).length;
         const closerCount = (content.match(/\}/g) ?? []).length;
         functionBraceDepth += openerCount - closerCount;
-        if (functionBraceDepth > 0) {
-          functionBraceDepthEverPositive = true;
-        }
-        if (
+        functionBraceDepthEverPositive = functionBraceDepthEverPositive || functionBraceDepth > 0;
+        const shouldCloseFunction: boolean =
           functionBraceDepth <= 0 &&
-          (currentFunctionLineCount > 1 || functionBraceDepthEverPositive)
-        ) {
-          if (currentFunctionLineCount > maxFunctionLineCount) {
-            maxFunctionLineCount = currentFunctionLineCount;
-          }
-          inFunction = false;
-          functionBraceDepthEverPositive = false;
-        }
+          (currentFunctionLineCount > 1 || functionBraceDepthEverPositive);
+        maxFunctionLineCount = shouldCloseFunction
+          ? Math.max(maxFunctionLineCount, currentFunctionLineCount)
+          : maxFunctionLineCount;
+        inFunction = shouldCloseFunction ? false : inFunction;
+        functionBraceDepthEverPositive = shouldCloseFunction ? false : functionBraceDepthEverPositive;
       }
 
       const openers = content.match(NESTING_OPENERS);
