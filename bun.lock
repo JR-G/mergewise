@@ -5,7 +5,6 @@
     "": {
       "name": "mergewise",
       "dependencies": {
-        "openai": "^6.22.0",
         "yaml": "^2.8.1",
       },
       "devDependencies": {
@@ -14,6 +13,7 @@
         "eslint": "^9.39.1",
         "eslint-plugin-tsdoc": "^0.5.0",
         "lefthook": "^2.1.0",
+        "openai": "^6.22.0",
         "typescript": "^5.9.3",
         "typescript-eslint": "^8.56.0",
       },
