@@ -1407,7 +1407,7 @@ export async function processAnalyzePullRequestJob(
   const errorLogger = dependencies.logError ?? console.error;
   const warnLogger = dependencies.logWarn ?? infoLogger;
   const llmConfig = (dependencies.mergewiseConfig ?? DEFAULT_MERGEWISE_CONFIG).llm;
-  const llmApiKey = process.env["LLM_API_KEY"];
+  const llmApiKey = process.env.LLM_API_KEY;
   const llmEnabled = llmConfig.enabled && llmApiKey !== undefined && llmApiKey.length > 0;
 
   const baseLlmRules: readonly Rule[] = llmEnabled && llmApiKey

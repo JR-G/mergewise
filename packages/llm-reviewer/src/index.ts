@@ -18,7 +18,9 @@ export { createReviewClient, ReviewClient } from "./client";
 
 const DEFAULT_TOKEN_BUDGET = 30_000;
 
-function noop(): void {}
+function noop(): void {
+  /* intentional no-op */
+}
 
 /**
  * Configuration for the LLM reviewer rule.

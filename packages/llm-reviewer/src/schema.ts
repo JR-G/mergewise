@@ -40,10 +40,12 @@ export function extractAddedLineNumbers(diff: FileDiff): Set<number> {
   const added = new Set<number>();
 
   for (const hunk of diff.hunks) {
-    const match = hunk.header.match(/\+(\d+)/);
+    const match = /\+(\d+)/.exec(hunk.header);
     if (!match) continue;
 
-    let currentLine = parseInt(match[1]!, 10);
+    const matchedLine = match[1];
+    if (!matchedLine) continue;
+    let currentLine = parseInt(matchedLine, 10);
     for (const line of hunk.lines) {
       if (line.startsWith("\\")) {
         continue;
@@ -93,9 +95,8 @@ export function parseLlmResponse(
   const addedLines = extractAddedLineNumbers(diff);
   const findings: Finding[] = [];
 
-  for (let findingIndex = 0; findingIndex < parsed.findings.length; findingIndex += 1) {
-    const rawFinding = parsed.findings[findingIndex];
-    if (!rawFinding || !isValidRawFinding(rawFinding, addedLines)) {
+  for (const rawFinding of parsed.findings) {
+    if (!isValidRawFinding(rawFinding, addedLines)) {
       continue;
     }
 
@@ -123,7 +124,7 @@ export function parseLlmResponse(
 function isLlmResponse(value: unknown): value is LlmResponse {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return Array.isArray(candidate["findings"]);
+  return Array.isArray(candidate.findings);
 }
 
 function isValidRawFinding(

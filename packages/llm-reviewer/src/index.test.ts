@@ -434,11 +434,11 @@ describe("ReviewClient (via fake HTTP server)", () => {
     await client.complete("system prompt", "user prompt", 1024);
 
     expect(lastRequestBody).not.toBeNull();
-    expect(lastRequestBody!["model"]).toBe("test-model");
-    expect(lastRequestBody!["temperature"]).toBe(0.2);
-    expect(lastRequestBody!["max_completion_tokens"]).toBe(1024);
+    expect(lastRequestBody!.model).toBe("test-model");
+    expect(lastRequestBody!.temperature).toBe(0.2);
+    expect(lastRequestBody!.max_completion_tokens).toBe(1024);
 
-    const messages = lastRequestBody!["messages"] as Array<{ role: string; content: string }>;
+    const messages = lastRequestBody!.messages as { role: string; content: string }[];
     expect(messages).toHaveLength(2);
     expect(messages[0]!.role).toBe("system");
     expect(messages[0]!.content).toBe("system prompt");
@@ -456,7 +456,7 @@ describe("ReviewClient (via fake HTTP server)", () => {
     });
 
     const result = await client.complete("sys", "usr", 512);
-    const parsed = JSON.parse(result) as { findings: Array<{ line: number }> };
+    const parsed = JSON.parse(result) as { findings: { line: number }[] };
     expect(parsed.findings).toHaveLength(1);
     expect(parsed.findings[0]!.line).toBe(1);
   });
@@ -490,6 +490,7 @@ describe("ReviewClient (via fake HTTP server)", () => {
       model: "test-model",
     });
 
+    // eslint-disable-next-line @typescript-eslint/await-thenable
     await expect(client.complete("sys", "usr", 512)).rejects.toThrow(
       "LLM returned empty response",
     );
@@ -806,7 +807,7 @@ describe("createLlmReviewerRule", () => {
       },
     });
 
-    const errors: Array<{ filePath: string; error: unknown }> = [];
+    const errors: { filePath: string; error: unknown }[] = [];
     const rule = createLlmReviewerRule({
       clientConfig: {
         apiKey: "test-key",
