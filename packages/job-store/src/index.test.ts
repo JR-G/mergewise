@@ -30,8 +30,13 @@ function makeJob(overrides: Partial<AnalyzePullRequestJob> = {}): AnalyzePullReq
   };
 }
 
-function collectSkips(): { callback: OnSkippedLine; skips: { lineNumber: number; reason: string }[] } {
-  const skips: { lineNumber: number; reason: string }[] = [];
+interface Skip {
+  lineNumber: number;
+  reason: string;
+}
+
+function collectSkips(): { callback: OnSkippedLine; skips: Skip[] } {
+  const skips: Skip[] = [];
   const callback: OnSkippedLine = (lineNumber, reason) => {
     skips.push({ lineNumber, reason });
   };

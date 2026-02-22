@@ -1,6 +1,5 @@
 import eslint from "@eslint/js";
-import tseslint from "@typescript-eslint/eslint-plugin";
-import parser from "@typescript-eslint/parser";
+import tseslint from "typescript-eslint";
 import tsdoc from "eslint-plugin-tsdoc";
 
 export default [
@@ -13,12 +12,11 @@ export default [
     ],
   },
   eslint.configs.recommended,
-  ...tseslint.configs["flat/strict-type-checked"],
-  ...tseslint.configs["flat/stylistic-type-checked"],
+  ...tseslint.configs.strictTypeChecked,
+  ...tseslint.configs.stylisticTypeChecked,
   {
-    files: ["**/*.ts"],
+    files: ["**/*.ts", "**/*.tsx"],
     languageOptions: {
-      parser,
       parserOptions: {
         project: "./tsconfig.json",
         sourceType: "module",
@@ -72,7 +70,6 @@ export default [
       "@typescript-eslint/no-non-null-assertion": "off",
       "@typescript-eslint/require-await": "off",
       "@typescript-eslint/no-empty-function": "off",
-      "@typescript-eslint/await-thenable": "off",
       "@typescript-eslint/no-confusing-void-expression": "off",
       "@typescript-eslint/unbound-method": "off",
       "@typescript-eslint/no-deprecated": "off",

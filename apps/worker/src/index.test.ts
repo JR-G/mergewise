@@ -331,6 +331,7 @@ describe("createPollingLoopController", () => {
     expect(scheduledCallbacks).toHaveLength(1);
 
     const [scheduledCallback] = scheduledCallbacks;
+    // eslint-disable-next-line @typescript-eslint/await-thenable -- callback may be async at runtime
     await scheduledCallback?.();
     expect(runCount).toBe(1);
 
@@ -372,6 +373,7 @@ describe("createPollingLoopController", () => {
     expect(didStopResolve).toBe(false);
 
     releasePollCycle();
+    // eslint-disable-next-line @typescript-eslint/await-thenable -- callback may be async at runtime
     await runningPollCycle;
     await stopPromise;
     expect(didStopResolve).toBe(true);
@@ -438,6 +440,7 @@ describe("fetchPullRequestFilesWithRetry", () => {
   test("does not retry non-retryable GitHubApiError", async () => {
     let callCount = 0;
 
+    // eslint-disable-next-line @typescript-eslint/await-thenable -- expect().rejects is thenable at runtime
     await expect(
       fetchPullRequestFilesWithRetry(
         {
@@ -631,6 +634,7 @@ describe("processAnalyzePullRequestJob", () => {
     process.env.GITHUB_APP_ID = "123";
     process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
 
+    // eslint-disable-next-line @typescript-eslint/await-thenable -- expect().rejects is thenable at runtime
     await expect(
       processAnalyzePullRequestJob(
         {
@@ -763,6 +767,7 @@ describe("processAnalyzePullRequestJob", () => {
     delete process.env.GITHUB_APP_PRIVATE_KEY_PEM;
     process.env.GITHUB_APP_PRIVATE_KEY_PATH = "/tmp/mergewise-missing-private-key.pem";
 
+    // eslint-disable-next-line @typescript-eslint/await-thenable -- expect().rejects is thenable at runtime
     await expect(
       processAnalyzePullRequestJob(
         {
@@ -809,6 +814,7 @@ describe("processAnalyzePullRequestJob", () => {
     process.env.GITHUB_APP_ID = "not-a-number";
     process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
 
+    // eslint-disable-next-line @typescript-eslint/await-thenable -- expect().rejects is thenable at runtime
     await expect(
       processAnalyzePullRequestJob(
         {
