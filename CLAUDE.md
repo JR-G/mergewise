@@ -22,6 +22,11 @@ Monorepo with tsconfig path aliases (not Bun workspaces).
 - **Linting:** ESLint with strict-type-checked + stylistic-type-checked presets
 - **Quality gates:** script checks cross-package imports, catch logging, secrets
 
+## Code Style
+
+- No inline comments — use proper documentation (TSDoc, JSDoc) where explanation is needed
+- Code should be self-documenting through naming, structure, and type signatures
+
 ## Testing
 
 Test **behaviour**, not implementation details or internal state.

@@ -20,9 +20,7 @@ export interface AntiPattern {
   readonly detectionHint: string;
 }
 
-export const ANTI_PATTERNS: readonly AntiPattern[] = [
-  // ── clean (5) ──────────────────────────────────────────────────────────
-
+const CLEAN_PATTERNS: readonly AntiPattern[] = [
   {
     id: "god-component",
     title: "God component",
@@ -141,8 +139,9 @@ render(items);`,
       "3+ levels of nested function expressions, arrow functions, or .then() chains. Look for increasing indentation with callback parameters.",
   },
 
-  // ── idiomatic (6) ──────────────────────────────────────────────────────
+];
 
+const IDIOMATIC_PATTERNS: readonly AntiPattern[] = [
   {
     id: "derived-state-as-use-state",
     title: "Derived state stored in useState",
@@ -267,8 +266,9 @@ function NavItem() {
       "Rest spread (...rest or ...props) destructured from component parameters and spread onto a JSX element.",
   },
 
-  // ── safety (3) ─────────────────────────────────────────────────────────
+];
 
+const SAFETY_PATTERNS: readonly AntiPattern[] = [
   {
     id: "overly-wide-generic",
     title: "Overly wide generic constraint",
@@ -335,8 +335,9 @@ catch (err) {
       "Same interface or type using both '| null' and '?' (optional) or '| undefined' for fields that all represent 'no value'.",
   },
 
-  // ── perf (4) ───────────────────────────────────────────────────────────
+];
 
+const PERF_PATTERNS: readonly AntiPattern[] = [
   {
     id: "expensive-computation-in-render",
     title: "Expensive computation in render path",
@@ -431,4 +432,11 @@ function Parent() {
     detectionHint:
       "Object literal or array literal passed directly as the value prop of a Context.Provider without useMemo.",
   },
-] as const;
+];
+
+export const ANTI_PATTERNS: readonly AntiPattern[] = [
+  ...CLEAN_PATTERNS,
+  ...IDIOMATIC_PATTERNS,
+  ...SAFETY_PATTERNS,
+  ...PERF_PATTERNS,
+];
