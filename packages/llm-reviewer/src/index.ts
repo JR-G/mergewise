@@ -18,6 +18,8 @@ export { createReviewClient, ReviewClient } from "./client";
 
 const DEFAULT_TOKEN_BUDGET = 30_000;
 
+function noop(): void {}
+
 /**
  * Configuration for the LLM reviewer rule.
  */
@@ -45,7 +47,7 @@ export function createLlmReviewerRule(
 ): CodebaseAwareRule {
   const client = createReviewClient(config.clientConfig);
   const tokenBudget = config.tokenBudget ?? DEFAULT_TOKEN_BUDGET;
-  const onFileReviewError = config.onFileReviewError ?? (() => {});
+  const onFileReviewError = config.onFileReviewError ?? noop;
 
   return {
     kind: "codebase-aware",

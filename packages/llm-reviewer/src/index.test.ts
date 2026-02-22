@@ -747,4 +747,85 @@ describe("createLlmReviewerRule", () => {
 
     await server.stop(true);
   });
+
+  test("continues silently when a file review fails without onFileReviewError", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => new Response("Internal Server Error", { status: 500 }),
+    });
+
+    const rule = createLlmReviewerRule({
+      clientConfig: {
+        apiKey: "test-key",
+        baseUrl: `http://localhost:${server.port}/v1`,
+        model: "test-model",
+        maxRetries: 0,
+      },
+    });
+
+    const context = {
+      diffs: [
+        makeDiff("src/fail.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const x = 1"])]),
+      ],
+      pullRequest: PR_METADATA,
+    };
+
+    const findings = await rule.analyse(context, makeMockCodebaseContext());
+    expect(findings).toHaveLength(0);
+
+    await server.stop(true);
+  });
+
+  test("calls onFileReviewError and continues when a file review fails", async () => {
+    let callCount = 0;
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => {
+        callCount += 1;
+        if (callCount === 1) {
+          return new Response("Internal Server Error", { status: 500 });
+        }
+        return new Response(
+          buildCompletionResponse(
+            JSON.stringify({
+              findings: [
+                { line: 1, category: "clean", confidence: 0.9, evidence: "ok", recommendation: "keep" },
+              ],
+            }),
+          ),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      },
+    });
+
+    const errors: Array<{ filePath: string; error: unknown }> = [];
+    const rule = createLlmReviewerRule({
+      clientConfig: {
+        apiKey: "test-key",
+        baseUrl: `http://localhost:${server.port}/v1`,
+        model: "test-model",
+        maxRetries: 0,
+      },
+      onFileReviewError: (filePath, error) => {
+        errors.push({ filePath, error });
+      },
+    });
+
+    const context = {
+      diffs: [
+        makeDiff("src/fail.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const x = 1"])]),
+        makeDiff("src/pass.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const y = 2"])]),
+      ],
+      pullRequest: PR_METADATA,
+    };
+
+    const findings = await rule.analyse(context, makeMockCodebaseContext());
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.filePath).toBe("src/pass.ts");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.filePath).toBe("src/fail.ts");
+
+    await server.stop(true);
+  });
 });
