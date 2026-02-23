@@ -1,0 +1,27 @@
+import { createContext, useState, type ReactNode } from "react";
+
+interface AuthState { user: string | null; token: string | null }
+
+const AuthContext = createContext<AuthState & { login: (u: string, p: string) => void }>({
+  user: null, token: null, login: () => {}
+});
+
+function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+
+  const login = (username: string, password: string) => {
+    if (username.length < 3) throw new Error("Username too short");
+    if (password.length < 8) throw new Error("Password too short");
+    if (!/[A-Z]/.test(password)) throw new Error("Need uppercase");
+    const fakeToken = btoa(`${username}:${password}`);
+    setUser(username);
+    setToken(fakeToken);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, token, login }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
