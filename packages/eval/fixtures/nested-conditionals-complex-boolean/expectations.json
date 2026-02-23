@@ -1,0 +1,16 @@
+[
+  {
+    "description": "Flags deeply nested conditionals — flatten with early returns",
+    "matchLineRange": [10, 36],
+    "matchCategory": "clean",
+    "matchRecommendationContains": "early return",
+    "required": true
+  },
+  {
+    "description": "Flags complex boolean expression — extract named predicates",
+    "matchLineRange": [39, 41],
+    "matchCategory": "clean",
+    "matchRecommendationContains": "predicate",
+    "required": true
+  }
+]
