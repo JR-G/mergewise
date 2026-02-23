@@ -1,4 +1,3 @@
-import type { CodebaseContext } from "@mergewise/shared-types";
 import {
   ANTI_PATTERNS,
   ReviewClient,
@@ -25,19 +24,11 @@ export async function runFixture(
   const client = new ReviewClient(variant.clientConfig);
   const antiPatterns = variant.antiPatterns ?? ANTI_PATTERNS;
 
-  const codebaseContext: CodebaseContext = {
-    symbols: [],
-    conventions: new Map(),
-    readFile: (_filePath) => Promise.resolve(fixture.fullFileContent),
-  };
-
   const systemPrompt = buildSystemPrompt(antiPatterns);
   const signals = extractStructuralSignals(fixture.fileDiff);
-
-  const fullContent = await codebaseContext.readFile(fixture.fileDiff.filePath);
   const userPrompt = buildFileReviewPrompt(
     fixture.fileDiff,
-    fullContent,
+    fixture.fullFileContent,
     signals,
   );
 
