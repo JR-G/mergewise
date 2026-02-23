@@ -1,5 +1,7 @@
 # Mergewise
 
+![Mergewise MW mark](apps/site/assets/m-w-logo.svg)
+
 Mergewise is a code review product for pull requests.
 
 Development policy: Bun-only for local development and CI. npm is used only for package publishing/distribution.

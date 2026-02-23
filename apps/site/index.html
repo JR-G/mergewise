@@ -8,33 +8,52 @@
       name="description"
       content="Mergewise reviews pull requests for cleaner, safer, more idiomatic code."
     />
+    <link rel="icon" type="image/png" href="./assets/m-logo-frame.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;600;700;800&family=Space+Mono:wght@400;700&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="background-glow" aria-hidden="true"></div>
-    <main class="page">
-      <header class="hero">
+    <main class="poster">
+      <div class="poster-shape poster-shape-circle" aria-hidden="true"></div>
+      <div class="poster-shape poster-shape-bar" aria-hidden="true"></div>
+      <div class="poster-shape poster-shape-corner" aria-hidden="true"></div>
+      <div class="poster-shape poster-shape-ring" aria-hidden="true"></div>
+      <div class="poster-shape poster-shape-line-c" aria-hidden="true"></div>
+      <div class="poster-shape poster-shape-line-d" aria-hidden="true"></div>
+      <section class="top-row">
         <p class="kicker">Mergewise</p>
-        <h1>
-          Pull request reviews for
-          <span>clean, safe, idiomatic code.</span>
-        </h1>
-        <p class="lead">
-          Built for teams that care about craftsmanship, maintainability, and
-          production-grade TypeScript and React.
-        </p>
-        <div class="hero-actions">
-          <a class="button button-primary" href="https://github.com/JR-G/mergewise">View GitHub</a>
-          <span class="status-pill">Coming soon</span>
+        <a class="button" href="https://github.com/JR-G/mergewise">View GitHub</a>
+      </section>
+      <section class="hero-grid">
+        <div class="hero-copy">
+          <h1>
+            Pull request reviews for
+            <span>clean, safe, idiomatic code.</span>
+          </h1>
+          <p>
+            Cleaner diffs, safer merges, idiomatic TypeScript and React. Built
+            for teams that want signal over noise.
+          </p>
+          <ul class="feature-list">
+            <li>Automated findings with confidence gates</li>
+            <li>Rule-driven checks with concrete recommendations</li>
+            <li>Designed for real engineering workflows</li>
+          </ul>
         </div>
-      </header>
-
+        <div class="visual-stack">
+          <div class="hero-art">
+            <img src="./assets/m-w-logo.svg" alt="Mergewise logo" />
+          </div>
+        </div>
+      </section>
+      <section class="bottom-row">
+        <p class="status">Now in active development</p>
+      </section>
     </main>
   </body>
 </html>
