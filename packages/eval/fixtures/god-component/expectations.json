@@ -4,5 +4,12 @@
     "matchLineRange": [1, 9],
     "matchCategory": "clean",
     "required": true
+  },
+  {
+    "description": "Flags inline data filtering/sorting",
+    "matchLineRange": [6, 7],
+    "matchCategory": "clean",
+    "matchRecommendationContains": "extract",
+    "required": false
   }
 ]
