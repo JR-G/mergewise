@@ -1,0 +1,16 @@
+[
+  {
+    "description": "Flags DRY violation — duplicated validation logic",
+    "matchLineRange": [3, 30],
+    "matchCategory": "clean",
+    "matchRecommendationContains": "extract",
+    "required": true
+  },
+  {
+    "description": "Flags vague naming — handleData/processResult",
+    "matchLineRange": [32, 37],
+    "matchCategory": "clean",
+    "matchRecommendationContains": "name",
+    "required": true
+  }
+]
