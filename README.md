@@ -1,6 +1,6 @@
 # Mergewise
 
-![Mergewise MW mark](apps/site/assets/m-logo-frame.png)
+![Mergewise MW mark](apps/site/assets/m-w-logo.svg)
 
 Mergewise is a code review product for pull requests.
 
