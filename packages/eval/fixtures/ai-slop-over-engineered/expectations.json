@@ -1,0 +1,23 @@
+[
+  {
+    "description": "Flags pointless helper functions that add no value",
+    "matchLineRange": [5, 12],
+    "matchCategory": "clean",
+    "matchRecommendationContains": "inline",
+    "required": true
+  },
+  {
+    "description": "Flags excessive try/catch with rethrow",
+    "matchLineRange": [17, 28],
+    "matchCategory": "clean",
+    "matchRecommendationContains": "try",
+    "required": true
+  },
+  {
+    "description": "Flags unnecessary null check on string type",
+    "matchLineRange": [20, 23],
+    "matchCategory": "clean",
+    "matchRecommendationContains": "null",
+    "required": false
+  }
+]
