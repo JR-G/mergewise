@@ -1,0 +1,16 @@
+[
+  {
+    "description": "Flags inline handler defeating React.memo",
+    "matchLineRange": [22, 24],
+    "matchCategory": "perf",
+    "matchRecommendationContains": "useCallback",
+    "required": true
+  },
+  {
+    "description": "Flags unmemoised list item component",
+    "matchLineRange": [11, 13],
+    "matchCategory": "perf",
+    "matchRecommendationContains": "memo",
+    "required": false
+  }
+]
