@@ -9,5 +9,12 @@
     "sourceMap": true
   },
   "include": ["index.ts", "apps/**/*.ts", "packages/**/*.ts"],
-  "exclude": ["dist", "node_modules", ".mergewise-runtime", "**/*.test.ts", "tests/**"]
+  "exclude": [
+    "dist",
+    "node_modules",
+    ".mergewise-runtime",
+    "**/*.test.ts",
+    "tests/**",
+    "packages/eval/fixtures/**"
+  ]
 }
