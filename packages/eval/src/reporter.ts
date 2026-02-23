@@ -11,6 +11,8 @@ const YELLOW = "\x1b[33m";
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
 
+const ANSI_OVERHEAD = 9;
+
 function colourScore(value: number): string {
   if (value >= 0.8) return `${GREEN}${value.toFixed(2)}${RESET}`;
   if (value >= 0.5) return `${YELLOW}${value.toFixed(2)}${RESET}`;
@@ -30,7 +32,7 @@ export function printReport(results: readonly EvalResult[]): void {
   console.log("─".repeat(95));
 
   for (const result of results) {
-    const line = `${result.fixtureId.padEnd(25)} ${result.variant.padEnd(18)} ${colourScore(result.score.recall).padEnd(14 + 9)} ${colourScore(result.score.precision).padEnd(14 + 9)} ${String(result.score.totalFindings).padEnd(10)} ${DIM}${result.durationMs}ms${RESET}`;
+    const line = `${result.fixtureId.padEnd(25)} ${result.variant.padEnd(18)} ${colourScore(result.score.recall).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(result.score.precision).padEnd(14 + ANSI_OVERHEAD)} ${String(result.score.totalFindings).padEnd(10)} ${DIM}${result.durationMs}ms${RESET}`;
     console.log(line);
   }
 

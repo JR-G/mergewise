@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import type { ReviewClientConfig } from "@mergewise/llm-reviewer";
-import type { EvalVariant } from "./types";
+import type { EvalResult, EvalVariant } from "./types";
 import { discoverFixtures, loadFixture } from "./loader";
 import { runFixture } from "./runner";
 import { printReport, appendRunRecord } from "./reporter";
@@ -26,7 +26,7 @@ const baseClientConfig: ReviewClientConfig = {
   model: process.env.LLM_EVAL_MODEL ?? "gpt-4o",
 };
 
-const BUILT_IN_VARIANTS: EvalVariant[] = [
+const BUILT_IN_VARIANTS: readonly EvalVariant[] = [
   {
     label: "default",
     clientConfig: baseClientConfig,
@@ -53,18 +53,37 @@ const fixtureNames = fixtureFilter
   ? [fixtureFilter]
   : await discoverFixtures();
 
-const results = [];
+const results: EvalResult[] = [];
 
 for (const fixtureName of fixtureNames) {
-  const fixture = await loadFixture(fixtureName);
+  let fixture;
+  try {
+    fixture = await loadFixture(fixtureName);
+  } catch (error) {
+    console.error(`Failed to load fixture "${fixtureName}":`, error);
+    continue;
+  }
 
   for (const variant of variants) {
     console.log(`Running ${fixtureName} / ${variant.label}...`);
-    const result = await runFixture(fixture, variant);
-    results.push(result);
+    try {
+      const result = await runFixture(fixture, variant);
+      results.push(result);
+    } catch (error) {
+      console.error(
+        `Failed to run fixture "${fixtureName}" variant "${variant.label}":`,
+        error,
+      );
+    }
   }
 }
 
 printReport(results);
-await appendRunRecord(results);
-console.log("Results appended to packages/eval/results/runs.ndjson");
+
+try {
+  await appendRunRecord(results);
+  console.log("Results appended to packages/eval/results/runs.ndjson");
+} catch (error) {
+  console.error("Failed to write run record:", error);
+  process.exit(1);
+}

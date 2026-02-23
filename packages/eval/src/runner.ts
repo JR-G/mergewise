@@ -28,7 +28,7 @@ export async function runFixture(
   const codebaseContext: CodebaseContext = {
     symbols: [],
     conventions: new Map(),
-    readFile: () => Promise.resolve(fixture.fullFileContent),
+    readFile: (_filePath) => Promise.resolve(fixture.fullFileContent),
   };
 
   const systemPrompt = buildSystemPrompt(antiPatterns);
@@ -42,7 +42,16 @@ export async function runFixture(
   );
 
   const start = performance.now();
-  const rawResponse = await client.complete(systemPrompt, userPrompt, 4096);
+  let rawResponse: string;
+  try {
+    rawResponse = await client.complete(systemPrompt, userPrompt, 4096);
+  } catch (error) {
+    const durationMs = Math.round(performance.now() - start);
+    throw new Error(
+      `LLM completion failed for fixture "${fixture.fixtureId}" variant "${variant.label}" after ${durationMs}ms`,
+      { cause: error },
+    );
+  }
   const durationMs = Math.round(performance.now() - start);
 
   const findings = parseLlmResponse(

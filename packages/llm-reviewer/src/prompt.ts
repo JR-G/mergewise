@@ -3,13 +3,14 @@ import type { AntiPattern } from "./anti-patterns";
 import { ANTI_PATTERNS } from "./anti-patterns";
 import type { StructuralSignals } from "./signals";
 
+const escapePipe = (value: string): string => value.replaceAll("|", "\\|");
+
 function buildAntiPatternReferenceTable(
   patterns: readonly AntiPattern[],
 ): string {
   if (patterns.length === 0) return "";
   const header =
     "| id | title | category | principle | detectionHint |\n| --- | --- | --- | --- | --- |";
-  const escapePipe = (value: string): string => value.replaceAll("|", "\\|");
   const rows = patterns.map(
     (pattern) =>
       `| ${escapePipe(pattern.id)} | ${escapePipe(pattern.title)} | ${escapePipe(pattern.category)} | ${escapePipe(pattern.principle)} | ${escapePipe(pattern.detectionHint)} |`,

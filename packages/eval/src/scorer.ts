@@ -59,7 +59,9 @@ export function scoreFindings(
   findings: readonly Finding[],
   expectations: readonly ExpectedFinding[],
 ): EvalScore {
-  const requiredExpectations = expectations.filter((ex) => ex.required);
+  const requiredExpectations = expectations.filter(
+    (expectation) => expectation.required,
+  );
   const matchedFindingIndices = new Set<number>();
   let requiredMatched = 0;
 
@@ -76,7 +78,11 @@ export function scoreFindings(
     }
   }
 
-  for (const expectation of expectations.filter((ex) => !ex.required)) {
+  const optionalExpectations = expectations.filter(
+    (expectation) => !expectation.required,
+  );
+
+  for (const expectation of optionalExpectations) {
     const matchIndex = findings.findIndex(
       (finding, index) =>
         !matchedFindingIndices.has(index) &&
