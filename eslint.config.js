@@ -8,6 +8,7 @@ export default [
       "dist/**",
       "node_modules/**",
       ".mergewise-runtime/**",
+      "packages/eval/fixtures/**",
       "**/*.js",
     ],
   },

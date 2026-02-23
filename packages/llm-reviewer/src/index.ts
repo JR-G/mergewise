@@ -8,6 +8,8 @@ import { createReviewClient, type ReviewClientConfig } from "./client";
 import { selectFilesForReview } from "./file-selection";
 import { reviewFile } from "./review-file";
 
+export type { AntiPattern } from "./anti-patterns";
+export { ANTI_PATTERNS } from "./anti-patterns";
 export type { ReviewClientConfig } from "./client";
 export { selectFilesForReview } from "./file-selection";
 export { buildSystemPrompt, buildFileReviewPrompt } from "./prompt";

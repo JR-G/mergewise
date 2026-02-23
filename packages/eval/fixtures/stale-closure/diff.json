@@ -1,0 +1,16 @@
+{
+  "filePath": "src/components/Counter.tsx",
+  "previousPath": null,
+  "hunks": [
+    {
+      "header": "@@ -0,0 +1,5 @@",
+      "lines": [
+        "+const [count, setCount] = useState(0);",
+        "+useEffect(() => {",
+        "+  const id = setInterval(() => setCount(count + 1), 1000);",
+        "+  return () => clearInterval(id);",
+        "+}, []);"
+      ]
+    }
+  ]
+}

@@ -1,5 +1,28 @@
 import type { FileDiff } from "@mergewise/shared-types";
+import type { AntiPattern } from "./anti-patterns";
+import { ANTI_PATTERNS } from "./anti-patterns";
 import type { StructuralSignals } from "./signals";
+
+const escapePipe = (value: string): string => value.replaceAll("|", "\\|");
+
+function buildAntiPatternReferenceTable(
+  patterns: readonly AntiPattern[],
+): string {
+  if (patterns.length === 0) return "";
+  const header =
+    "| id | title | category | principle | detectionHint |\n| --- | --- | --- | --- | --- |";
+  const rows = patterns.map(
+    (pattern) =>
+      `| ${escapePipe(pattern.id)} | ${escapePipe(pattern.title)} | ${escapePipe(pattern.category)} | ${escapePipe(pattern.principle)} | ${escapePipe(pattern.detectionHint)} |`,
+  );
+  return `## Anti-pattern reference
+
+Use this table to recognise common TS/React anti-patterns in the diff. When you flag one, reference its id in your finding.
+
+${header}\n${rows.join("\n")}
+
+`;
+}
 
 /**
  * Builds the system prompt establishing the senior reviewer persona.
@@ -9,8 +32,13 @@ import type { StructuralSignals } from "./signals";
  * a staff+ engineer gives about code structure, patterns, and craft. It
  * explicitly avoids flagging things that deterministic linters already handle
  * (formatting, type errors, unused vars).
+ *
+ * @param patterns - Anti-patterns to inject as a reference table. Defaults to {@link ANTI_PATTERNS}.
  */
-export function buildSystemPrompt(): string {
+export function buildSystemPrompt(
+  patterns: readonly AntiPattern[] = ANTI_PATTERNS,
+): string {
+  const antiPatternSection = buildAntiPatternReferenceTable(patterns);
   return `You are a senior TypeScript/React code reviewer performing a refactoring-focused review on a pull request diff. Your review quality must match that of a staff engineer at a top-tier engineering organisation. Your goal is to suggest structural improvements — the kind of feedback that helps engineers write cleaner, more maintainable code.
 
 Tone is a senior colleague who wants to improve the code, not a gatekeeper. Frame findings as refactoring suggestions. Name the principle when one applies (SRP, DRY, Open/Closed) so the author learns the concept.
@@ -38,7 +66,7 @@ Tone is a senior colleague who wants to improve the code, not a gatekeeper. Fram
 7. **Complexity**: Nested callbacks, deeply nested conditionals, complex boolean expressions that should be named, overcomplicated control flow.
    *Suggest*: Extract named predicates, flatten with early returns, decompose into smaller functions.
 
-## What NOT to flag
+${antiPatternSection}## What NOT to flag
 
 - Formatting, whitespace, semicolons, trailing commas (handled by linters)
 - Type errors (handled by TypeScript compiler)

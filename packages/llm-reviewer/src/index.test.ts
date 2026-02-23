@@ -7,6 +7,7 @@ import type {
 } from "@mergewise/shared-types";
 type TestServer = ReturnType<typeof Bun.serve>;
 import {
+  ANTI_PATTERNS,
   selectFilesForReview,
   extractAddedLineNumbers,
   parseLlmResponse,
@@ -16,6 +17,7 @@ import {
   createLlmReviewerRule,
   createReviewClient,
 } from "./index";
+import type { AntiPattern } from "./index";
 import { reviewFile } from "./review-file";
 
 function makeHunk(header: string, lines: string[]): DiffHunk {
@@ -290,6 +292,53 @@ describe("buildSystemPrompt", () => {
     const prompt = buildSystemPrompt();
     expect(prompt).toContain("What NOT to flag");
     expect(prompt).toContain("Formatting");
+  });
+
+  test("omits anti-pattern section when patterns array is empty", () => {
+    const prompt = buildSystemPrompt([]);
+    expect(prompt).not.toContain("Anti-pattern reference");
+  });
+
+  test("includes pattern id and detectionHint for a single pattern", () => {
+    const single: AntiPattern = {
+      id: "test-pattern",
+      title: "Test Pattern",
+      description: "A test pattern.",
+      category: "clean",
+      languages: ["typescript"],
+      badExample: "bad()",
+      goodExample: "good()",
+      principle: "Test principle",
+      detectionHint: "Look for test-pattern-hint in the diff.",
+    };
+    const prompt = buildSystemPrompt([single]);
+    expect(prompt).toContain("Anti-pattern reference");
+    expect(prompt).toContain("test-pattern");
+    expect(prompt).toContain("Look for test-pattern-hint in the diff.");
+  });
+
+  test("default catalogue includes known pattern IDs", () => {
+    const prompt = buildSystemPrompt();
+    const sampleIds = ANTI_PATTERNS.slice(0, 3).map((pattern) => pattern.id);
+    for (const id of sampleIds) {
+      expect(prompt).toContain(id);
+    }
+  });
+
+  test("each catalogue pattern's detectionHint appears in default prompt", () => {
+    const prompt = buildSystemPrompt();
+    for (const pattern of ANTI_PATTERNS) {
+      const escaped = pattern.detectionHint.replaceAll("|", "\\|");
+      expect(prompt).toContain(escaped);
+    }
+  });
+
+  test("default catalogue does not include badExample/goodExample in prompt", () => {
+    const prompt = buildSystemPrompt();
+    for (const pattern of ANTI_PATTERNS) {
+      expect(prompt).not.toContain(pattern.badExample);
+      expect(prompt).not.toContain(pattern.goodExample);
+    }
   });
 });
 

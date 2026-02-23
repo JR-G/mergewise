@@ -1,0 +1,8 @@
+[
+  {
+    "description": "Flags god component with multiple responsibilities",
+    "matchLineRange": [1, 9],
+    "matchCategory": "clean",
+    "required": true
+  }
+]

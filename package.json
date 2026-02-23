@@ -64,6 +64,7 @@
     "test": "bun test",
     "test:coverage": "bun test --coverage",
     "test:coverage:check": "bash scripts/check-coverage.sh 80",
+    "eval": "bun run packages/eval/src/main.ts",
     "prepublishOnly": "bun run lint && bun run typecheck && bun run test"
   },
   "dependencies": {

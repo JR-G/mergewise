@@ -4,6 +4,7 @@ import type {
   Finding,
   PullRequestMetadata,
 } from "@mergewise/shared-types";
+import { ANTI_PATTERNS } from "./anti-patterns";
 import type { ReviewClient } from "./client";
 import { buildFileReviewPrompt, buildSystemPrompt } from "./prompt";
 import { parseLlmResponse } from "./schema";
@@ -29,7 +30,7 @@ export async function reviewFile(
   const fullContent = await codebaseContext.readFile(fileDiff.filePath);
   const signals = extractStructuralSignals(fileDiff);
 
-  const systemPrompt = buildSystemPrompt();
+  const systemPrompt = buildSystemPrompt(ANTI_PATTERNS);
   const userPrompt = buildFileReviewPrompt(fileDiff, fullContent, signals);
 
   const rawResponse = await client.complete(
