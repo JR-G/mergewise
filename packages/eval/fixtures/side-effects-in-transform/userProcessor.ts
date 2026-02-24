@@ -1,0 +1,26 @@
+interface User { id: string; name: string; email: string; active: boolean }
+
+function processUsers(users: User[]): Record<string, string> {
+  const lookup: Record<string, string> = {};
+  for (let i = 0; i < users.length; i++) {
+    const user = users[i];
+    console.log(`Processing user ${user.id}`);
+    if (user.active) {
+      lookup[user.id] = user.name.toUpperCase();
+    }
+  }
+  return lookup;
+}
+
+function deactivateUsers(users: User[], ids: string[]): User[] {
+  const result: User[] = [];
+  for (const user of users) {
+    if (ids.includes(user.id)) {
+      user.active = false;
+      result.push(user);
+    } else {
+      result.push(user);
+    }
+  }
+  return result;
+}
