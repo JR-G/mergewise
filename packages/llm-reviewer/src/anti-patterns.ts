@@ -135,6 +135,40 @@ function getAllUsers() { return db.users.findAll(); }`,
   },
 
   {
+    id: "imperative-loop-over-array",
+    title: "Imperative loop over array",
+    description:
+      "A for or for-of loop that builds a new array via push or accumulates a value, where .map(), .filter(), .reduce(), or .flatMap() would express the same intent declaratively.",
+    category: "clean",
+    languages: ["typescript"],
+    badExample: `const names = [];
+for (const u of users) {
+  if (u.active) names.push(u.name);
+}`,
+    goodExample: `const names = users.filter(u => u.active).map(u => u.name);`,
+    principle: "Prefer declarative transforms over imperative loops",
+    detectionHint:
+      "for/for-of loop that builds a new array via push(), or accumulates a value, where .map(), .filter(), .reduce(), or .flatMap() would express the same intent declaratively.",
+  },
+
+  {
+    id: "mutable-accumulator",
+    title: "Mutable accumulator",
+    description:
+      "A let variable declared before a loop and mutated inside it (counter, string concatenation, object building) where a reduce, join, or Object.fromEntries would be clearer.",
+    category: "clean",
+    languages: ["typescript"],
+    badExample: `let total = 0;
+for (const item of items) {
+  total += item.price;
+}`,
+    goodExample: `const total = items.reduce((sum, item) => sum + item.price, 0);`,
+    principle: "Prefer reduce/Object.fromEntries over mutable accumulation",
+    detectionHint:
+      "let variable declared before a loop and mutated inside it (counter, string concatenation, object building) where a reduce, join, or Object.fromEntries would be clearer.",
+  },
+
+  {
     id: "deeply-nested-callbacks",
     title: "Deeply nested callbacks",
     description:
