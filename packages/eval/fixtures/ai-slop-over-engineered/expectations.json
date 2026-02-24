@@ -15,7 +15,7 @@
   },
   {
     "description": "Flags unnecessary null check on string type",
-    "matchLineRange": [20, 23],
+    "matchLineRange": [19, 23],
     "matchCategory": "clean",
     "matchRecommendationContains": "null",
     "required": false

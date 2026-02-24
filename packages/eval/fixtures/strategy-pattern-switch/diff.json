@@ -3,7 +3,7 @@
   "previousPath": null,
   "hunks": [
     {
-      "header": "@@ -0,0 +1,34 @@",
+      "header": "@@ -0,0 +1,33 @@",
       "lines": [
         "+interface Notification {",
         "+  type: \"email\" | \"sms\" | \"push\" | \"slack\";",
