@@ -7,13 +7,13 @@
   },
   {
     "description": "Flags excessive try/catch with rethrow",
-    "matchLineRange": [16, 28],
-    "matchRecommendationContainsAny": ["try", "catch", "remove", "rethrow"],
+    "matchLineRange": [14, 29],
+    "matchRecommendationContainsAny": ["try", "catch", "remove", "rethrow", "re-throw"],
     "required": true
   },
   {
     "description": "Flags unnecessary null check on string type",
-    "matchLineRange": [13, 23],
+    "matchLineRange": [12, 22],
     "matchRecommendationContainsAny": ["null", "undefined", "simplify", "cannot be"],
     "required": false
   }

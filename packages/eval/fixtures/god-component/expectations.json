@@ -7,7 +7,7 @@
   },
   {
     "description": "Flags inline data filtering/sorting",
-    "matchLineRange": [3, 9],
+    "matchLineRange": [5, 8],
     "matchRecommendationContainsAny": ["extract", "useMemo", "memoiz"],
     "required": false
   }

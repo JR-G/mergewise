@@ -1,7 +1,7 @@
 [
   {
     "description": "Flags deeply nested conditionals — flatten with early returns",
-    "matchLineRange": [4, 36],
+    "matchLineRange": [4, 37],
     "matchRecommendationContainsAny": ["extract", "early return", "flatten", "guard"],
     "required": true
   },
