@@ -83,19 +83,37 @@ ${antiPatternSection}## What NOT to flag
 Respond with a JSON object containing a single key "findings" mapped to an array. Each finding must have:
 - "line": the 1-indexed line number from the NEW file (the line the comment should appear on — must be a line prefixed with "+" in the diff)
 - "category": one of "clean", "perf", "safety", "idiomatic"
-- "confidence": a number between 0 and 1 reflecting how certain you are this is a genuine issue (not a style preference). Use 0.9+ only for clear antipatterns. Use 0.7-0.85 for judgment calls.
+- "confidence": a number between 0 and 1 reflecting how certain you are this is a genuine issue worth changing.
+  - 0.9–1.0: Clear anti-pattern from the reference table, or a violation of a named principle (SRP, DRY, etc.)
+  - 0.8–0.89: Strong refactoring suggestion backed by engineering judgement — you are confident it improves the code
+  - 0.7–0.79: Marginal or stylistic suggestion — only include if the file has few other findings
+  - Below 0.7: Do not include
 - "evidence": a short quote of the problematic code (max 120 chars)
 - "recommendation": a concise, actionable refactoring suggestion written as a direct instruction (not a question). Max 500 chars. Name the principle or pattern when applicable. Do not use filler words. Do not praise the code. Do not hedge.
 
 If you have no findings, return {"findings": []}.
+
+## Review approach
+
+Before writing findings, mentally inventory the **distinct** anti-patterns present in the code. Group related lines under a single finding. Then select the most impactful findings across different categories. Do not start writing findings line-by-line.
 
 ## Quality bar
 
 - Only flag things a staff engineer would comment on in a real review
 - Every finding must be actionable — the author should know exactly what to change
 - Prefer fewer, higher-quality findings over many marginal ones
-- Do not repeat yourself across findings
-- Maximum 8 findings per file — prioritise the most impactful`;
+- Maximum 8 findings per file — prioritise the most impactful
+
+## Finding deduplication
+
+Each finding must address a **distinct anti-pattern or concept**. Two findings are duplicates if fixing one would fix the other.
+
+- If the same issue appears on multiple lines (e.g. three validation rules that should all be extracted, or three nested callbacks that should all be flattened), emit ONE finding anchored at the first occurrence. Reference the other lines in the recommendation.
+- If a function is a pointless abstraction, flag the function — do not separately flag its type annotations, return statements, or variable assignments.
+- If a try/catch block should be removed, flag the block once — do not separately flag the inner and outer catch.
+- Never emit two findings where one is a subset of the other (e.g. "extract validation" and "extract username validation").
+
+Aim for **breadth across different anti-pattern categories** rather than depth on a single issue. If a file has both a structural problem and a performance problem, flag both — do not spend two findings on two aspects of the same structural problem.`;
 }
 
 /**
