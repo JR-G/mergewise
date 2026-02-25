@@ -47,6 +47,7 @@ export function matchFinding(
 
   if (
     expectation.matchRecommendationContainsAny &&
+    expectation.matchRecommendationContainsAny.length > 0 &&
     !expectation.matchRecommendationContainsAny.some((keyword) =>
       finding.recommendation.toLowerCase().includes(keyword.toLowerCase()),
     )
