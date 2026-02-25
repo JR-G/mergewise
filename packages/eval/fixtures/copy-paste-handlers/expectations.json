@@ -8,7 +8,7 @@
   },
   {
     "description": "Flags vague naming — handleData/processResult",
-    "matchLineRange": [26, 36],
+    "matchLineRange": [16, 36],
     "matchCategory": "clean",
     "matchRecommendationContains": "simplify",
     "required": true

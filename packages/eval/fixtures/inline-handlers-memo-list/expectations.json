@@ -3,7 +3,7 @@
     "description": "Flags inline handler defeating React.memo",
     "matchLineRange": [8, 28],
     "matchCategory": "clean",
-    "matchRecommendationContains": "callback",
+    "matchRecommendationContains": "extract",
     "required": true
   },
   {

@@ -8,9 +8,8 @@
   },
   {
     "description": "Flags boolean flag parameter in getUsers",
-    "matchLineRange": [10, 22],
+    "matchLineRange": [8, 22],
     "matchCategory": "clean",
-    "matchRecommendationContains": "predicate",
     "required": true
   }
 ]

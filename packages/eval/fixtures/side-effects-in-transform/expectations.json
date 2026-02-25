@@ -8,9 +8,9 @@
   },
   {
     "description": "Flags imperative loop with mutation in deactivateUsers",
-    "matchLineRange": [14, 25],
+    "matchLineRange": [12, 25],
     "matchCategory": "clean",
-    "matchRecommendationContains": "map",
+    "matchRecommendationContains": "mutat",
     "required": true
   },
   {

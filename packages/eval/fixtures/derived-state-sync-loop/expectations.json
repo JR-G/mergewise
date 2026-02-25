@@ -11,6 +11,6 @@
     "matchLineRange": [4, 10],
     "matchCategory": "clean",
     "matchRecommendationContains": "sort",
-    "required": true
+    "required": false
   }
 ]
