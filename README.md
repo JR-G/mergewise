@@ -14,6 +14,11 @@ Current local development flow:
 2. `apps/worker` polls queued jobs, deduplicates by idempotency key, and invokes `packages/rule-engine`.
 3. `packages/rule-engine` executes registered rules and returns a deterministic per-job summary payload.
 
+## Website Deploy Scope
+
+The website project at `apps/site` uses `apps/site/vercel.json` with an `ignoreCommand`.
+Preview and production deployments are skipped when a commit does not include changes under `apps/site`.
+
 ## Local Env Setup
 
 Create local secrets file (gitignored):
