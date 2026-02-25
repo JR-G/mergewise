@@ -1,7 +1,7 @@
 [
   {
     "description": "Flags unsafe as type assertions instead of type guards",
-    "matchLineRange": [7, 23],
+    "matchLineRange": [7, 30],
     "matchRecommendationContainsAny": ["type guard", "assertion", "validat", "runtime"],
     "required": true
   },
@@ -13,7 +13,7 @@
   },
   {
     "description": "Flags too many positional parameters — use options object",
-    "matchLineRange": [14, 21],
+    "matchLineRange": [13, 21],
     "matchRecommendationContainsAny": ["object", "parameter", "options"],
     "required": false
   }

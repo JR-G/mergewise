@@ -1,7 +1,7 @@
 [
   {
     "description": "Flags DRY violation — duplicated validation logic",
-    "matchLineRange": [2, 30],
+    "matchLineRange": [2, 27],
     "matchRecommendationContainsAny": ["extract", "shared", "common", "duplicat"],
     "required": true
   },

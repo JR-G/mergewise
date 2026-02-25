@@ -1,13 +1,13 @@
 [
   {
     "description": "Flags prop drilling of theme through multiple layers",
-    "matchLineRange": [1, 18],
+    "matchLineRange": [1, 19],
     "matchRecommendationContainsAny": ["context", "component", "combine", "reduce"],
     "required": true
   },
   {
     "description": "Flags class component that should be a function component",
-    "matchLineRange": [4, 25],
+    "matchLineRange": [4, 26],
     "matchRecommendationContainsAny": ["function", "functional", "class", "convert"],
     "required": true
   }

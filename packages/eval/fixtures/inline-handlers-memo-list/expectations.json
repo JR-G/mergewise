@@ -1,13 +1,13 @@
 [
   {
-    "description": "Flags inline handler defeating React.memo",
-    "matchLineRange": [8, 28],
+    "description": "Flags inline handler in map defeating React.memo on TodoItem",
+    "matchLineRange": [15, 28],
     "matchRecommendationContainsAny": ["extract", "useCallback", "callback", "named function"],
     "required": true
   },
   {
-    "description": "Flags unmemoised list item component",
-    "matchLineRange": [8, 20],
+    "description": "Flags unmemoised TodoRow component used in list rendering",
+    "matchLineRange": [11, 29],
     "matchRecommendationContainsAny": ["memo", "React.memo", "memoiz"],
     "required": false
   }

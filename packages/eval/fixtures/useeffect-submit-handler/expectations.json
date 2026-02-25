@@ -7,7 +7,7 @@
   },
   {
     "description": "Flags implicit any in catch clause",
-    "matchLineRange": [10, 12],
+    "matchLineRange": [10, 13],
     "matchRecommendationContainsAny": ["instanceof", "unknown", "type guard"],
     "required": false
   }

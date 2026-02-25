@@ -7,13 +7,13 @@
   },
   {
     "description": "Flags overly wide generic constraint",
-    "matchLineRange": [6, 10],
+    "matchLineRange": [7, 10],
     "matchRecommendationContainsAny": ["specific", "narrow", "constrain"],
     "required": false
   },
   {
     "description": "Flags deeply nested callbacks",
-    "matchLineRange": [4, 20],
+    "matchLineRange": [11, 20],
     "matchRecommendationContainsAny": ["await", "async", "Promise", "flatten"],
     "required": true
   }
