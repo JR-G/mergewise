@@ -54,6 +54,11 @@ export function printReport(results: readonly EvalResult[]): void {
         console.log(
           `  L${finding.line} [${finding.category}] ${finding.evidence.slice(0, 80)}`,
         );
+        if (finding.recommendation) {
+          console.log(
+            `  ${DIM}→ ${finding.recommendation.slice(0, 100)}${RESET}`,
+          );
+        }
       }
     }
   }

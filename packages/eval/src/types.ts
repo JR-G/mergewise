@@ -23,6 +23,8 @@ export interface ExpectedFinding {
   readonly matchEvidenceContains?: string;
   /** Case-insensitive substring that must appear in the finding recommendation. */
   readonly matchRecommendationContains?: string;
+  /** OR-logic alternative: passes if any keyword appears in the recommendation (case-insensitive). */
+  readonly matchRecommendationContainsAny?: readonly string[];
   /** When true, this expectation counts towards recall. */
   readonly required: boolean;
 }

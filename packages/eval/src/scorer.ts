@@ -45,6 +45,16 @@ export function matchFinding(
     return false;
   }
 
+  if (
+    expectation.matchRecommendationContainsAny &&
+    expectation.matchRecommendationContainsAny.length > 0 &&
+    !expectation.matchRecommendationContainsAny.some((keyword) =>
+      finding.recommendation.toLowerCase().includes(keyword.toLowerCase()),
+    )
+  ) {
+    return false;
+  }
+
   return true;
 }
 

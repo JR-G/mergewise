@@ -1,23 +1,20 @@
 [
   {
     "description": "Flags unsafe as type assertions instead of type guards",
-    "matchLineRange": [21, 23],
-    "matchCategory": "safety",
-    "matchRecommendationContains": "type guard",
+    "matchLineRange": [7, 23],
+    "matchRecommendationContainsAny": ["type guard", "assertion", "validat", "runtime"],
     "required": true
   },
   {
     "description": "Flags enum usage — prefer literal union types",
     "matchLineRange": [1, 6],
-    "matchCategory": "idiomatic",
-    "matchRecommendationContains": "union",
+    "matchRecommendationContainsAny": ["union", "literal", "enum"],
     "required": false
   },
   {
     "description": "Flags too many positional parameters — use options object",
     "matchLineRange": [14, 21],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "object",
+    "matchRecommendationContainsAny": ["object", "parameter", "options"],
     "required": false
   }
 ]

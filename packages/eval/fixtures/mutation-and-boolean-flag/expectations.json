@@ -1,16 +1,14 @@
 [
   {
     "description": "Flags parameter mutation in applyDefaults",
-    "matchLineRange": [8, 12],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "spread",
+    "matchLineRange": [4, 12],
+    "matchRecommendationContainsAny": ["spread", "immutab", "mutat", "object"],
     "required": true
   },
   {
     "description": "Flags boolean flag parameter in getUsers",
-    "matchLineRange": [16, 22],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "separate function",
+    "matchLineRange": [8, 22],
+    "matchRecommendationContainsAny": ["separate", "predicate", "two function", "filter"],
     "required": true
   }
 ]

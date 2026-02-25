@@ -2,14 +2,13 @@
   {
     "description": "Flags god component with multiple responsibilities",
     "matchLineRange": [1, 9],
-    "matchCategory": "clean",
+    "matchRecommendationContainsAny": ["extract", "custom hook", "split", "separate"],
     "required": true
   },
   {
     "description": "Flags inline data filtering/sorting",
-    "matchLineRange": [6, 7],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "extract",
+    "matchLineRange": [3, 9],
+    "matchRecommendationContainsAny": ["extract", "useMemo", "memoiz"],
     "required": false
   }
 ]

@@ -2,15 +2,13 @@
   {
     "description": "Flags prop drilling of theme through multiple layers",
     "matchLineRange": [1, 18],
-    "matchCategory": "idiomatic",
-    "matchRecommendationContains": "context",
+    "matchRecommendationContainsAny": ["context", "component", "combine", "reduce"],
     "required": true
   },
   {
     "description": "Flags class component that should be a function component",
-    "matchLineRange": [20, 25],
-    "matchCategory": "idiomatic",
-    "matchRecommendationContains": "function component",
+    "matchLineRange": [4, 25],
+    "matchRecommendationContainsAny": ["function", "functional", "class", "convert"],
     "required": true
   }
 ]

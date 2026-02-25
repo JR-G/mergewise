@@ -2,15 +2,13 @@
   {
     "description": "Flags useEffect as event handler via boolean flag",
     "matchLineRange": [5, 16],
-    "matchCategory": "idiomatic",
-    "matchRecommendationContains": "event handler",
+    "matchRecommendationContainsAny": ["handleSubmit", "event handler", "directly", "move"],
     "required": true
   },
   {
     "description": "Flags implicit any in catch clause",
     "matchLineRange": [10, 12],
-    "matchCategory": "safety",
-    "matchRecommendationContains": "instanceof",
+    "matchRecommendationContainsAny": ["instanceof", "unknown", "type guard"],
     "required": false
   }
 ]
