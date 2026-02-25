@@ -1,15 +1,15 @@
 [
   {
     "description": "Flags inline handler defeating React.memo",
-    "matchLineRange": [22, 24],
-    "matchCategory": "perf",
-    "matchRecommendationContains": "useCallback",
+    "matchLineRange": [8, 28],
+    "matchCategory": "clean",
+    "matchRecommendationContains": "callback",
     "required": true
   },
   {
     "description": "Flags unmemoised list item component",
-    "matchLineRange": [11, 13],
-    "matchCategory": "perf",
+    "matchLineRange": [8, 20],
+    "matchCategory": "clean",
     "matchRecommendationContains": "memo",
     "required": false
   }

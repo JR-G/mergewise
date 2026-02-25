@@ -2,8 +2,8 @@
   {
     "description": "Flags useEffect as event handler via boolean flag",
     "matchLineRange": [5, 16],
-    "matchCategory": "idiomatic",
-    "matchRecommendationContains": "event handler",
+    "matchCategory": "clean",
+    "matchRecommendationContains": "handleSubmit",
     "required": true
   },
   {

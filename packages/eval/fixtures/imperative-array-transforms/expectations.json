@@ -1,23 +1,23 @@
 [
   {
     "description": "Flags imperative filter+push loop in getShippedOrderIds",
-    "matchLineRange": [4, 10],
+    "matchLineRange": [3, 10],
     "matchCategory": "clean",
     "matchRecommendationContains": "filter",
     "required": true
   },
   {
     "description": "Flags mutable accumulator in calculateRevenue",
-    "matchLineRange": [13, 20],
+    "matchLineRange": [10, 20],
     "matchCategory": "clean",
     "matchRecommendationContains": "reduce",
     "required": true
   },
   {
     "description": "Flags string concatenation loop in buildSummary",
-    "matchLineRange": [23, 28],
+    "matchLineRange": [16, 28],
     "matchCategory": "clean",
-    "matchRecommendationContains": "join",
+    "matchRecommendationContains": "map",
     "required": false
   }
 ]

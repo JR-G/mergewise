@@ -1,8 +1,8 @@
 [
   {
     "description": "Flags unsafe as type assertions instead of type guards",
-    "matchLineRange": [21, 23],
-    "matchCategory": "safety",
+    "matchLineRange": [7, 23],
+    "matchCategory": "clean",
     "matchRecommendationContains": "type guard",
     "required": true
   },

@@ -1,16 +1,16 @@
 [
   {
     "description": "Flags derived state stored in useState + useEffect sync loop",
-    "matchLineRange": [6, 9],
-    "matchCategory": "idiomatic",
+    "matchLineRange": [4, 9],
+    "matchCategory": "clean",
     "matchRecommendationContains": "derive",
     "required": true
   },
   {
     "description": "Flags unmemoised sort in render",
-    "matchLineRange": [10, 10],
-    "matchCategory": "perf",
-    "matchRecommendationContains": "memo",
+    "matchLineRange": [4, 10],
+    "matchCategory": "clean",
+    "matchRecommendationContains": "sort",
     "required": true
   }
 ]

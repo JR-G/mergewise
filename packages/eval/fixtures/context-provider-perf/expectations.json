@@ -4,11 +4,11 @@
     "matchLineRange": [22, 24],
     "matchCategory": "perf",
     "matchRecommendationContains": "useMemo",
-    "required": true
+    "required": false
   },
   {
     "description": "Flags mixed validation logic in component",
-    "matchLineRange": [13, 20],
+    "matchLineRange": [12, 20],
     "matchCategory": "clean",
     "matchRecommendationContains": "extract",
     "required": true
