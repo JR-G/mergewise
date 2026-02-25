@@ -11,13 +11,13 @@ if ! git rev-parse --verify "${comparison_head_sha}" >/dev/null 2>&1; then
   comparison_head_sha="HEAD"
 fi
 
-if [ -n "${comparison_base_sha}" ] && git rev-parse --verify "${comparison_base_sha}" >/dev/null 2>&1; then
-  :
-elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-  comparison_base_sha="HEAD^"
-else
-  printf '%s\n' "No previous commit available. Continuing deployment."
-  exit 1
+if [ -z "${comparison_base_sha}" ] || ! git rev-parse --verify "${comparison_base_sha}" >/dev/null 2>&1; then
+  if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+    comparison_base_sha="HEAD^"
+  else
+    printf '%s\n' "No previous commit available. Continuing deployment."
+    exit 1
+  fi
 fi
 
 if git diff --quiet "${comparison_base_sha}" "${comparison_head_sha}" -- apps/site; then
