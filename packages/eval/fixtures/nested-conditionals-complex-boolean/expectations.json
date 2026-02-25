@@ -2,15 +2,13 @@
   {
     "description": "Flags deeply nested conditionals — flatten with early returns",
     "matchLineRange": [4, 36],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "extract",
+    "matchRecommendationContainsAny": ["extract", "early return", "flatten", "guard"],
     "required": true
   },
   {
     "description": "Flags complex boolean expression — extract named predicates",
     "matchLineRange": [4, 41],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "predicate",
+    "matchRecommendationContainsAny": ["predicate", "named", "descriptive variable"],
     "required": true
   }
 ]

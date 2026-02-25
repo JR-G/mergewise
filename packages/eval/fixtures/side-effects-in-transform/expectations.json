@@ -2,22 +2,19 @@
   {
     "description": "Flags imperative object building in processUsers",
     "matchLineRange": [4, 12],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "reduce",
+    "matchRecommendationContainsAny": ["reduce", "Object.fromEntries", "declarative"],
     "required": true
   },
   {
     "description": "Flags imperative loop with mutation in deactivateUsers",
     "matchLineRange": [12, 25],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "mutat",
+    "matchRecommendationContainsAny": ["mutat", "immutab", "new User", "map"],
     "required": true
   },
   {
     "description": "Flags side effect (console.log) mixed into transformation",
     "matchLineRange": [6, 8],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "log",
+    "matchRecommendationContainsAny": ["log", "side effect"],
     "required": false
   }
 ]

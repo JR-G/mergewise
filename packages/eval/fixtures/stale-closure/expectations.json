@@ -2,6 +2,7 @@
   {
     "description": "Flags stale closure in useEffect with missing dependency",
     "matchLineRange": [1, 5],
+    "matchRecommendationContainsAny": ["dependency", "count", "stale", "closure"],
     "required": true
   }
 ]

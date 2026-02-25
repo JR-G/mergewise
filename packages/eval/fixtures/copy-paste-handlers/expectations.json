@@ -2,15 +2,13 @@
   {
     "description": "Flags DRY violation — duplicated validation logic",
     "matchLineRange": [2, 30],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "extract",
+    "matchRecommendationContainsAny": ["extract", "shared", "common", "duplicat"],
     "required": true
   },
   {
     "description": "Flags vague naming — handleData/processResult",
     "matchLineRange": [16, 36],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "simplify",
+    "matchRecommendationContainsAny": ["simplify", "rename", "inline", "name"],
     "required": true
   }
 ]

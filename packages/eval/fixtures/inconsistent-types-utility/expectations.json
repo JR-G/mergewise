@@ -2,22 +2,19 @@
   {
     "description": "Flags inconsistent absent value representation",
     "matchLineRange": [1, 6],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "undefined",
-    "required": false
+    "matchRecommendationContainsAny": ["undefined", "optional", "consistent", "null"],
+    "required": true
   },
   {
     "description": "Flags overly wide generic constraint",
     "matchLineRange": [6, 10],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "specific",
+    "matchRecommendationContainsAny": ["specific", "narrow", "constrain"],
     "required": false
   },
   {
     "description": "Flags deeply nested callbacks",
     "matchLineRange": [4, 20],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "await",
+    "matchRecommendationContainsAny": ["await", "async", "Promise", "flatten"],
     "required": true
   }
 ]

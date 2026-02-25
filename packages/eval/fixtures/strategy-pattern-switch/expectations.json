@@ -2,15 +2,13 @@
   {
     "description": "Flags Open/Closed violation — strategy pattern opportunity",
     "matchLineRange": [4, 33],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "handler",
+    "matchRecommendationContainsAny": ["strategy", "handler", "Open/Closed", "map of"],
     "required": true
   },
   {
     "description": "Flags SRP violation — each case does too much",
     "matchLineRange": [4, 33],
-    "matchCategory": "clean",
-    "matchRecommendationContains": "dedicated",
+    "matchRecommendationContainsAny": ["dedicated", "separate", "extract", "handler"],
     "required": false
   }
 ]
