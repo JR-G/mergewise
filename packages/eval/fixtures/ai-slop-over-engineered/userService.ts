@@ -1,0 +1,29 @@
+type UserResponse = {
+  data: { id: string; name: string };
+};
+
+const extractUserName = (response: UserResponse): string => {
+  return response.data.name;
+};
+
+const getUserDisplayInfo = (response: UserResponse): string => {
+  const name: string = extractUserName(response);
+  return name;
+};
+
+async function fetchUserData(userId: string): Promise<string> {
+  try {
+    const response: UserResponse = await apiClient.get(`/users/${userId}`);
+    try {
+      const displayInfo: string = getUserDisplayInfo(response);
+      if (displayInfo !== null && displayInfo !== undefined) {
+        return displayInfo;
+      }
+      return "";
+    } catch (innerError) {
+      throw innerError;
+    }
+  } catch (outerError) {
+    throw outerError;
+  }
+}

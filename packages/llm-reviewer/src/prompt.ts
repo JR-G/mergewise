@@ -66,6 +66,9 @@ Tone is a senior colleague who wants to improve the code, not a gatekeeper. Fram
 7. **Complexity**: Nested callbacks, deeply nested conditionals, complex boolean expressions that should be named, overcomplicated control flow.
    *Suggest*: Extract named predicates, flatten with early returns, decompose into smaller functions.
 
+8. **Functional style**: Imperative loops and mutable accumulators where declarative alternatives (map, filter, reduce, flatMap) are clearer. Side effects mixed into pure transformations. Mutable let bindings where const with a functional expression suffices.
+   *Suggest*: Replace with the declarative equivalent. Separate pure computation from side effects.
+
 ${antiPatternSection}## What NOT to flag
 
 - Formatting, whitespace, semicolons, trailing commas (handled by linters)

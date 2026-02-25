@@ -1,11 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type {
   CodebaseContext,
   FileDiff,
   DiffHunk,
   PullRequestMetadata,
 } from "@mergewise/shared-types";
-type TestServer = ReturnType<typeof Bun.serve>;
 import {
   ANTI_PATTERNS,
   selectFilesForReview,
@@ -41,6 +40,30 @@ function makeMockCodebaseContext(files: Record<string, string> = {}): CodebaseCo
     conventions: new Map(),
     readFile: async (path: string) => files[path] ?? null,
   };
+}
+
+async function withMockFetch(
+  handler: (request: Request) => Promise<Response> | Response,
+  action: () => Promise<void>,
+): Promise<void> {
+  const originalFetch = globalThis.fetch;
+  const mockFetch = async (
+    input: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1],
+  ): Promise<Response> => {
+    const requestInput = input instanceof URL ? input.toString() : input;
+    const request = requestInput instanceof Request
+      ? requestInput
+      : new Request(requestInput, init);
+    return await handler(request);
+  };
+  const patchedFetch = Object.assign(mockFetch, originalFetch);
+  globalThis.fetch = patchedFetch;
+  try {
+    await action();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 }
 
 describe("selectFilesForReview", () => {
@@ -559,79 +582,57 @@ function buildCompletionResponse(content: string): string {
 }
 
 describe("ReviewClient (via fake HTTP server)", () => {
-  let server: TestServer;
-  let serverUrl: string;
-  let lastRequestBody: Record<string, unknown> | null = null;
-  let responseContent = '{"findings": []}';
-
-  beforeAll(() => {
-    server = Bun.serve({
-      port: 0,
-      fetch: async (request) => {
-        try {
-          lastRequestBody = await request.json() as Record<string, unknown>;
-        } catch {
-          lastRequestBody = null;
-          return new Response(JSON.stringify({ error: "invalid json" }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        return new Response(buildCompletionResponse(responseContent), {
+  test("sends correct request structure to OpenAI-compatible endpoint", async () => {
+    await withMockFetch(
+      async (request) => {
+        const requestBody = await request.json() as Record<string, unknown>;
+        expect(requestBody.model).toBe("test-model");
+        expect(requestBody.temperature).toBe(0.2);
+        expect(requestBody.max_completion_tokens).toBe(1024);
+        const messages = requestBody.messages as { role: string; content: string }[];
+        expect(messages).toHaveLength(2);
+        expect(messages[0]!.role).toBe("system");
+        expect(messages[0]!.content).toBe("system prompt");
+        expect(messages[1]!.role).toBe("user");
+        expect(messages[1]!.content).toBe("user prompt");
+        return new Response(buildCompletionResponse(JSON.stringify({ findings: [] })), {
           headers: { "Content-Type": "application/json" },
         });
       },
-    });
-    serverUrl = `http://localhost:${server.port}/v1`;
-  });
-
-  afterAll(async () => {
-    await server.stop(true);
-  });
-
-  test("sends correct request structure to OpenAI-compatible endpoint", async () => {
-    responseContent = JSON.stringify({ findings: [] });
-
-    const client = createReviewClient({
-      apiKey: "test-api-key",
-      baseUrl: serverUrl,
-      model: "test-model",
-    });
-
-    await client.complete("system prompt", "user prompt", 1024);
-
-    expect(lastRequestBody).not.toBeNull();
-    expect(lastRequestBody!.model).toBe("test-model");
-    expect(lastRequestBody!.temperature).toBe(0.2);
-    expect(lastRequestBody!.max_completion_tokens).toBe(1024);
-
-    const messages = lastRequestBody!.messages as { role: string; content: string }[];
-    expect(messages).toHaveLength(2);
-    expect(messages[0]!.role).toBe("system");
-    expect(messages[0]!.content).toBe("system prompt");
-    expect(messages[1]!.role).toBe("user");
-    expect(messages[1]!.content).toBe("user prompt");
+      async () => {
+        const client = createReviewClient({
+          apiKey: "test-api-key",
+          baseUrl: "http://mock.local/v1",
+          model: "test-model",
+        });
+        await client.complete("system prompt", "user prompt", 1024);
+      },
+    );
   });
 
   test("returns parsed content from the LLM response", async () => {
-    responseContent = JSON.stringify({ findings: [{ line: 1 }] });
-
-    const client = createReviewClient({
-      apiKey: "test-key",
-      baseUrl: serverUrl,
-      model: "test-model",
-    });
-
-    const result = await client.complete("sys", "usr", 512);
-    const parsed = JSON.parse(result) as { findings: { line: number }[] };
-    expect(parsed.findings).toHaveLength(1);
-    expect(parsed.findings[0]!.line).toBe(1);
+    await withMockFetch(
+      () =>
+        new Response(buildCompletionResponse(JSON.stringify({ findings: [{ line: 1 }] })), {
+          headers: { "Content-Type": "application/json" },
+        }),
+      async () => {
+        const client = createReviewClient({
+          apiKey: "test-key",
+          baseUrl: "http://mock.local/v1",
+          model: "test-model",
+        });
+        const result = await client.complete("sys", "usr", 512);
+        const parsed = JSON.parse(result) as { findings: { line: number }[] };
+        expect(parsed.findings).toHaveLength(1);
+        expect(parsed.findings[0]!.line).toBe(1);
+      },
+    );
   });
 
   test("throws on empty response content", async () => {
-    const emptyServer = Bun.serve({
-      port: 0,
-      fetch: () =>
+    await withMockFetch(
+      () =>
         new Response(
           JSON.stringify({
             id: "chatcmpl-empty",
@@ -649,45 +650,26 @@ describe("ReviewClient (via fake HTTP server)", () => {
           }),
           { headers: { "Content-Type": "application/json" } },
         ),
-    });
-
-    const client = createReviewClient({
-      apiKey: "test-key",
-      baseUrl: `http://localhost:${emptyServer.port}/v1`,
-      model: "test-model",
-    });
-
-    // eslint-disable-next-line @typescript-eslint/await-thenable
-    await expect(client.complete("sys", "usr", 512)).rejects.toThrow(
-      "LLM returned empty response",
+      async () => {
+        const client = createReviewClient({
+          apiKey: "test-key",
+          baseUrl: "http://mock.local/v1",
+          model: "test-model",
+        });
+        let thrownError: unknown = null;
+        try {
+          await client.complete("sys", "usr", 512);
+        } catch (error) {
+          thrownError = error;
+        }
+        expect(thrownError).toBeInstanceOf(Error);
+        expect((thrownError as Error).message).toContain("LLM returned empty response");
+      },
     );
-
-    await emptyServer.stop(true);
   });
 });
 
 describe("reviewFile (via fake HTTP server)", () => {
-  let server: TestServer;
-  let serverUrl: string;
-  let nextResponse = '{"findings": []}';
-
-  beforeAll(() => {
-    server = Bun.serve({
-      port: 0,
-      fetch: () => {
-        const content = nextResponse;
-        return new Response(buildCompletionResponse(content), {
-          headers: { "Content-Type": "application/json" },
-        });
-      },
-    });
-    serverUrl = `http://localhost:${server.port}/v1`;
-  });
-
-  afterAll(async () => {
-    await server.stop(true);
-  });
-
   test("returns validated findings through the full pipeline", async () => {
     const diff = makeDiff("src/app.ts", [
       makeHunk("@@ -0,0 +1,3 @@", [
@@ -697,39 +679,45 @@ describe("reviewFile (via fake HTTP server)", () => {
       ]),
     ]);
 
-    nextResponse = JSON.stringify({
-      findings: [
-        {
-          line: 1,
-          category: "idiomatic",
-          confidence: 0.85,
-          evidence: "const data = fetch()",
-          recommendation: "Rename 'data' to describe what is being fetched.",
-        },
-      ],
-    });
-
-    const client = createReviewClient({
-      apiKey: "test-key",
-      baseUrl: serverUrl,
-      model: "test-model",
-      maxRetries: 0,
-    });
-
-    const codebaseContext = makeMockCodebaseContext({
-      "src/app.ts": "const data = fetch()\nconst info = parse(data)\nexport default info",
-    });
-
-    const findings = await reviewFile(diff, PULL_REQUEST_METADATA, codebaseContext, client);
-
-    expect(findings).toHaveLength(1);
-    expect(findings[0]!.line).toBe(1);
-    expect(findings[0]!.category).toBe("idiomatic");
-    expect(findings[0]!.confidence).toBe(0.85);
-    expect(findings[0]!.ruleId).toBe("llm/reviewer");
-    expect(findings[0]!.filePath).toBe("src/app.ts");
-    expect(findings[0]!.patchSuggestionPolicy).toBe("manual-only");
-    expect(findings[0]!.status).toBe("posted");
+    await withMockFetch(
+      () =>
+        new Response(
+          buildCompletionResponse(
+            JSON.stringify({
+              findings: [
+                {
+                  line: 1,
+                  category: "idiomatic",
+                  confidence: 0.85,
+                  evidence: "const data = fetch()",
+                  recommendation: "Rename 'data' to describe what is being fetched.",
+                },
+              ],
+            }),
+          ),
+          { headers: { "Content-Type": "application/json" } },
+        ),
+      async () => {
+        const client = createReviewClient({
+          apiKey: "test-key",
+          baseUrl: "http://mock.local/v1",
+          model: "test-model",
+          maxRetries: 0,
+        });
+        const codebaseContext = makeMockCodebaseContext({
+          "src/app.ts": "const data = fetch()\nconst info = parse(data)\nexport default info",
+        });
+        const findings = await reviewFile(diff, PULL_REQUEST_METADATA, codebaseContext, client);
+        expect(findings).toHaveLength(1);
+        expect(findings[0]!.line).toBe(1);
+        expect(findings[0]!.category).toBe("idiomatic");
+        expect(findings[0]!.confidence).toBe(0.85);
+        expect(findings[0]!.ruleId).toBe("llm/reviewer");
+        expect(findings[0]!.filePath).toBe("src/app.ts");
+        expect(findings[0]!.patchSuggestionPolicy).toBe("manual-only");
+        expect(findings[0]!.status).toBe("posted");
+      },
+    );
   });
 
   test("returns empty array when LLM finds nothing", async () => {
@@ -737,17 +725,22 @@ describe("reviewFile (via fake HTTP server)", () => {
       makeHunk("@@ -0,0 +1,1 @@", ["+export const VERSION = '1.0.0'"]),
     ]);
 
-    nextResponse = JSON.stringify({ findings: [] });
-
-    const client = createReviewClient({
-      apiKey: "test-key",
-      baseUrl: serverUrl,
-      model: "test-model",
-      maxRetries: 0,
-    });
-
-    const findings = await reviewFile(diff, PULL_REQUEST_METADATA, makeMockCodebaseContext(), client);
-    expect(findings).toHaveLength(0);
+    await withMockFetch(
+      () =>
+        new Response(buildCompletionResponse(JSON.stringify({ findings: [] })), {
+          headers: { "Content-Type": "application/json" },
+        }),
+      async () => {
+        const client = createReviewClient({
+          apiKey: "test-key",
+          baseUrl: "http://mock.local/v1",
+          model: "test-model",
+          maxRetries: 0,
+        });
+        const findings = await reviewFile(diff, PULL_REQUEST_METADATA, makeMockCodebaseContext(), client);
+        expect(findings).toHaveLength(0);
+      },
+    );
   });
 
   test("discards hallucinated line numbers from LLM", async () => {
@@ -755,21 +748,35 @@ describe("reviewFile (via fake HTTP server)", () => {
       makeHunk("@@ -0,0 +1,1 @@", ["+const valid = true"]),
     ]);
 
-    nextResponse = JSON.stringify({
-      findings: [
-        { line: 999, category: "clean", confidence: 0.9, evidence: "ghost", recommendation: "Does not exist." },
-      ],
-    });
-
-    const client = createReviewClient({
-      apiKey: "test-key",
-      baseUrl: serverUrl,
-      model: "test-model",
-      maxRetries: 0,
-    });
-
-    const findings = await reviewFile(diff, PULL_REQUEST_METADATA, makeMockCodebaseContext(), client);
-    expect(findings).toHaveLength(0);
+    await withMockFetch(
+      () =>
+        new Response(
+          buildCompletionResponse(
+            JSON.stringify({
+              findings: [
+                {
+                  line: 999,
+                  category: "clean",
+                  confidence: 0.9,
+                  evidence: "ghost",
+                  recommendation: "Does not exist.",
+                },
+              ],
+            }),
+          ),
+          { headers: { "Content-Type": "application/json" } },
+        ),
+      async () => {
+        const client = createReviewClient({
+          apiKey: "test-key",
+          baseUrl: "http://mock.local/v1",
+          model: "test-model",
+          maxRetries: 0,
+        });
+        const findings = await reviewFile(diff, PULL_REQUEST_METADATA, makeMockCodebaseContext(), client);
+        expect(findings).toHaveLength(0);
+      },
+    );
   });
 
   test("handles file not found in codebase gracefully", async () => {
@@ -777,18 +784,23 @@ describe("reviewFile (via fake HTTP server)", () => {
       makeHunk("@@ -0,0 +1,1 @@", ["+export const NEW = true"]),
     ]);
 
-    nextResponse = JSON.stringify({ findings: [] });
-
-    const client = createReviewClient({
-      apiKey: "test-key",
-      baseUrl: serverUrl,
-      model: "test-model",
-      maxRetries: 0,
-    });
-
-    const emptyContext = makeMockCodebaseContext();
-    const findings = await reviewFile(diff, PULL_REQUEST_METADATA, emptyContext, client);
-    expect(findings).toHaveLength(0);
+    await withMockFetch(
+      () =>
+        new Response(buildCompletionResponse(JSON.stringify({ findings: [] })), {
+          headers: { "Content-Type": "application/json" },
+        }),
+      async () => {
+        const client = createReviewClient({
+          apiKey: "test-key",
+          baseUrl: "http://mock.local/v1",
+          model: "test-model",
+          maxRetries: 0,
+        });
+        const emptyContext = makeMockCodebaseContext();
+        const findings = await reviewFile(diff, PULL_REQUEST_METADATA, emptyContext, client);
+        expect(findings).toHaveLength(0);
+      },
+    );
   });
 });
 
@@ -823,9 +835,8 @@ describe("createLlmReviewerRule", () => {
   });
 
   test("analyses selected files and returns findings via fake server", async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch: () =>
+    await withMockFetch(
+      () =>
         new Response(
           buildCompletionResponse(
             JSON.stringify({
@@ -842,123 +853,106 @@ describe("createLlmReviewerRule", () => {
           ),
           { headers: { "Content-Type": "application/json" } },
         ),
-    });
-
-    const rule = createLlmReviewerRule({
-      clientConfig: {
-        apiKey: "test-key",
-        baseUrl: `http://localhost:${server.port}/v1`,
-        model: "test-model",
+      async () => {
+        const rule = createLlmReviewerRule({
+          clientConfig: {
+            apiKey: "test-key",
+            baseUrl: "http://mock.local/v1",
+            model: "test-model",
+          },
+        });
+        const context = {
+          diffs: [
+            makeDiff("src/service.ts", [
+              makeHunk("@@ -0,0 +1,2 @@", [
+                "+const result = processData()",
+                "+export default result",
+              ]),
+            ]),
+          ],
+          pullRequest: PULL_REQUEST_METADATA,
+        };
+        const codebaseContext = makeMockCodebaseContext({
+          "src/service.ts": "const result = processData()\nexport default result",
+        });
+        const findings = await rule.analyse(context, codebaseContext);
+        expect(findings).toHaveLength(1);
+        expect(findings[0]!.ruleId).toBe("llm/reviewer");
+        expect(findings[0]!.filePath).toBe("src/service.ts");
+        expect(findings[0]!.line).toBe(1);
+        expect(findings[0]!.category).toBe("clean");
+        expect(findings[0]!.confidence).toBe(0.88);
       },
-    });
-
-    const context = {
-      diffs: [
-        makeDiff("src/service.ts", [
-          makeHunk("@@ -0,0 +1,2 @@", [
-            "+const result = processData()",
-            "+export default result",
-          ]),
-        ]),
-      ],
-      pullRequest: PULL_REQUEST_METADATA,
-    };
-
-    const codebaseContext = makeMockCodebaseContext({
-      "src/service.ts": "const result = processData()\nexport default result",
-    });
-
-    const findings = await rule.analyse(context, codebaseContext);
-
-    expect(findings).toHaveLength(1);
-    expect(findings[0]!.ruleId).toBe("llm/reviewer");
-    expect(findings[0]!.filePath).toBe("src/service.ts");
-    expect(findings[0]!.line).toBe(1);
-    expect(findings[0]!.category).toBe("clean");
-    expect(findings[0]!.confidence).toBe(0.88);
-
-    await server.stop(true);
+    );
   });
 
   test("reviews multiple files and flattens findings", async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch: async (request) => {
+    await withMockFetch(
+      async (request) => {
         const body = await request.json() as { messages?: { content?: string }[] };
-        const userMessage = body.messages?.find((msg) => msg.content?.includes("## File:"))?.content ?? "";
+        const userMessage = body.messages?.find((message) => message.content?.includes("## File:"))?.content ?? "";
         const isFileA = userMessage.includes("## File: src/a.ts");
         const findingsForFile = isFileA
           ? [{ line: 1, category: "idiomatic", confidence: 0.8, evidence: "a", recommendation: "fix a" }]
           : [{ line: 1, category: "safety", confidence: 0.9, evidence: "b", recommendation: "fix b" }];
-
-        return new Response(
-          buildCompletionResponse(JSON.stringify({ findings: findingsForFile })),
-          { headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(buildCompletionResponse(JSON.stringify({ findings: findingsForFile })), {
+          headers: { "Content-Type": "application/json" },
+        });
       },
-    });
-
-    const rule = createLlmReviewerRule({
-      clientConfig: {
-        apiKey: "test-key",
-        baseUrl: `http://localhost:${server.port}/v1`,
-        model: "test-model",
+      async () => {
+        const rule = createLlmReviewerRule({
+          clientConfig: {
+            apiKey: "test-key",
+            baseUrl: "http://mock.local/v1",
+            model: "test-model",
+          },
+        });
+        const context = {
+          diffs: [
+            makeDiff("src/a.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const aa = 1"])]),
+            makeDiff("src/b.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const bb = 2"])]),
+          ],
+          pullRequest: PULL_REQUEST_METADATA,
+        };
+        const findings = await rule.analyse(context, makeMockCodebaseContext());
+        expect(findings).toHaveLength(2);
+        const filePaths = findings.map((finding) => finding.filePath);
+        expect(filePaths).toContain("src/a.ts");
+        expect(filePaths).toContain("src/b.ts");
       },
-    });
-
-    const context = {
-      diffs: [
-        makeDiff("src/a.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const aa = 1"])]),
-        makeDiff("src/b.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const bb = 2"])]),
-      ],
-      pullRequest: PULL_REQUEST_METADATA,
-    };
-
-    const findings = await rule.analyse(context, makeMockCodebaseContext());
-
-    expect(findings).toHaveLength(2);
-    const filePaths = findings.map((finding) => finding.filePath);
-    expect(filePaths).toContain("src/a.ts");
-    expect(filePaths).toContain("src/b.ts");
-
-    await server.stop(true);
+    );
   });
 
   test("continues silently when a file review fails without onFileReviewError", async () => {
-    const server = Bun.serve({
-      port: 0,
-      fetch: () => new Response("Internal Server Error", { status: 500 }),
-    });
-
-    const rule = createLlmReviewerRule({
-      clientConfig: {
-        apiKey: "test-key",
-        baseUrl: `http://localhost:${server.port}/v1`,
-        model: "test-model",
-        maxRetries: 0,
+    await withMockFetch(
+      () => new Response("Internal Server Error", { status: 500 }),
+      async () => {
+        const rule = createLlmReviewerRule({
+          clientConfig: {
+            apiKey: "test-key",
+            baseUrl: "http://mock.local/v1",
+            model: "test-model",
+            maxRetries: 0,
+          },
+        });
+        const context = {
+          diffs: [
+            makeDiff("src/fail.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const x = 1"])]),
+          ],
+          pullRequest: PULL_REQUEST_METADATA,
+        };
+        const findings = await rule.analyse(context, makeMockCodebaseContext());
+        expect(findings).toHaveLength(0);
       },
-    });
-
-    const context = {
-      diffs: [
-        makeDiff("src/fail.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const x = 1"])]),
-      ],
-      pullRequest: PULL_REQUEST_METADATA,
-    };
-
-    const findings = await rule.analyse(context, makeMockCodebaseContext());
-    expect(findings).toHaveLength(0);
-
-    await server.stop(true);
+    );
   });
 
   test("calls onFileReviewError and continues when a file review fails", async () => {
-    let callCount = 0;
-    const server = Bun.serve({
-      port: 0,
-      fetch: () => {
-        callCount += 1;
-        if (callCount === 1) {
+    let invocationCount = 0;
+    await withMockFetch(
+      () => {
+        invocationCount += 1;
+        if (invocationCount === 1) {
           return new Response("Internal Server Error", { status: 500 });
         }
         return new Response(
@@ -972,36 +966,32 @@ describe("createLlmReviewerRule", () => {
           { headers: { "Content-Type": "application/json" } },
         );
       },
-    });
-
-    const errors: { filePath: string; error: unknown }[] = [];
-    const rule = createLlmReviewerRule({
-      clientConfig: {
-        apiKey: "test-key",
-        baseUrl: `http://localhost:${server.port}/v1`,
-        model: "test-model",
-        maxRetries: 0,
+      async () => {
+        const errors: { filePath: string; error: unknown }[] = [];
+        const rule = createLlmReviewerRule({
+          clientConfig: {
+            apiKey: "test-key",
+            baseUrl: "http://mock.local/v1",
+            model: "test-model",
+            maxRetries: 0,
+          },
+          onFileReviewError: (filePath, error) => {
+            errors.push({ filePath, error });
+          },
+        });
+        const context = {
+          diffs: [
+            makeDiff("src/fail.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const x = 1"])]),
+            makeDiff("src/pass.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const y = 2"])]),
+          ],
+          pullRequest: PULL_REQUEST_METADATA,
+        };
+        const findings = await rule.analyse(context, makeMockCodebaseContext());
+        expect(findings).toHaveLength(1);
+        expect(findings[0]!.filePath).toBe("src/pass.ts");
+        expect(errors).toHaveLength(1);
+        expect(errors[0]!.filePath).toBe("src/fail.ts");
       },
-      onFileReviewError: (filePath, error) => {
-        errors.push({ filePath, error });
-      },
-    });
-
-    const context = {
-      diffs: [
-        makeDiff("src/fail.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const x = 1"])]),
-        makeDiff("src/pass.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const y = 2"])]),
-      ],
-      pullRequest: PULL_REQUEST_METADATA,
-    };
-
-    const findings = await rule.analyse(context, makeMockCodebaseContext());
-
-    expect(findings).toHaveLength(1);
-    expect(findings[0]!.filePath).toBe("src/pass.ts");
-    expect(errors).toHaveLength(1);
-    expect(errors[0]!.filePath).toBe("src/fail.ts");
-
-    await server.stop(true);
+    );
   });
 });

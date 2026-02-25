@@ -1,0 +1,30 @@
+enum HttpMethod {
+  GET = "GET",
+  POST = "POST",
+  PUT = "PUT",
+  DELETE = "DELETE",
+}
+
+interface ApiResponse {
+  status: number;
+  data: unknown;
+}
+
+function makeRequest(
+  url: string,
+  method: HttpMethod,
+  body: string | null,
+  headers: Record<string, string>,
+  timeout: number,
+  retries: number,
+): ApiResponse {
+  const raw = fetchSync(url, { method, body, headers, timeout });
+  const json = JSON.parse(raw) as ApiResponse;
+  const data = json.data as { id: string; name: string };
+  return { status: json.status, data };
+}
+
+function parseConfig(raw: unknown): { port: number; host: string } {
+  const config = raw as { port: number; host: string };
+  return config;
+}
