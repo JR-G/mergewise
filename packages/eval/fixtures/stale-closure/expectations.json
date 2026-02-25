@@ -2,7 +2,6 @@
   {
     "description": "Flags stale closure in useEffect with missing dependency",
     "matchLineRange": [1, 5],
-    "matchCategory": "idiomatic",
     "required": true
   }
 ]

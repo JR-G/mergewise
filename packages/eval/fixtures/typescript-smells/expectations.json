@@ -3,7 +3,7 @@
     "description": "Flags unsafe as type assertions instead of type guards",
     "matchLineRange": [7, 23],
     "matchCategory": "clean",
-    "matchRecommendationContains": "type guard",
+    "matchRecommendationContains": "assertion",
     "required": true
   },
   {

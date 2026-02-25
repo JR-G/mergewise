@@ -3,7 +3,7 @@
     "description": "Flags Open/Closed violation — strategy pattern opportunity",
     "matchLineRange": [4, 33],
     "matchCategory": "clean",
-    "matchRecommendationContains": "strategy",
+    "matchRecommendationContains": "handler",
     "required": true
   },
   {

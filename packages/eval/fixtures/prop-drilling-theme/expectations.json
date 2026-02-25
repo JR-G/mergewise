@@ -8,9 +8,9 @@
   },
   {
     "description": "Flags class component that should be a function component",
-    "matchLineRange": [16, 25],
+    "matchLineRange": [4, 25],
     "matchCategory": "clean",
-    "matchRecommendationContains": "functional component",
+    "matchRecommendationContains": "class",
     "required": true
   }
 ]
