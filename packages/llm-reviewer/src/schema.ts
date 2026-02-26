@@ -157,11 +157,13 @@ export function deduplicateByProximity(
     const startsNewCluster =
       !previous || finding.line - previous.line > proximityThreshold;
 
-    if (startsNewCluster && currentCluster.length > 0) {
-      clusters.push(currentCluster);
+    if (!startsNewCluster) {
+      currentCluster.push(finding);
+      continue;
     }
 
-    currentCluster = startsNewCluster ? [finding] : [...currentCluster, finding];
+    if (currentCluster.length > 0) clusters.push(currentCluster);
+    currentCluster = [finding];
   }
   if (currentCluster.length > 0) clusters.push(currentCluster);
 
