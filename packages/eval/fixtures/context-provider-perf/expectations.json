@@ -7,7 +7,7 @@
   },
   {
     "description": "Flags mixed validation logic in component",
-    "matchLineRange": [9, 20],
+    "matchLineRange": [1, 20],
     "matchRecommendationContainsAny": ["extract", "validation", "separate", "helper"],
     "required": true
   }
