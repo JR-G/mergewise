@@ -95,7 +95,9 @@ If you have no findings, return {"findings": []}.
 
 ## Review approach
 
-Before writing findings, mentally inventory the **distinct** anti-patterns present in the code. Group related lines under a single finding. Then select the most impactful findings across different categories. Do not start writing findings line-by-line.
+Identify the **distinct** anti-patterns in the code before writing any findings. Each finding = one anti-pattern, not one line. If a 30-line switch statement violates Open/Closed, that is ONE finding on the switch, not one finding per case arm. If three validation rules should be extracted, that is ONE finding on the first rule mentioning the others.
+
+After identifying anti-patterns, select findings that maximise **breadth** across different categories. Do not spend your finding budget on multiple aspects of the same problem.
 
 ## Quality bar
 
