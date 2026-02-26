@@ -123,7 +123,68 @@ export function parseLlmResponse(
     });
   }
 
-  return findings;
+  return deduplicateByProximity(findings);
+}
+
+const PROXIMITY_THRESHOLD = 5;
+const MAX_FINDINGS_PER_FILE = 8;
+
+/**
+ * Collapses nearby findings of the same category into a single
+ * highest-confidence representative, then caps the total count.
+ *
+ * @param findings - Validated findings to deduplicate.
+ * @param proximityThreshold - Maximum line gap within a cluster.
+ * @param maxFindings - Hard cap on returned findings.
+ * @returns Deduplicated findings sorted by confidence descending.
+ */
+export function deduplicateByProximity(
+  findings: Finding[],
+  proximityThreshold: number = PROXIMITY_THRESHOLD,
+  maxFindings: number = MAX_FINDINGS_PER_FILE,
+): Finding[] {
+  if (findings.length === 0) return [];
+
+  const sorted = [...findings].sort(
+    (left, right) => left.line - right.line,
+  );
+
+  const clusters: Finding[][] = [];
+  let currentCluster: Finding[] = [];
+
+  for (const finding of sorted) {
+    const previous = currentCluster.at(-1);
+    const startsNewCluster =
+      !previous || finding.line - previous.line > proximityThreshold;
+
+    if (startsNewCluster && currentCluster.length > 0) {
+      clusters.push(currentCluster);
+    }
+
+    currentCluster = startsNewCluster ? [finding] : [...currentCluster, finding];
+  }
+  if (currentCluster.length > 0) clusters.push(currentCluster);
+
+  const winners: Finding[] = [];
+
+  for (const cluster of clusters) {
+    const byCategory = new Map<string, Finding[]>();
+    for (const finding of cluster) {
+      const existing = byCategory.get(finding.category) ?? [];
+      existing.push(finding);
+      byCategory.set(finding.category, existing);
+    }
+
+    for (const categoryFindings of byCategory.values()) {
+      const best = categoryFindings.reduce((prev, curr) =>
+        curr.confidence > prev.confidence ? curr : prev,
+      );
+      winners.push(best);
+    }
+  }
+
+  winners.sort((left, right) => right.confidence - left.confidence);
+  return winners.slice(0, maxFindings);
 }
 
 function isLlmResponse(value: unknown): value is LlmResponse {

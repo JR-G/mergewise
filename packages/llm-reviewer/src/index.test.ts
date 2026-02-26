@@ -3,6 +3,7 @@ import type {
   CodebaseContext,
   FileDiff,
   DiffHunk,
+  Finding,
   PullRequestMetadata,
 } from "@mergewise/shared-types";
 import {
@@ -10,6 +11,7 @@ import {
   selectFilesForReview,
   extractAddedLineNumbers,
   parseLlmResponse,
+  deduplicateByProximity,
   buildSystemPrompt,
   buildFileReviewPrompt,
   extractStructuralSignals,
@@ -283,6 +285,72 @@ describe("parseLlmResponse", () => {
 
     const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
     expect(result[0]!.findingId).toBe("llm/reviewer:acme/widget:42:src/file.ts:3:safety");
+  });
+});
+
+function makeFinding(overrides: Partial<Finding> & Pick<Finding, "line" | "category" | "confidence">): Finding {
+  return {
+    findingId: `test:${overrides.line}:${overrides.category}`,
+    installationId: 1,
+    repo: "acme/widget",
+    prNumber: 42,
+    language: "typescript",
+    ruleId: "llm/reviewer",
+    filePath: "src/file.ts",
+    evidence: "some code",
+    recommendation: "fix it",
+    patchSuggestionPolicy: "manual-only",
+    status: "posted",
+    ...overrides,
+  };
+}
+
+describe("deduplicateByProximity", () => {
+  test("collapses findings within proximity into highest-confidence winner", () => {
+    const findings = [
+      makeFinding({ line: 4, category: "clean", confidence: 0.85 }),
+      makeFinding({ line: 5, category: "clean", confidence: 0.80 }),
+      makeFinding({ line: 8, category: "clean", confidence: 0.75 }),
+    ];
+
+    const result = deduplicateByProximity(findings);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.line).toBe(4);
+    expect(result[0]!.confidence).toBe(0.85);
+  });
+
+  test("preserves findings from different clusters", () => {
+    const findings = [
+      makeFinding({ line: 2, category: "clean", confidence: 0.85 }),
+      makeFinding({ line: 20, category: "clean", confidence: 0.80 }),
+    ];
+
+    const result = deduplicateByProximity(findings);
+    expect(result).toHaveLength(2);
+  });
+
+  test("preserves findings in same cluster with different categories", () => {
+    const findings = [
+      makeFinding({ line: 3, category: "clean", confidence: 0.85 }),
+      makeFinding({ line: 5, category: "perf", confidence: 0.80 }),
+    ];
+
+    const result = deduplicateByProximity(findings);
+    expect(result).toHaveLength(2);
+  });
+
+  test("caps output at 8 findings", () => {
+    const findings = Array.from({ length: 12 }, (_, idx) =>
+      makeFinding({ line: (idx + 1) * 10, category: "clean", confidence: 0.9 - idx * 0.01 }),
+    );
+
+    const result = deduplicateByProximity(findings);
+    expect(result).toHaveLength(8);
+    expect(result[0]!.confidence).toBe(0.9);
+  });
+
+  test("returns empty array for empty input", () => {
+    expect(deduplicateByProximity([])).toHaveLength(0);
   });
 });
 
