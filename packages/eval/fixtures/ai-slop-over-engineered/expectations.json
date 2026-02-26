@@ -7,8 +7,8 @@
   },
   {
     "description": "Flags excessive try/catch with rethrow",
-    "matchLineRange": [14, 29],
-    "matchRecommendationContainsAny": ["try", "catch", "remove", "rethrow", "re-throw"],
+    "matchLineRange": [5, 29],
+    "matchRecommendationContainsAny": ["try", "catch", "remove", "rethrow", "re-throw", "eliminate", "nested"],
     "required": true
   },
   {

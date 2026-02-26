@@ -2,7 +2,7 @@
   {
     "description": "Flags unstable inline object as context provider value",
     "matchLineRange": [21, 26],
-    "matchRecommendationContainsAny": ["useMemo", "memo", "stable", "object"],
+    "matchRecommendationContainsAny": ["useMemo", "memo", "stable", "object", "useCallback"],
     "required": true
   },
   {

@@ -13,8 +13,8 @@
   },
   {
     "description": "Flags deeply nested callbacks",
-    "matchLineRange": [11, 20],
-    "matchRecommendationContainsAny": ["await", "async", "Promise", "flatten"],
+    "matchLineRange": [1, 20],
+    "matchRecommendationContainsAny": ["await", "async", "Promise", "flatten", "callback", "nest"],
     "required": true
   }
 ]
