@@ -1,7 +1,7 @@
 [
   {
     "description": "Flags inline handler in map defeating React.memo on TodoItem",
-    "matchLineRange": [15, 28],
+    "matchLineRange": [5, 31],
     "matchRecommendationContainsAny": ["extract", "useCallback", "callback", "named function"],
     "required": true
   },

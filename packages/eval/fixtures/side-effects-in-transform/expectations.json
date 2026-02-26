@@ -2,7 +2,7 @@
   {
     "description": "Flags imperative object building in processUsers",
     "matchLineRange": [3, 13],
-    "matchRecommendationContainsAny": ["reduce", "Object.fromEntries", "declarative"],
+    "matchRecommendationContainsAny": ["reduce", "Object.fromEntries", "declarative", "map", "forEach", "filter"],
     "required": true
   },
   {
