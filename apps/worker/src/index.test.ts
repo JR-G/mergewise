@@ -2961,6 +2961,18 @@ describe("buildPrSummaryComment", () => {
     expect(body).not.toContain("files");
     expect(body).not.toContain("findings");
   });
+
+  test("escapes pipes and newlines in recommendation text", () => {
+    const findings: Finding[] = [
+      {
+        ...createFinding("f1", 0.9, "safety"),
+        recommendation: "Use A | B instead\nof C",
+      },
+    ];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body).toContain("Use A \\| B instead of C");
+    expect(body).not.toContain("Use A | B");
+  });
 });
 
 describe("upsertPrSummaryComment", () => {

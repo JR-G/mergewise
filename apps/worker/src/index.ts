@@ -2531,12 +2531,21 @@ function buildDebugMetadataSection(finding: Finding, dedupeKey: string): string 
 
 const PR_SUMMARY_COMMENT_MARKER = "<!-- mergewise-summary -->";
 
+/**
+ * Input for {@link buildPrSummaryComment}.
+ */
 export interface PrSummaryInput {
+  /** Relative paths of all files included in the review. */
   readonly filePaths: readonly string[];
+  /** Gated findings produced by the analysis pipeline. */
   readonly findings: readonly Finding[];
+  /** Repository in `owner/name` format for blob links. */
   readonly repositoryFullName: string;
+  /** PR head commit SHA used to construct permalink URLs. */
   readonly headSha: string;
+  /** Total number of rules that were executed. */
   readonly rulesRan: number;
+  /** Number of rules that completed without errors. */
   readonly rulesPassed: number;
 }
 
@@ -2553,6 +2562,10 @@ const CATEGORY_SEVERITY_ORDER: readonly FindingCategory[] = [
   "clean",
   "idiomatic",
 ];
+
+function escapeTableCell(text: string): string {
+  return text.replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
 
 /**
  * Builds the Markdown body for the PR summary comment.
@@ -2597,8 +2610,9 @@ export function buildPrSummaryComment(input: PrSummaryInput): string {
       const emoji = CATEGORY_EMOJI[finding.category];
       const locationLink =
         `[\`${finding.filePath}:${String(finding.line)}\`](${blobUrl})`;
+      const safeRecommendation = escapeTableCell(finding.recommendation);
       lines.push(
-        `| ${emoji} ${finding.category} | ${locationLink} | ${finding.recommendation} |`,
+        `| ${emoji} ${finding.category} | ${locationLink} | ${safeRecommendation} |`,
       );
     }
     lines.push("");
