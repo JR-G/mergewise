@@ -2757,6 +2757,7 @@ describe("minimizeOutdatedComments", () => {
         ["key-b", "node-b"],
         ["key-c", "node-c"],
       ]),
+      outdatedDedupeKeys: new Set(),
     };
     const newKeys = new Set(["key-b"]);
 
@@ -2790,6 +2791,7 @@ describe("minimizeOutdatedComments", () => {
     const existingState: ExistingCommentState = {
       dedupeKeys: new Set(["key-a"]),
       dedupeKeyToNodeId: new Map([["key-a", "node-a"]]),
+      outdatedDedupeKeys: new Set(),
     };
     const newKeys = new Set(["key-a"]);
 
@@ -2824,6 +2826,7 @@ describe("minimizeOutdatedComments", () => {
         ["key-a", "node-a"],
         ["key-b", "node-b"],
       ]),
+      outdatedDedupeKeys: new Set(),
     };
     const newKeys = new Set<string>();
 
@@ -2856,6 +2859,7 @@ describe("minimizeOutdatedComments", () => {
     const existingState: ExistingCommentState = {
       dedupeKeys: new Set<string>(),
       dedupeKeyToNodeId: new Map(),
+      outdatedDedupeKeys: new Set(),
     };
 
     const result = await minimizeOutdatedComments(
@@ -2875,6 +2879,73 @@ describe("minimizeOutdatedComments", () => {
 
     expect(result.minimizedCount).toBe(0);
     expect(result.failedCount).toBe(0);
+  });
+
+  test("minimises GitHub-outdated comments even when dedupe key matches the new set", async () => {
+    const minimizedNodeIds: string[] = [];
+    const existingState: ExistingCommentState = {
+      dedupeKeys: new Set(["key-a", "key-b"]),
+      dedupeKeyToNodeId: new Map([
+        ["key-a", "node-a"],
+        ["key-b", "node-b"],
+      ]),
+      outdatedDedupeKeys: new Set(["key-a"]),
+    };
+    const newKeys = new Set(["key-a", "key-b"]);
+
+    const result = await minimizeOutdatedComments(
+      existingState,
+      newKeys,
+      {
+        installationAccessToken: "ghs_token",
+        traceId: "trace-outdated",
+        githubFetchOptions: workerFetchOptions,
+      },
+      {
+        minimizeCommentFn: async (opts) => {
+          minimizedNodeIds.push(opts.subjectId);
+          return { isMinimized: true };
+        },
+        logInfo: () => {},
+        logError: () => {},
+      },
+    );
+
+    expect(result.minimizedCount).toBe(1);
+    expect(minimizedNodeIds).toContain("node-a");
+    expect(minimizedNodeIds).not.toContain("node-b");
+    expect(result.minimizedOutdatedDedupeKeys).toContain("key-a");
+  });
+
+  test("does not return non-outdated minimised keys in minimizedOutdatedDedupeKeys", async () => {
+    const existingState: ExistingCommentState = {
+      dedupeKeys: new Set(["key-gone", "key-outdated"]),
+      dedupeKeyToNodeId: new Map([
+        ["key-gone", "node-gone"],
+        ["key-outdated", "node-outdated"],
+      ]),
+      outdatedDedupeKeys: new Set(["key-outdated"]),
+    };
+    const newKeys = new Set(["key-outdated"]);
+
+    const result = await minimizeOutdatedComments(
+      existingState,
+      newKeys,
+      {
+        installationAccessToken: "ghs_token",
+        traceId: "trace-mixed",
+        githubFetchOptions: workerFetchOptions,
+      },
+      {
+        minimizeCommentFn: async () => ({ isMinimized: true }),
+        logInfo: () => {},
+        logError: () => {},
+      },
+    );
+
+    expect(result.minimizedCount).toBe(2);
+    expect(result.minimizedOutdatedDedupeKeys).toContain("key-outdated");
+    expect(result.minimizedOutdatedDedupeKeys.has("key-gone")).toBe(false);
   });
 });
 

@@ -472,6 +472,11 @@ export interface ExistingCommentState {
    * Mapping from dedupe key to the comment's GraphQL node ID for minimisation.
    */
   readonly dedupeKeyToNodeId: ReadonlyMap<string, string>;
+  /**
+   * Dedupe keys belonging to inline comments that GitHub has marked as outdated
+   * (the anchored code changed since the comment was posted).
+   */
+  readonly outdatedDedupeKeys: ReadonlySet<string>;
 }
 
 /**
@@ -1282,16 +1287,18 @@ export async function minimizeOutdatedComments(
     readonly logInfo?: (message: string) => void;
     readonly logError?: (message: string) => void;
   },
-): Promise<{ minimizedCount: number; failedCount: number }> {
+): Promise<{ minimizedCount: number; failedCount: number; minimizedOutdatedDedupeKeys: Set<string> }> {
   const minimizeCommentFn = dependencies?.minimizeCommentFn ?? minimizeComment;
   const infoLogger = dependencies?.logInfo ?? console.log;
   const errorLogger = dependencies?.logError ?? console.error;
 
   let minimizedCount = 0;
   let failedCount = 0;
+  const minimizedOutdatedDedupeKeys = new Set<string>();
 
   for (const [dedupeKey, nodeId] of existingCommentState.dedupeKeyToNodeId) {
-    if (newDedupeKeys.has(dedupeKey)) {
+    const isGitHubOutdated = existingCommentState.outdatedDedupeKeys.has(dedupeKey);
+    if (newDedupeKeys.has(dedupeKey) && !isGitHubOutdated) {
       continue;
     }
 
@@ -1308,6 +1315,9 @@ export async function minimizeOutdatedComments(
       if (result.isMinimized) {
         minimizedCount += 1;
       }
+      if (result.isMinimized && isGitHubOutdated && newDedupeKeys.has(dedupeKey)) {
+        minimizedOutdatedDedupeKeys.add(dedupeKey);
+      }
     } catch (error) {
       failedCount += 1;
       const detail = error instanceof Error ? error.message : String(error);
@@ -1323,7 +1333,7 @@ export async function minimizeOutdatedComments(
     );
   }
 
-  return { minimizedCount, failedCount };
+  return { minimizedCount, failedCount, minimizedOutdatedDedupeKeys };
 }
 
 async function loadExistingDedupeKeys(
@@ -1339,12 +1349,17 @@ async function loadExistingDedupeKeys(
 ): Promise<ExistingCommentState> {
   const dedupeKeys = new Set<string>();
   const dedupeKeyToNodeId = new Map<string, string>();
+  const outdatedDedupeKeys = new Set<string>();
 
-  function indexComment(body: string | undefined, nodeId: string): void {
+  function indexComment(body: string | undefined, nodeId: string, isOutdated = false): void {
     const dedupeKey = extractDedupeKeyFromCommentBody(body);
-    if (dedupeKey) {
-      dedupeKeys.add(dedupeKey);
-      dedupeKeyToNodeId.set(dedupeKey, nodeId);
+    if (!dedupeKey) {
+      return;
+    }
+    dedupeKeys.add(dedupeKey);
+    dedupeKeyToNodeId.set(dedupeKey, nodeId);
+    if (isOutdated) {
+      outdatedDedupeKeys.add(dedupeKey);
     }
   }
 
@@ -1372,7 +1387,8 @@ async function loadExistingDedupeKeys(
   try {
     const inlineComments = await dependencies.listPullRequestInlineCommentsFn(options);
     for (const comment of inlineComments) {
-      indexComment(comment.body, comment.node_id);
+      const isOutdated = comment.position === null || comment.position === undefined;
+      indexComment(comment.body, comment.node_id, isOutdated);
     }
   } catch (caughtError) {
     const errorDetail = caughtError instanceof Error
@@ -1390,7 +1406,7 @@ async function loadExistingDedupeKeys(
     );
   }
 
-  return { dedupeKeys, dedupeKeyToNodeId };
+  return { dedupeKeys, dedupeKeyToNodeId, outdatedDedupeKeys };
 }
 
 function extractDedupeKeyFromCommentBody(commentBody: string | undefined): string | null {
@@ -1799,7 +1815,7 @@ export async function processAnalyzePullRequestJob(
     );
 
     const newDedupeKeys = new Set(delivery.comments.map((comment) => comment.dedupeKey));
-    await minimizeOutdatedComments(
+    const minimizeResult = await minimizeOutdatedComments(
       existingCommentState,
       newDedupeKeys,
       {
@@ -1813,6 +1829,10 @@ export async function processAnalyzePullRequestJob(
         logError: errorLogger,
       },
     );
+
+    for (const key of minimizeResult.minimizedOutdatedDedupeKeys) {
+      existingCommentState.dedupeKeys.delete(key);
+    }
 
     const prSummaryBody = buildPrSummaryComment({
       filePaths: githubAnalysisContext.analysisContext.diffs.map((diff) => diff.filePath),

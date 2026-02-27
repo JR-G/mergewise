@@ -286,6 +286,11 @@ export interface GitHubPullRequestReviewComment {
    * 1-based line number associated with this inline comment.
    */
   line?: number;
+  /**
+   * Diff position of the comment. Null when the comment is outdated
+   * (the anchored code has changed since the comment was posted).
+   */
+  position?: number | null;
 }
 
 /**
