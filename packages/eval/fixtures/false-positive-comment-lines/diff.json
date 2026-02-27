@@ -1,0 +1,45 @@
+{
+  "filePath": "src/services/userService.ts",
+  "previousPath": null,
+  "hunks": [
+    {
+      "header": "@@ -0,0 +1,35 @@",
+      "lines": [
+        "+/**",
+        "+ * User service handling profile CRUD operations.",
+        "+ *",
+        "+ * @remarks",
+        "+ * Fields use `| null` for database-sourced values and `?` (optional) for",
+        "+ * client-provided overrides. This is intentional — null means \"exists in",
+        "+ * the schema but has no value\", while undefined means \"not provided\".",
+        "+ */",
+        "+",
+        "+interface UserProfile {",
+        "+  id: string;",
+        "+  name: string;",
+        "+  email: string | null;",
+        "+  avatar: string | null;",
+        "+}",
+        "+",
+        "+interface UpdateProfileRequest {",
+        "+  name?: string;",
+        "+  email?: string;",
+        "+  avatar?: string;",
+        "+}",
+        "+",
+        "+/** Merges an update request into an existing profile, preserving null semantics. */",
+        "+function applyProfileUpdate(",
+        "+  profile: UserProfile,",
+        "+  update: UpdateProfileRequest,",
+        "+): UserProfile {",
+        "+  return {",
+        "+    ...profile,",
+        "+    ...(update.name !== undefined && { name: update.name }),",
+        "+    ...(update.email !== undefined && { email: update.email }),",
+        "+    ...(update.avatar !== undefined && { avatar: update.avatar }),",
+        "+  };",
+        "+}"
+      ]
+    }
+  ]
+}

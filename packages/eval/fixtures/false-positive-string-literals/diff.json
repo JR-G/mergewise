@@ -1,0 +1,48 @@
+{
+  "filePath": "src/patterns/patternCatalogue.ts",
+  "previousPath": null,
+  "hunks": [
+    {
+      "header": "@@ -0,0 +1,39 @@",
+      "lines": [
+        "+interface PatternEntry {",
+        "+  readonly id: string;",
+        "+  readonly title: string;",
+        "+  readonly detectionHint: string;",
+        "+}",
+        "+",
+        "+const PATTERNS: readonly PatternEntry[] = [",
+        "+  {",
+        "+    id: \"inconsistent-absent-value\",",
+        "+    title: \"Inconsistent absent value representation\",",
+        "+    detectionHint:",
+        "+      \"In an interface or type alias body, field declarations mixing both '| null' and '?' (optional) or '| undefined' for absence.\",",
+        "+  },",
+        "+  {",
+        "+    id: \"overly-wide-generic\",",
+        "+    title: \"Overly wide generic constraint\",",
+        "+    detectionHint:",
+        "+      \"Generic parameter with 'extends object', 'extends {}', 'extends any', or 'extends Record<string, any>' where a narrower constraint exists.\",",
+        "+  },",
+        "+  {",
+        "+    id: \"implicit-any-in-catch\",",
+        "+    title: \"Implicit any in catch clause\",",
+        "+    detectionHint:",
+        "+      \"Catch clause accessing .message, .code, .stack, or other properties on the error parameter without an instanceof or typeof guard.\",",
+        "+  },",
+        "+];",
+        "+",
+        "+function buildPromptTable(patterns: readonly PatternEntry[]): string {",
+        "+  const header = \"| id | title | detectionHint |\";",
+        "+  const separator = \"| --- | --- | --- |\";",
+        "+  const rows = patterns.map(",
+        "+    (p) => `| ${p.id} | ${p.title} | ${p.detectionHint} |`,",
+        "+  );",
+        "+  return [header, separator, ...rows].join(\"\\n\");",
+        "+}",
+        "+",
+        "+export { PATTERNS, buildPromptTable };"
+      ]
+    }
+  ]
+}
