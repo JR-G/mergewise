@@ -413,7 +413,7 @@ describe("github-client", () => {
     expect((thrownError as GitHubApiError).status).toBe(403);
   });
 
-  test("createCheckRun sends in_progress status without conclusion or output", async () => {
+  test("createCheckRun sends in_progress status without conclusion", async () => {
     const calls: FetchCall[] = [];
     const fetchMock: FetchMock = async (input, init) => {
       calls.push({ input, init });
