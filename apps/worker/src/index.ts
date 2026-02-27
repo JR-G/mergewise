@@ -30,6 +30,7 @@ import {
   type CreateCheckRunOptions,
   type UpdateCheckRunOptions,
   type GitHubCheckRun,
+  type GitHubReactionCounts,
 } from "@mergewise/github-client";
 import { readFileSync } from "node:fs";
 import {
@@ -472,6 +473,10 @@ export interface ExistingCommentState {
    * Mapping from dedupe key to the comment's GraphQL node ID for minimisation.
    */
   readonly dedupeKeyToNodeId: ReadonlyMap<string, string>;
+  /**
+   * All fetched comments (summary + inline) for downstream feedback extraction.
+   */
+  readonly allComments: readonly { readonly body: string; readonly reactions?: GitHubReactionCounts }[];
 }
 
 /**
@@ -1339,6 +1344,7 @@ async function loadExistingDedupeKeys(
 ): Promise<ExistingCommentState> {
   const dedupeKeys = new Set<string>();
   const dedupeKeyToNodeId = new Map<string, string>();
+  const allComments: { body: string; reactions?: GitHubReactionCounts }[] = [];
 
   function indexComment(body: string | undefined, nodeId: string): void {
     const dedupeKey = extractDedupeKeyFromCommentBody(body);
@@ -1352,6 +1358,7 @@ async function loadExistingDedupeKeys(
     const summaryComments = await dependencies.listPullRequestSummaryCommentsFn(options);
     for (const comment of summaryComments) {
       indexComment(comment.body, comment.node_id);
+      allComments.push({ body: comment.body, reactions: comment.reactions });
     }
   } catch (caughtError) {
     const errorDetail = caughtError instanceof Error
@@ -1373,6 +1380,7 @@ async function loadExistingDedupeKeys(
     const inlineComments = await dependencies.listPullRequestInlineCommentsFn(options);
     for (const comment of inlineComments) {
       indexComment(comment.body, comment.node_id);
+      allComments.push({ body: comment.body, reactions: comment.reactions });
     }
   } catch (caughtError) {
     const errorDetail = caughtError instanceof Error
@@ -1390,7 +1398,7 @@ async function loadExistingDedupeKeys(
     );
   }
 
-  return { dedupeKeys, dedupeKeyToNodeId };
+  return { dedupeKeys, dedupeKeyToNodeId, allComments };
 }
 
 function extractDedupeKeyFromCommentBody(commentBody: string | undefined): string | null {
@@ -1405,6 +1413,114 @@ function extractDedupeKeyFromCommentBody(commentBody: string | undefined): strin
 
   const dedupeKey = dedupeKeyMatch[1]?.trim() ?? "";
   return dedupeKey || null;
+}
+
+/**
+ * Structured feedback record extracted from a single Mergewise comment's reactions.
+ */
+export interface CommentFeedbackRecord {
+  readonly findingId: string;
+  readonly ruleId: string;
+  readonly category: string;
+  readonly confidence: string;
+  readonly thumbsUp: number;
+  readonly thumbsDown: number;
+  readonly otherReactions: number;
+}
+
+/**
+ * Aggregate feedback summary across all Mergewise comments on a PR.
+ */
+export interface CommentFeedbackSummary {
+  readonly totalComments: number;
+  readonly withReactions: number;
+  readonly thumbsUp: number;
+  readonly thumbsDown: number;
+  readonly records: readonly CommentFeedbackRecord[];
+}
+
+const MERGEWISE_META_REGEX =
+  /mergewise-meta[^>]*findingId=(\S+)\s+ruleId=(\S+)\s+category=(\S+)\s+confidence=(\S+)/;
+
+function extractMergewiseMeta(
+  body: string,
+): { findingId: string; ruleId: string; category: string; confidence: string } | null {
+  const match = MERGEWISE_META_REGEX.exec(body);
+  const findingId = match?.[1];
+  const ruleId = match?.[2];
+  const category = match?.[3];
+  const confidence = match?.[4];
+  if (!findingId || !ruleId || !category || !confidence) {
+    return null;
+  }
+  return { findingId, ruleId, category, confidence };
+}
+
+function sumReactions(reactions: GitHubReactionCounts): {
+  thumbsUp: number;
+  thumbsDown: number;
+  otherReactions: number;
+} {
+  const thumbsUp = reactions["+1"];
+  const thumbsDown = reactions["-1"];
+  const otherReactions =
+    reactions.laugh +
+    reactions.confused +
+    reactions.heart +
+    reactions.hooray +
+    reactions.rocket +
+    reactions.eyes;
+  return { thumbsUp, thumbsDown, otherReactions };
+}
+
+/**
+ * Extracts feedback records from Mergewise comments that have reactions.
+ *
+ * @param comments - Issue or review comments with optional reaction counts.
+ * @returns Feedback summary with per-comment records for reacted comments.
+ */
+export function collectCommentFeedback(
+  comments: readonly { readonly body: string; readonly reactions?: GitHubReactionCounts }[],
+): CommentFeedbackSummary {
+  const records: CommentFeedbackRecord[] = [];
+  let totalComments = 0;
+
+  for (const comment of comments) {
+    const meta = extractMergewiseMeta(comment.body);
+    if (!meta) {
+      continue;
+    }
+
+    totalComments += 1;
+
+    if (!comment.reactions) {
+      continue;
+    }
+
+    const { thumbsUp, thumbsDown, otherReactions } = sumReactions(comment.reactions);
+    const totalReactionCount = thumbsUp + thumbsDown + otherReactions;
+    if (totalReactionCount === 0) {
+      continue;
+    }
+
+    records.push({
+      findingId: meta.findingId,
+      ruleId: meta.ruleId,
+      category: meta.category,
+      confidence: meta.confidence,
+      thumbsUp,
+      thumbsDown,
+      otherReactions,
+    });
+  }
+
+  return {
+    totalComments,
+    withReactions: records.length,
+    thumbsUp: records.reduce((sum, record) => sum + record.thumbsUp, 0),
+    thumbsDown: records.reduce((sum, record) => sum + record.thumbsDown, 0),
+    records,
+  };
 }
 
 /**
@@ -1796,6 +1912,24 @@ export async function processAnalyzePullRequestJob(
         listPullRequestSummaryCommentsFn: listSummaryFn,
         listPullRequestInlineCommentsFn: listInlineFn,
       },
+    );
+
+    const feedbackSummary = collectCommentFeedback(existingCommentState.allComments);
+    for (const record of feedbackSummary.records) {
+      infoLogger(
+        `[worker] comment_feedback trace=${traceId} job=${job.job_id}` +
+          ` findingId=${record.findingId} ruleId=${record.ruleId}` +
+          ` category=${record.category} confidence=${record.confidence}` +
+          ` thumbsUp=${record.thumbsUp} thumbsDown=${record.thumbsDown}` +
+          ` reactions=${record.thumbsUp + record.thumbsDown + record.otherReactions}`,
+      );
+    }
+    infoLogger(
+      `[worker] feedback_summary trace=${traceId} job=${job.job_id}` +
+        ` totalComments=${feedbackSummary.totalComments}` +
+        ` withReactions=${feedbackSummary.withReactions}` +
+        ` thumbsUp=${feedbackSummary.thumbsUp}` +
+        ` thumbsDown=${feedbackSummary.thumbsDown}`,
     );
 
     const newDedupeKeys = new Set(delivery.comments.map((comment) => comment.dedupeKey));
