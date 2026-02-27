@@ -84,4 +84,4 @@ function processUserData(
   return result;
 }
 
-export { processUserData };
+export { processUserData, type UserData };
