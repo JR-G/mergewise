@@ -191,6 +191,110 @@ render(items);`,
       "3+ levels of nested function expressions, arrow functions, or .then() chains. Look for increasing indentation with callback parameters.",
   },
 
+  {
+    id: "switch-on-type",
+    title: "Switch/if-else chain on type discriminator",
+    description:
+      "A large switch or if-else chain that dispatches behaviour based on a type or kind discriminator. Each new variant forces edits to the switch rather than adding a new handler, violating Open/Closed.",
+    category: "clean",
+    languages: ["typescript"],
+    badExample: `function processShape(shape: Shape) {
+  switch (shape.kind) {
+    case "circle": return Math.PI * shape.radius ** 2;
+    case "rect": return shape.width * shape.height;
+    case "triangle": return 0.5 * shape.base * shape.height;
+    case "ellipse": return Math.PI * shape.a * shape.b;
+    // every new shape means another case here
+  }
+}`,
+    goodExample: `const areaStrategy: Record<Shape["kind"], (s: Shape) => number> = {
+  circle: (s) => Math.PI * s.radius ** 2,
+  rect: (s) => s.width * s.height,
+  triangle: (s) => 0.5 * s.base * s.height,
+  ellipse: (s) => Math.PI * s.a * s.b,
+};
+
+function processShape(shape: Shape) {
+  return areaStrategy[shape.kind](shape);
+}`,
+    principle: "Open/Closed — extend via a lookup map, not by editing a switch",
+    detectionHint:
+      "switch or if-else chain with 4+ branches dispatching on a .type, .kind, or string-literal discriminator where each branch runs distinct logic. Look for a pattern of case/if testing the same discriminant property.",
+  },
+
+  {
+    id: "manual-object-construction",
+    title: "Repetitive manual object construction",
+    description:
+      "Multiple blocks of code that manually assemble similar objects with the same shape, differing only in values. A factory function or builder would reduce duplication and enforce consistency.",
+    category: "clean",
+    languages: ["typescript"],
+    badExample: `const adminUser = {
+  role: "admin",
+  permissions: ["read", "write", "delete"],
+  createdAt: new Date(),
+  active: true,
+  auditLog: [],
+};
+const editorUser = {
+  role: "editor",
+  permissions: ["read", "write"],
+  createdAt: new Date(),
+  active: true,
+  auditLog: [],
+};
+const viewerUser = {
+  role: "viewer",
+  permissions: ["read"],
+  createdAt: new Date(),
+  active: true,
+  auditLog: [],
+};`,
+    goodExample: `function createUser(role: Role, permissions: Permission[]): User {
+  return { role, permissions, createdAt: new Date(), active: true, auditLog: [] };
+}
+const adminUser = createUser("admin", ["read", "write", "delete"]);
+const editorUser = createUser("editor", ["read", "write"]);
+const viewerUser = createUser("viewer", ["read"]);`,
+    principle: "DRY — extract a factory when constructing similar objects",
+    detectionHint:
+      "3+ object literals with the same set of keys constructed in the same scope, differing only in a few values. Look for repeated property names like createdAt, active, or status across adjacent object expressions.",
+  },
+
+  {
+    id: "scattered-event-handling",
+    title: "Scattered event/callback registration",
+    description:
+      "Event listeners or callback registrations spread across a file rather than grouped in one place. Scattering makes it hard to see all behaviours attached to a source, and easy to forget cleanup.",
+    category: "clean",
+    languages: ["typescript"],
+    badExample: `function setup(emitter: EventEmitter) {
+  loadConfig();
+  emitter.on("connect", handleConnect);
+  initDatabase();
+  emitter.on("error", handleError);
+  startHealthCheck();
+  emitter.on("disconnect", handleDisconnect);
+  emitter.on("message", handleMessage);
+}`,
+    goodExample: `function registerEventHandlers(emitter: EventEmitter) {
+  emitter.on("connect", handleConnect);
+  emitter.on("disconnect", handleDisconnect);
+  emitter.on("error", handleError);
+  emitter.on("message", handleMessage);
+}
+
+function setup(emitter: EventEmitter) {
+  loadConfig();
+  initDatabase();
+  startHealthCheck();
+  registerEventHandlers(emitter);
+}`,
+    principle: "SRP — centralise event wiring for discoverability and cleanup",
+    detectionHint:
+      "Multiple .on(), .addEventListener(), or .subscribe() calls on the same target scattered across a function body with unrelated logic between them, rather than grouped together or in a dedicated registration function.",
+  },
+
 ];
 
 const IDIOMATIC_PATTERNS: readonly AntiPattern[] = [
