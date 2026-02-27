@@ -8,23 +8,48 @@
   // --- Typewriter effect on hero headline ---
   var typewriterEl = document.querySelector("[data-typewriter]");
   if (typewriterEl && !prefersReduced) {
-    var fullText = typewriterEl.textContent.trim();
+    var words = [
+      "maintaining.",
+      "inheriting.",
+      "reading.",
+      "owning.",
+      "trusting.",
+      "keeping.",
+      "building."
+    ];
+    var wordIndex = 0;
+    var charIndex = 0;
+    var typeSpeed = 55;
+    var deleteSpeed = 30;
+    var pauseAfterType = 2800;
+    var pauseAfterDelete = 300;
+
     typewriterEl.textContent = "";
     typewriterEl.style.visibility = "visible";
-    var charIndex = 0;
-    var speed = 60;
 
-    function typeNextChar() {
-      if (charIndex < fullText.length) {
-        typewriterEl.textContent += fullText.charAt(charIndex);
+    function typeWord() {
+      var word = words[wordIndex];
+      if (charIndex < word.length) {
+        typewriterEl.textContent = word.substring(0, charIndex + 1);
         charIndex++;
-        setTimeout(typeNextChar, speed);
+        setTimeout(typeWord, typeSpeed);
       } else {
-        typewriterEl.classList.add("typewriter-done");
+        setTimeout(deleteWord, pauseAfterType);
       }
     }
 
-    setTimeout(typeNextChar, 400);
+    function deleteWord() {
+      if (charIndex > 0) {
+        charIndex--;
+        typewriterEl.textContent = words[wordIndex].substring(0, charIndex);
+        setTimeout(deleteWord, deleteSpeed);
+      } else {
+        wordIndex = (wordIndex + 1) % words.length;
+        setTimeout(typeWord, pauseAfterDelete);
+      }
+    }
+
+    setTimeout(typeWord, 400);
   } else if (typewriterEl) {
     typewriterEl.style.visibility = "visible";
   }
