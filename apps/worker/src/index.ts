@@ -1,8 +1,7 @@
 import {
-  postPullRequestInlineComment,
-  postPullRequestSummaryComment,
   listPullRequestInlineComments,
   listPullRequestSummaryComments,
+  createPullRequestReview,
   createGitHubAppJwt,
   exchangeInstallationAccessToken,
   fetchPullRequestFiles,
@@ -10,10 +9,11 @@ import {
   type FetchPullRequestFilesOptions,
   type GitHubIssueComment,
   type GitHubPullRequestReviewComment,
+  type GitHubPullRequestReview,
   type GitHubPullRequestFile,
   type ListPullRequestCommentsOptions,
-  type PostPullRequestInlineCommentOptions,
-  type PostPullRequestSummaryCommentOptions,
+  type CreatePullRequestReviewOptions,
+  type PullRequestReviewComment,
   fetchFileContent,
   createCheckRun,
   updateCheckRun,
@@ -538,17 +538,11 @@ export interface WorkerProcessingDependencies {
    */
   readonly findingDeliveryOptions?: WorkerFindingDeliveryOptions;
   /**
-   * Comment-post function override.
+   * Batch pull request review creation function override.
    */
-  readonly postPullRequestSummaryCommentFn?: (
-    options: PostPullRequestSummaryCommentOptions,
-  ) => Promise<{ id: number; html_url: string; body: string }>;
-  /**
-   * GitHub inline pull request comment function override.
-   */
-  readonly postPullRequestInlineCommentFn?: (
-    options: PostPullRequestInlineCommentOptions,
-  ) => Promise<GitHubPullRequestReviewComment>;
+  readonly createPullRequestReviewFn?: (
+    options: CreatePullRequestReviewOptions,
+  ) => Promise<GitHubPullRequestReview>;
   /**
    * GitHub check run creation function override.
    */
@@ -1022,9 +1016,9 @@ function formatEvidenceLocationLink(
 }
 
 /**
- * Posts prepared finding comments to a pull request.
+ * Posts prepared finding comments and a summary as a single batch pull request review.
  *
- * @param options - Repository coordinates, token, and prepared comments.
+ * @param options - Repository coordinates, token, prepared comments, and summary body.
  * @param dependencies - API posting dependency override.
  * @returns Structured summary of successful and failed post attempts.
  */
@@ -1038,9 +1032,9 @@ export async function postPreparedFindingComments(
     readonly traceId: string;
     readonly githubFetchOptions: WorkerGitHubFetchOptions;
     readonly comments: readonly PreparedFindingComment[];
+    readonly summaryBody: string;
   },
   dependencies: {
-    readonly logWarn?: (message: string) => void;
     readonly logError?: (message: string) => void;
     readonly listPullRequestSummaryCommentsFn?: (
       options: ListPullRequestCommentsOptions,
@@ -1048,12 +1042,9 @@ export async function postPreparedFindingComments(
     readonly listPullRequestInlineCommentsFn?: (
       options: ListPullRequestCommentsOptions,
     ) => Promise<GitHubPullRequestReviewComment[]>;
-    readonly postPullRequestInlineCommentFn?: (
-      options: PostPullRequestInlineCommentOptions,
-    ) => Promise<GitHubPullRequestReviewComment>;
-    readonly postPullRequestSummaryCommentFn?: (
-      options: PostPullRequestSummaryCommentOptions,
-    ) => Promise<{ id: number; html_url: string; body: string }>;
+    readonly createPullRequestReviewFn?: (
+      options: CreatePullRequestReviewOptions,
+    ) => Promise<GitHubPullRequestReview>;
   } = {},
 ): Promise<PostPreparedFindingCommentsResult> {
   const errorLogger = dependencies.logError ?? console.error;
@@ -1061,10 +1052,8 @@ export async function postPreparedFindingComments(
     dependencies.listPullRequestSummaryCommentsFn ?? listPullRequestSummaryComments;
   const listPullRequestInlineCommentsFn =
     dependencies.listPullRequestInlineCommentsFn ?? listPullRequestInlineComments;
-  const postPullRequestInlineCommentFn =
-    dependencies.postPullRequestInlineCommentFn ?? postPullRequestInlineComment;
-  const postPullRequestSummaryCommentFn =
-    dependencies.postPullRequestSummaryCommentFn ?? postPullRequestSummaryComment;
+  const createPullRequestReviewFn =
+    dependencies.createPullRequestReviewFn ?? createPullRequestReview;
 
   const existingDedupeKeys = await loadExistingDedupeKeys(
     {
@@ -1083,9 +1072,8 @@ export async function postPreparedFindingComments(
     },
   );
 
-  const successes: PostedFindingCommentSuccess[] = [];
-  const failures: PostedFindingCommentFailure[] = [];
   const skipped: PostedFindingCommentSkipped[] = [];
+  const filteredComments: { readonly index: number; readonly preparedComment: PreparedFindingComment }[] = [];
   for (const [index, preparedComment] of options.comments.entries()) {
     if (existingDedupeKeys.has(preparedComment.dedupeKey)) {
       skipped.push({
@@ -1095,126 +1083,112 @@ export async function postPreparedFindingComments(
       });
       continue;
     }
+    filteredComments.push({ index, preparedComment });
+  }
 
-    const requestOptions: PostPullRequestInlineCommentOptions = {
+  const reviewComments: PullRequestReviewComment[] = filteredComments.map(
+    ({ preparedComment }) => ({
+      path: preparedComment.finding.filePath,
+      line: preparedComment.finding.line,
+      body: preparedComment.body,
+    }),
+  );
+
+  try {
+    await createPullRequestReviewFn({
       owner: options.owner,
       repository: options.repository,
       pullRequestNumber: options.pullRequestNumber,
       installationAccessToken: options.installationAccessToken,
       commitId: options.pullRequestHeadSha,
-      path: preparedComment.finding.filePath,
-      line: preparedComment.finding.line,
-      body: preparedComment.body,
+      body: options.summaryBody,
+      event: "COMMENT",
+      comments: reviewComments,
       apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
       userAgent: options.githubFetchOptions.githubUserAgent,
       requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
       traceId: options.traceId,
-    };
-    const sanitizedInlineRequestOptions = sanitizePostCommentRequestOptionsForLogging({
-      ...requestOptions,
-      mode: "inline",
     });
 
-    try {
-      const createdComment = await postPullRequestInlineCommentFn(requestOptions);
-      existingDedupeKeys.add(preparedComment.dedupeKey);
-      successes.push({
+    const successes: PostedFindingCommentSuccess[] = filteredComments.map(
+      ({ index, preparedComment }) => ({
         index,
         preparedComment,
-        requestOptions: sanitizedInlineRequestOptions,
-        createdComment,
-      });
-    } catch (inlineError) {
-      const inlineErrorDetail = inlineError instanceof Error
-        ? inlineError.stack ?? inlineError.message
-        : String(inlineError);
-      (dependencies.logWarn ?? errorLogger)(
-        "[worker] inline finding comment post failed index=" +
-          String(index) +
-          " dedupeKey=" +
-          preparedComment.dedupeKey +
-          " requestOptions=" +
-          JSON.stringify(sanitizedInlineRequestOptions) +
-          " error=" +
-          inlineErrorDetail,
-      );
+        requestOptions: {
+          owner: options.owner,
+          repository: options.repository,
+          pullRequestNumber: options.pullRequestNumber,
+          installationAccessToken: "[REDACTED]",
+          body: preparedComment.body,
+          path: preparedComment.finding.filePath,
+          line: preparedComment.finding.line,
+          commitId: options.pullRequestHeadSha,
+          mode: "inline" as const,
+          apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
+          userAgent: options.githubFetchOptions.githubUserAgent,
+          requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
+          traceId: options.traceId,
+        },
+        createdComment: {
+          id: 0,
+          html_url: "",
+          body: preparedComment.body,
+          path: preparedComment.finding.filePath,
+          line: preparedComment.finding.line,
+        },
+      }),
+    );
 
-      const fallbackRequestOptions: PostPullRequestSummaryCommentOptions = {
-        owner: options.owner,
-        repository: options.repository,
-        pullRequestNumber: options.pullRequestNumber,
-        installationAccessToken: options.installationAccessToken,
-        body: preparedComment.body,
-        apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
-        userAgent: options.githubFetchOptions.githubUserAgent,
-        requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
-        traceId: options.traceId,
-      };
-      const sanitizedFallbackRequestOptions = sanitizePostCommentRequestOptionsForLogging({
-        ...fallbackRequestOptions,
-        mode: "summary",
-      });
+    return {
+      postedCount: successes.length,
+      successes,
+      failures: [],
+      skipped,
+    };
+  } catch (reviewError) {
+    const errorMessage = reviewError instanceof Error
+      ? reviewError.message
+      : String(reviewError);
+    const errorDetail = reviewError instanceof Error
+      ? reviewError.stack ?? reviewError.message
+      : String(reviewError);
+    errorLogger(
+      "[worker] batch review post failed" +
+        " pr=" + String(options.pullRequestNumber) +
+        " commentCount=" + String(filteredComments.length) +
+        " error=" + errorDetail,
+    );
 
-      try {
-        const createdComment = await postPullRequestSummaryCommentFn(fallbackRequestOptions);
-        existingDedupeKeys.add(preparedComment.dedupeKey);
-        successes.push({
-          index,
-          preparedComment,
-          requestOptions: sanitizedFallbackRequestOptions,
-          createdComment,
-        });
-      } catch (fallbackError) {
-        const errorMessage = fallbackError instanceof Error
-          ? fallbackError.message
-          : String(fallbackError);
-        const errorDetail = fallbackError instanceof Error
-          ? fallbackError.stack ?? fallbackError.message
-          : String(fallbackError);
-        errorLogger(
-          "[worker] failed to post finding comment index=" +
-            String(index) +
-            " dedupeKey=" +
-            preparedComment.dedupeKey +
-            " requestOptions=" +
-            JSON.stringify(sanitizedFallbackRequestOptions) +
-            " error=" +
-            errorDetail,
-        );
-        failures.push({
-          index,
-          preparedComment,
-          requestOptions: sanitizedFallbackRequestOptions,
-          errorMessage,
-        });
-      }
-    }
+    const failures: PostedFindingCommentFailure[] = filteredComments.map(
+      ({ index, preparedComment }) => ({
+        index,
+        preparedComment,
+        requestOptions: {
+          owner: options.owner,
+          repository: options.repository,
+          pullRequestNumber: options.pullRequestNumber,
+          installationAccessToken: "[REDACTED]",
+          body: preparedComment.body,
+          path: preparedComment.finding.filePath,
+          line: preparedComment.finding.line,
+          commitId: options.pullRequestHeadSha,
+          mode: "inline" as const,
+          apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
+          userAgent: options.githubFetchOptions.githubUserAgent,
+          requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
+          traceId: options.traceId,
+        },
+        errorMessage,
+      }),
+    );
+
+    return {
+      postedCount: 0,
+      successes: [],
+      failures,
+      skipped,
+    };
   }
-
-  return {
-    postedCount: successes.length,
-    successes,
-    failures,
-    skipped,
-  };
-}
-
-/**
- * Builds a redacted logging payload for one PR comment post request.
- *
- * @param requestOptions - Raw post request options containing the installation token.
- * @returns Safe request options for logs with token removed.
- */
-function sanitizePostCommentRequestOptionsForLogging(
-  requestOptions: (
-    PostPullRequestSummaryCommentOptions |
-    PostPullRequestInlineCommentOptions
-  ) & { readonly mode: "inline" | "summary" },
-): PostedCommentRequestOptions {
-  return {
-    ...requestOptions,
-    installationAccessToken: "[REDACTED]",
-  };
 }
 
 async function loadExistingDedupeKeys(
@@ -1558,31 +1532,10 @@ export async function processAnalyzePullRequestJob(
 
   let postedCommentCount = 0;
   if (dependencies.deliveryMode === "github") {
-    const postSummaryFn = dependencies.postPullRequestSummaryCommentFn ?? postPullRequestSummaryComment;
     const fileCount = githubAnalysisContext.analysisContext.diffs.length;
     const summaryBody =
       `${fileCount} file${fileCount === 1 ? "" : "s"} reviewed, ` +
       `${delivery.comments.length} comment${delivery.comments.length === 1 ? "" : "s"}`;
-    try {
-      await postSummaryFn({
-        owner: githubAnalysisContext.owner,
-        repository: githubAnalysisContext.repository,
-        pullRequestNumber: job.pr_number,
-        installationAccessToken: githubAnalysisContext.installationAccessToken,
-        body: summaryBody,
-        apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
-        userAgent: githubFetchOptions.githubUserAgent,
-        requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
-        traceId,
-      });
-    } catch (error) {
-      errorLogger(
-        `[worker] failed to post summary comment trace=${traceId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
-  if (dependencies.deliveryMode === "github" && delivery.comments.length > 0) {
     const postingResult = await postPreparedFindingComments(
       {
         owner: githubAnalysisContext.owner,
@@ -1593,10 +1546,10 @@ export async function processAnalyzePullRequestJob(
         traceId,
         githubFetchOptions,
         comments: delivery.comments,
+        summaryBody,
       },
       {
-        postPullRequestInlineCommentFn: dependencies.postPullRequestInlineCommentFn,
-        postPullRequestSummaryCommentFn: dependencies.postPullRequestSummaryCommentFn,
+        createPullRequestReviewFn: dependencies.createPullRequestReviewFn,
       },
     );
     postedCommentCount = postingResult.postedCount;
@@ -2077,8 +2030,9 @@ function buildStructuredFindingComment(
  */
 export function wrapCodeIdentifiers(text: string): string {
   return text.replace(
-    /`[^`]+`|(?<![`\w])([a-zA-Z_$][a-zA-Z0-9_$]*(?:\.[a-zA-Z_$][a-zA-Z0-9_$]*)*)(?![`\w])/g,
-    (match, identifier: string | undefined) => {
+    /`[^`]+`|'([a-zA-Z_$][a-zA-Z0-9_$]*(?:\.[a-zA-Z_$][a-zA-Z0-9_$]*)*)'|(?<![`\w])([a-zA-Z_$][a-zA-Z0-9_$]*(?:\.[a-zA-Z_$][a-zA-Z0-9_$]*)*)(?![`\w])/g,
+    (match, singleQuoted: string | undefined, bareIdentifier: string | undefined) => {
+      const identifier = singleQuoted ?? bareIdentifier;
       if (identifier === undefined) {
         return match;
       }

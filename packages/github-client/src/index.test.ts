@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
   createCheckRun,
+  createPullRequestReview,
   updateCheckRun,
   createGitHubAppJwt,
   exchangeInstallationAccessToken,
@@ -507,5 +508,77 @@ describe("github-client", () => {
 
     expect(thrownError).toBeInstanceOf(GitHubApiError);
     expect((thrownError as GitHubApiError).status).toBe(404);
+  });
+
+  test("createPullRequestReview sends batch review with inline comments and body", async () => {
+    const calls: FetchCall[] = [];
+    const fetchMock: FetchMock = async (input, init) => {
+      calls.push({ input, init });
+      return makeJsonResponse({
+        id: 700,
+        html_url: "https://github.com/acme/widget/pull/3#pullrequestreview-700",
+        body: "review summary",
+        state: "commented",
+      });
+    };
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const result = await createPullRequestReview({
+      owner: "acme",
+      repository: "widget",
+      pullRequestNumber: 3,
+      installationAccessToken: "ghs_token",
+      commitId: "abc123",
+      body: "review summary",
+      event: "COMMENT",
+      comments: [
+        { path: "src/a.ts", line: 10, body: "comment one" },
+        { path: "src/b.ts", line: 20, side: "LEFT", body: "comment two" },
+      ],
+      traceId: "trace-review-1",
+    });
+
+    expect(result.id).toBe(700);
+    expect(result.state).toBe("commented");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(String(calls[0]!.input)).toBe(
+      "https://api.github.com/repos/acme/widget/pulls/3/reviews",
+    );
+    const requestBody = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
+    expect(requestBody.commit_id).toBe("abc123");
+    expect(requestBody.event).toBe("COMMENT");
+    expect(requestBody.body).toBe("review summary");
+    const comments = requestBody.comments as { path: string; line: number; side: string; body: string }[];
+    expect(comments).toHaveLength(2);
+    expect(comments[0]!.path).toBe("src/a.ts");
+    expect(comments[0]!.side).toBe("RIGHT");
+    expect(comments[1]!.side).toBe("LEFT");
+    const requestHeaders = calls[0]!.init?.headers as Record<string, string>;
+    expect(requestHeaders["X-Mergewise-Trace-Id"]).toBe("trace-review-1");
+  });
+
+  test("createPullRequestReview throws GitHubApiError on failure", async () => {
+    const fetchMock: FetchMock = async () =>
+      new Response(JSON.stringify({ message: "validation failed" }), { status: 422 });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    let thrownError: unknown;
+    try {
+      await createPullRequestReview({
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 3,
+        installationAccessToken: "ghs_token",
+        commitId: "abc123",
+        event: "COMMENT",
+        comments: [],
+      });
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(GitHubApiError);
+    expect((thrownError as GitHubApiError).status).toBe(422);
   });
 });
