@@ -96,4 +96,8 @@ function getUsersByDepartment(users: UserData[], department: string): UserData[]
   return users.filter((user) => user.department === department);
 }
 
-export { processUserData, formatUser, countActiveUsers, getUsersByDepartment, type UserData };
+function summariseUsers(users: UserData[]): string {
+  return `Total: ${users.length}, Active: ${users.filter((user) => user.isActive).length}`;
+}
+
+export { processUserData, formatUser, countActiveUsers, getUsersByDepartment, summariseUsers, type UserData };
