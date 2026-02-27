@@ -123,12 +123,13 @@ function isNonCodeLine(line: string): boolean {
   if (
     trimmed.startsWith("//") ||
     trimmed.startsWith("/*") ||
-    trimmed.startsWith("*") ||
-    trimmed.startsWith("/**")
+    trimmed.startsWith("/**") ||
+    trimmed === "*" ||
+    trimmed.startsWith("* ")
   ) {
     return true;
   }
-  const stripped = trimmed.replace(/,?\s*$/, "");
+  const stripped = trimmed.replace(/[;,]?\s*$/, "");
   if (
     (stripped.startsWith('"') && stripped.endsWith('"')) ||
     (stripped.startsWith("'") && stripped.endsWith("'")) ||

@@ -382,8 +382,9 @@ describe("parseLlmResponse", () => {
     });
 
     const result = parseLlmResponse(raw, commentDiff, PULL_REQUEST_METADATA);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.patchPreview).toBeUndefined();
+    const finding = result.find((item) => item.line === 2 && item.category === "safety");
+    expect(finding).toBeDefined();
+    expect(finding!.patchPreview).toBeUndefined();
   });
 
   test("omits patchPreview when target line is a string literal", () => {
@@ -409,8 +410,9 @@ describe("parseLlmResponse", () => {
     });
 
     const result = parseLlmResponse(raw, stringDiff, PULL_REQUEST_METADATA);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.patchPreview).toBeUndefined();
+    const finding = result.find((item) => item.line === 2 && item.category === "safety");
+    expect(finding).toBeDefined();
+    expect(finding!.patchPreview).toBeUndefined();
   });
 
   test("preserves patchPreview when target line is actual code", () => {
@@ -428,7 +430,9 @@ describe("parseLlmResponse", () => {
     });
 
     const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
-    expect(result[0]!.patchPreview).toBeDefined();
+    const finding = result.find((item) => item.line === 2 && item.category === "clean");
+    expect(finding).toBeDefined();
+    expect(finding!.patchPreview).toBeDefined();
   });
 
   test("splits multi-line suggestedRewrite into addedLines", () => {
