@@ -1,0 +1,8 @@
+[
+  {
+    "description": "Should not flag clean, well-named utility functions as anti-patterns",
+    "matchLineRange": [1, 26],
+    "required": false,
+    "forbidden": true
+  }
+]

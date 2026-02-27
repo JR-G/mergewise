@@ -1,0 +1,15 @@
+[
+  {
+    "description": "Should not flag TSDoc lines mentioning null/undefined as inconsistent-absent-value",
+    "matchLineRange": [1, 12],
+    "required": false,
+    "forbidden": true
+  },
+  {
+    "description": "Should not flag consistent null usage in interface as inconsistent-absent-value",
+    "matchLineRange": [13, 19],
+    "matchCategory": "safety",
+    "required": false,
+    "forbidden": true
+  }
+]
