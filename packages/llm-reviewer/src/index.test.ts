@@ -18,6 +18,7 @@ import {
   extractStructuralSignals,
   createLlmReviewerRule,
   createReviewClient,
+  isCommentLine,
 } from "./index";
 import type { AntiPattern } from "./index";
 import { reviewFile } from "./review-file";
@@ -456,6 +457,76 @@ describe("parseLlmResponse", () => {
       "}",
     ]);
     expect(result[0]!.patchPreview?.removedLines).toEqual(["added line 2"]);
+  });
+});
+
+describe("isCommentLine", () => {
+  test("detects single-line comments", () => {
+    expect(isCommentLine("// this is a comment")).toBe(true);
+    expect(isCommentLine("  // indented comment")).toBe(true);
+  });
+
+  test("detects block comment start", () => {
+    expect(isCommentLine("/* block comment */")).toBe(true);
+    expect(isCommentLine("  /* indented */")).toBe(true);
+  });
+
+  test("detects TSDoc/JSDoc lines", () => {
+    expect(isCommentLine("/** TSDoc start */")).toBe(true);
+    expect(isCommentLine(" * continuation line")).toBe(true);
+    expect(isCommentLine(" */")).toBe(true);
+  });
+
+  test("does not match code lines", () => {
+    expect(isCommentLine("const x = 1;")).toBe(false);
+    expect(isCommentLine("  return value;")).toBe(false);
+    expect(isCommentLine("export function foo() {")).toBe(false);
+  });
+
+  test("does not match lines with trailing comments", () => {
+    expect(isCommentLine("const x = 1; // inline")).toBe(false);
+  });
+});
+
+describe("parseLlmResponse — comment line filtering", () => {
+  test("discards findings that target comment lines", () => {
+    const diff = makeDiff("src/file.ts", [
+      makeHunk("@@ -0,0 +1,3 @@", [
+        "+// This is a comment",
+        "+const value = 42;",
+        "+/** TSDoc line */",
+      ]),
+    ]);
+
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 1,
+          category: "clean",
+          confidence: 0.9,
+          evidence: "// This is a comment",
+          recommendation: "Remove comment.",
+        },
+        {
+          line: 2,
+          category: "clean",
+          confidence: 0.85,
+          evidence: "const value = 42",
+          recommendation: "Rename value.",
+        },
+        {
+          line: 3,
+          category: "safety",
+          confidence: 0.9,
+          evidence: "/** TSDoc line */",
+          recommendation: "Fix doc.",
+        },
+      ],
+    });
+
+    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.line).toBe(2);
   });
 });
 
