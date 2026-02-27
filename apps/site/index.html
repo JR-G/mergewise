@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mergewise</title>
+    <title>Mergewise — Code Review for Clean, Safe, Idiomatic Code</title>
     <meta
       name="description"
-      content="Mergewise reviews pull requests for cleaner, safer, more idiomatic code."
+      content="Mergewise reviews pull requests for design quality — anti-patterns, code smells, and structural problems. Refactoring suggestions with confidence-gated findings."
     />
     <link rel="icon" type="image/png" href="./assets/m-logo-frame.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -18,42 +18,356 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="poster">
-      <div class="poster-shape poster-shape-circle" aria-hidden="true"></div>
-      <div class="poster-shape poster-shape-bar" aria-hidden="true"></div>
-      <div class="poster-shape poster-shape-corner" aria-hidden="true"></div>
-      <div class="poster-shape poster-shape-ring" aria-hidden="true"></div>
-      <div class="poster-shape poster-shape-line-c" aria-hidden="true"></div>
-      <div class="poster-shape poster-shape-line-d" aria-hidden="true"></div>
-      <section class="top-row">
-        <p class="kicker">Mergewise</p>
-        <a class="button" href="https://github.com/JR-G/mergewise">View GitHub</a>
-      </section>
-      <section class="hero-grid">
-        <div class="hero-copy">
-          <h1>
-            Pull request reviews for
-            <span>clean, safe, idiomatic code.</span>
-          </h1>
-          <p>
-            Cleaner diffs, safer merges, idiomatic TypeScript and React. Built
-            for teams that want signal over noise.
-          </p>
-          <ul class="feature-list">
-            <li>Automated findings with confidence gates</li>
-            <li>Rule-driven checks with concrete recommendations</li>
-            <li>Designed for real engineering workflows</li>
-          </ul>
-        </div>
-        <div class="visual-stack">
-          <div class="hero-art">
-            <img src="./assets/m-w-logo.svg" alt="Mergewise logo" />
+    <header class="nav">
+      <div class="container nav-inner">
+        <a href="/" class="nav-brand">
+          <img src="./assets/m-w-logo.svg" alt="Mergewise" class="nav-logo" />
+          <span class="nav-wordmark">Mergewise</span>
+        </a>
+        <nav class="nav-links">
+          <a href="#features">Features</a>
+          <a href="#how-it-works">How It Works</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <a
+          class="button button-nav"
+          href="https://github.com/JR-G/mergewise"
+          target="_blank"
+          rel="noopener"
+          >View GitHub</a
+        >
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" id="hero">
+        <div class="hero-accent" aria-hidden="true"></div>
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <p class="kicker">Code review for teams that care</p>
+            <h1>
+              Ship code worth
+              <span class="accent-red">maintaining.</span>
+            </h1>
+            <p class="hero-sub">
+              Mergewise reviews every pull request for design quality —
+              anti-patterns, code smells, and structural problems that erode
+              maintainability over time.
+            </p>
+            <div class="hero-ctas">
+              <a
+                class="button"
+                href="https://github.com/JR-G/mergewise"
+                target="_blank"
+                rel="noopener"
+                >View on GitHub</a
+              >
+              <a class="button button-ghost" href="#features">See Features</a>
+            </div>
+          </div>
+          <div class="hero-visual">
+            <div class="hero-art">
+              <img src="./assets/m-w-logo.svg" alt="Mergewise logo" />
+            </div>
+            <div class="hero-plinth" aria-hidden="true">
+              <span class="shape-square shape-red"></span>
+              <span class="shape-circle shape-blue"></span>
+            </div>
           </div>
         </div>
       </section>
-      <section class="bottom-row">
-        <p class="status">Now in active development</p>
+
+      <div class="divider-strip" aria-hidden="true"></div>
+
+      <section class="how-it-works" id="how-it-works">
+        <div class="container">
+          <h2 class="section-heading">How It Works</h2>
+          <div class="steps-grid">
+            <div class="step">
+              <div class="step-number step-number-red">01</div>
+              <h3 class="step-title">Install the App</h3>
+              <p class="step-desc">
+                Add Mergewise to your GitHub repository. One click, no config
+                file needed to start.
+              </p>
+            </div>
+            <div class="step-divider" aria-hidden="true"></div>
+            <div class="step">
+              <div class="step-number step-number-blue">02</div>
+              <h3 class="step-title">Push a PR</h3>
+              <p class="step-desc">
+                Open a pull request. Mergewise analyses the diff using AST
+                parsing and structural LLM review.
+              </p>
+            </div>
+            <div class="step-divider" aria-hidden="true"></div>
+            <div class="step">
+              <div class="step-number step-number-amber">03</div>
+              <h3 class="step-title">Get Suggestions</h3>
+              <p class="step-desc">
+                Receive inline refactoring suggestions with confidence scores.
+                Concrete improvements, not vague warnings.
+              </p>
+            </div>
+          </div>
+          <div class="steps-base" aria-hidden="true"></div>
+        </div>
+      </section>
+
+      <section class="features" id="features">
+        <div class="container">
+          <h2 class="section-heading section-heading-light">Features</h2>
+          <div class="feature-grid">
+            <div class="feature-card">
+              <div class="feature-icon">
+                <span class="shape-square shape-red"></span>
+              </div>
+              <h3>AST Pattern Detection</h3>
+              <p>
+                Parses your code into abstract syntax trees. Detects
+                anti-patterns and code smells structurally, not with regex
+                guesswork.
+              </p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon">
+                <span class="shape-triangle shape-blue"></span>
+              </div>
+              <h3>LLM-Powered Review</h3>
+              <p>
+                Uses structural signals from the AST as context for LLM
+                analysis. The model sees code structure, not just text.
+              </p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon">
+                <span class="shape-circle shape-amber"></span>
+              </div>
+              <h3>Confidence Gating</h3>
+              <p>
+                Every finding carries a confidence score. Low-confidence noise
+                never reaches your PR. You only see what matters.
+              </p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon">
+                <span class="shape-bar shape-red"></span>
+              </div>
+              <h3>Rule-Driven Checks</h3>
+              <p>
+                A growing catalogue of rules targeting real-world anti-patterns
+                and code smells. Each rule is tested against known fixtures.
+              </p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon">
+                <span class="shape-diamond shape-blue"></span>
+              </div>
+              <h3>Refactoring Suggestions</h3>
+              <p>
+                Every finding includes a concrete suggestion — a design pattern
+                to apply, a principle to follow, or an idiom to adopt.
+              </p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon">
+                <span class="shape-half-circle shape-amber"></span>
+              </div>
+              <h3>Clean Code Standards</h3>
+              <p>
+                Reviews against established design principles, architectural
+                patterns, and language idioms. Keeps your codebase readable
+                and maintainable as it grows.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="demo" id="demo">
+        <div class="container demo-grid">
+          <div class="demo-screenshot">
+            <img
+              src="./assets/demo-screenshot.png"
+              alt="Mergewise reviewing a pull request — flagging explicit any usage with a suggested fix to use unknown instead"
+            />
+          </div>
+          <div class="demo-copy">
+            <h2 class="section-heading">See It in Action</h2>
+            <p class="demo-desc">
+              Mergewise posts inline suggestions directly on the lines that
+              matter. Each finding explains the smell, the principle behind it,
+              and how to refactor.
+            </p>
+            <ul class="demo-list">
+              <li>
+                <span class="shape-square shape-ink shape-inline"></span>
+                Inline on the diff, not a wall of text
+              </li>
+              <li>
+                <span class="shape-triangle shape-ink shape-inline"></span>
+                Confidence score on every finding
+              </li>
+              <li>
+                <span class="shape-circle shape-ink shape-inline"></span>
+                Copy-pasteable refactoring suggestions
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="comparison">
+        <div class="container">
+          <h2 class="section-heading section-heading-light">
+            They Catch Bugs. We Improve Design.
+          </h2>
+          <p class="comparison-intro">
+            AI code reviewers are great at finding bugs, security issues, and
+            correctness problems. Mergewise does something different.
+          </p>
+          <div class="comparison-grid">
+            <div class="comparison-col comparison-them">
+              <h3>What Others Do Well</h3>
+              <ul>
+                <li>Bug detection and correctness checks</li>
+                <li>Security vulnerability scanning</li>
+                <li>Performance issue identification</li>
+                <li>Code style and formatting</li>
+              </ul>
+            </div>
+            <div class="comparison-divider" aria-hidden="true"></div>
+            <div class="comparison-col comparison-us">
+              <h3>What Mergewise Adds</h3>
+              <ul>
+                <li>Design quality and refactoring suggestions</li>
+                <li>Anti-pattern and code smell detection</li>
+                <li>Idiomatic, maintainable, readable code</li>
+                <li>Structural analysis via AST</li>
+                <li>Confidence-gated findings</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="faq" id="faq">
+        <div class="container faq-container">
+          <h2 class="section-heading">FAQ</h2>
+          <div class="faq-list">
+            <details class="faq-item">
+              <summary>What languages does Mergewise support?</summary>
+              <div class="faq-answer">
+                <p>
+                  TypeScript and React are supported today with deep structural
+                  analysis. Support for additional languages is on the roadmap.
+                </p>
+              </div>
+            </details>
+            <details class="faq-item">
+              <summary>How is this different from ESLint?</summary>
+              <div class="faq-answer">
+                <p>
+                  ESLint catches syntax and style issues. Mergewise detects
+                  higher-level anti-patterns using AST analysis combined with
+                  LLM review — things like manual object construction that
+                  should use a factory, scattered event handling that should be
+                  consolidated, or prop drilling that suggests a missing context.
+                </p>
+              </div>
+            </details>
+            <details class="faq-item">
+              <summary>Will it spam my PRs with noise?</summary>
+              <div class="faq-answer">
+                <p>
+                  No. Every finding is confidence-gated. If the analysis isn't
+                  confident enough, the finding is suppressed. You can also
+                  configure thresholds and enable or disable specific rules
+                  via a <code>.mergewise.yml</code> file.
+                </p>
+              </div>
+            </details>
+            <details class="faq-item">
+              <summary>Is it free?</summary>
+              <div class="faq-answer">
+                <p>
+                  Mergewise is open source and in active development. It's free
+                  to self-host. Pricing for a hosted service will be announced
+                  when it launches publicly.
+                </p>
+              </div>
+            </details>
+            <details class="faq-item">
+              <summary>How do I set it up?</summary>
+              <div class="faq-answer">
+                <p>
+                  Install the GitHub App on your repository. Mergewise analyses
+                  pull requests automatically — no configuration file required
+                  to start, though you can customise rules via a
+                  <code>.mergewise.yml</code> file.
+                </p>
+              </div>
+            </details>
+          </div>
+        </div>
       </section>
     </main>
+
+    <footer class="footer">
+      <div class="footer-accent-left" aria-hidden="true"></div>
+      <div class="footer-accent-right" aria-hidden="true"></div>
+      <div class="container footer-grid">
+        <div class="footer-brand">
+          <a href="/" class="nav-brand">
+            <img
+              src="./assets/m-w-logo.svg"
+              alt="Mergewise"
+              class="nav-logo"
+            />
+            <span class="nav-wordmark">Mergewise</span>
+          </a>
+          <p>Refactoring-focused code review for pull requests.</p>
+        </div>
+        <div class="footer-links">
+          <h4>Links</h4>
+          <a href="#features">Features</a>
+          <a href="#how-it-works">How It Works</a>
+          <a href="#faq">FAQ</a>
+          <a
+            href="https://github.com/JR-G/mergewise"
+            target="_blank"
+            rel="noopener"
+            >GitHub</a
+          >
+        </div>
+        <div class="footer-connect">
+          <h4>Connect</h4>
+          <a
+            href="https://github.com/JR-G/mergewise"
+            target="_blank"
+            rel="noopener"
+            class="footer-github"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <path
+                d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"
+              />
+            </svg>
+            GitHub
+          </a>
+          <p class="footer-tagline">
+            Built with TypeScript, Bun, and strong opinions.
+          </p>
+        </div>
+      </div>
+      <div class="container footer-bottom">
+        <p>&copy; <script>document.write(new Date().getFullYear())</script> Mergewise</p>
+      </div>
+    </footer>
   </body>
 </html>
