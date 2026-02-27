@@ -21,6 +21,13 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("Never suggest React APIs");
   });
 
+  test("instructs LLM to never flag non-code content", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("Non-code content");
+    expect(prompt).toContain("string literals");
+    expect(prompt).toContain("not a code issue");
+  });
+
   test("includes switch-on-type pattern in the default prompt", () => {
     const prompt = buildSystemPrompt();
     expect(prompt).toContain("switch-on-type");

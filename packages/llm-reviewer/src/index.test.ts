@@ -359,6 +359,82 @@ describe("parseLlmResponse", () => {
     expect(result[0]!.patchPreview).toBeUndefined();
   });
 
+  test("omits patchPreview when target line is a comment", () => {
+    const commentDiff = makeDiff("src/file.ts", [
+      makeHunk("@@ -1,1 +1,3 @@", [
+        " existing",
+        "+  /** User email, null if unverified */",
+        "+  email: string | null;",
+      ]),
+    ]);
+
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 2,
+          category: "safety",
+          confidence: 0.9,
+          evidence: "/** User email, null if unverified */",
+          recommendation: "Pick one absent-value convention.",
+          suggestedRewrite: "  email: string | null;",
+        },
+      ],
+    });
+
+    const result = parseLlmResponse(raw, commentDiff, PULL_REQUEST_METADATA);
+    const finding = result.find((item) => item.line === 2 && item.category === "safety");
+    expect(finding).toBeDefined();
+    expect(finding!.patchPreview).toBeUndefined();
+  });
+
+  test("omits patchPreview when target line is a string literal", () => {
+    const stringDiff = makeDiff("src/file.ts", [
+      makeHunk("@@ -1,1 +1,3 @@", [
+        " existing",
+        '+      "Same interface using both | null and ? for fields representing no value.",',
+        "+  email: string | null;",
+      ]),
+    ]);
+
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 2,
+          category: "safety",
+          confidence: 0.9,
+          evidence: '"Same interface using both | null and ?"',
+          recommendation: "Pick one absent-value convention.",
+          suggestedRewrite: "  email: string | null;",
+        },
+      ],
+    });
+
+    const result = parseLlmResponse(raw, stringDiff, PULL_REQUEST_METADATA);
+    const finding = result.find((item) => item.line === 2 && item.category === "safety");
+    expect(finding).toBeDefined();
+    expect(finding!.patchPreview).toBeUndefined();
+  });
+
+  test("preserves patchPreview when target line is actual code", () => {
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 2,
+          category: "clean",
+          confidence: 0.9,
+          evidence: "added line 2",
+          recommendation: "Rename variable.",
+          suggestedRewrite: "const userData = fetchUser()",
+        },
+      ],
+    });
+
+    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
+    const finding = result.find((item) => item.line === 2 && item.category === "clean");
+    expect(finding).toBeDefined();
+    expect(finding!.patchPreview).toBeDefined();
+  });
+
   test("splits multi-line suggestedRewrite into addedLines", () => {
     const raw = JSON.stringify({
       findings: [

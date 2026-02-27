@@ -77,6 +77,7 @@ ${antiPatternSection}## What NOT to flag
 - Missing null checks on external input boundaries (unless clearly wrong)
 - Style preferences without clear engineering justification
 - Things that are already flagged by the structural signals provided
+- **Non-code content**: Never flag comments (TSDoc, JSDoc, //), string literals, or template literal content. Anti-patterns apply to code structure — not to the text inside strings, comments, or documentation. If a string literal or comment mentions null, undefined, or optional, that is content, not a code issue. Only flag the line if it is executable code exhibiting the anti-pattern.
 
 ## Output format
 

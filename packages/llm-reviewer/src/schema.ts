@@ -118,11 +118,34 @@ export function extractAddedLineMap(
   return added;
 }
 
+function isNonCodeLine(line: string): boolean {
+  const trimmed = line.trimStart();
+  if (
+    trimmed.startsWith("//") ||
+    trimmed.startsWith("/*") ||
+    trimmed.startsWith("/**") ||
+    trimmed === "*" ||
+    trimmed.startsWith("* ")
+  ) {
+    return true;
+  }
+  const stripped = trimmed.replace(/[;,]?\s*$/, "");
+  if (
+    (stripped.startsWith('"') && stripped.endsWith('"')) ||
+    (stripped.startsWith("'") && stripped.endsWith("'")) ||
+    (stripped.startsWith("`") && stripped.endsWith("`"))
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function buildLlmPatchPreview(
   suggestedRewrite: string | undefined,
   lineInfo: AddedLineInfo | undefined,
 ): PatchPreview | undefined {
   if (!suggestedRewrite || !lineInfo) return undefined;
+  if (isNonCodeLine(lineInfo.content)) return undefined;
 
   return {
     removedLines: [lineInfo.content],
