@@ -88,4 +88,8 @@ function formatUser(user: UserData): string {
   return `${user.name} (${user.email}) - ${user.role}/${user.department} age=${user.age} active=${user.isActive}`;
 }
 
-export { processUserData, formatUser, type UserData };
+function countActiveUsers(users: UserData[]): number {
+  return users.filter((user) => user.isActive).length;
+}
+
+export { processUserData, formatUser, countActiveUsers, type UserData };
