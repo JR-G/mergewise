@@ -1280,7 +1280,7 @@ export async function minimizeOutdatedComments(
     }
 
     try {
-      await minimizeCommentFn({
+      const result = await minimizeCommentFn({
         subjectId: nodeId,
         classifier: "OUTDATED",
         installationAccessToken: options.installationAccessToken,
@@ -1289,7 +1289,9 @@ export async function minimizeOutdatedComments(
         requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
         traceId: options.traceId,
       });
-      minimizedCount += 1;
+      if (result.isMinimized) {
+        minimizedCount += 1;
+      }
     } catch (error) {
       failedCount += 1;
       const detail = error instanceof Error ? error.message : String(error);
