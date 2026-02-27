@@ -4,6 +4,8 @@ const SKIP_PATTERNS = [
   /\.test\.[tj]sx?$/,
   /\.spec\.[tj]sx?$/,
   /__tests__\//,
+  /\/fixtures\//,
+  /\/fixture\//,
   /\.config\.[tj]sx?$/,
   /\.config\.[cm]?[jt]s$/,
   /\.eslintrc/,

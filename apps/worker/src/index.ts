@@ -7,6 +7,8 @@ import {
   fetchPullRequestFiles,
   GitHubApiError,
   minimizeComment,
+  postPullRequestSummaryComment,
+  updateIssueComment,
   type FetchPullRequestFilesOptions,
   type GitHubIssueComment,
   type GitHubPullRequestReviewComment,
@@ -17,6 +19,8 @@ import {
   type MinimizeCommentOptions,
   type MinimizeCommentResult,
   type PullRequestReviewComment,
+  type PostPullRequestSummaryCommentOptions,
+  type UpdateIssueCommentOptions,
   fetchFileContent,
   fetchPullRequest,
   createCheckRun,
@@ -603,6 +607,18 @@ export interface WorkerProcessingDependencies {
    * Runtime rule selection and gating config.
    */
   readonly mergewiseConfig?: MergewiseConfig;
+  /**
+   * Summary comment creation function override for testing.
+   */
+  readonly postPullRequestSummaryCommentFn?: (
+    options: PostPullRequestSummaryCommentOptions,
+  ) => Promise<GitHubIssueComment>;
+  /**
+   * Issue comment update function override for testing.
+   */
+  readonly updateIssueCommentFn?: (
+    options: UpdateIssueCommentOptions,
+  ) => Promise<GitHubIssueComment>;
 }
 
 /**
@@ -1820,6 +1836,38 @@ export async function processAnalyzePullRequestJob(
       },
     );
     postedCommentCount = postingResult.postedCount;
+
+    const prSummaryBody = buildPrSummaryComment(
+      githubAnalysisContext.analysisContext.diffs.length,
+      gatedExecutionResult.findings,
+      job.repo_full_name,
+      job.head_sha,
+    );
+    try {
+      await upsertPrSummaryComment(
+        {
+          owner: githubAnalysisContext.owner,
+          repository: githubAnalysisContext.repository,
+          pullRequestNumber: job.pr_number,
+          installationAccessToken: githubAnalysisContext.installationAccessToken,
+          body: prSummaryBody,
+          traceId,
+          githubFetchOptions,
+        },
+        {
+          listPullRequestSummaryCommentsFn: listSummaryFn,
+          postPullRequestSummaryCommentFn: dependencies.postPullRequestSummaryCommentFn,
+          updateIssueCommentFn: dependencies.updateIssueCommentFn,
+          logInfo: infoLogger,
+          logError: errorLogger,
+        },
+      );
+    } catch (summaryError) {
+      const detail = summaryError instanceof Error ? summaryError.message : String(summaryError);
+      errorLogger(
+        `[worker] summary_comment_failed trace=${traceId} job=${job.job_id}: ${detail}`,
+      );
+    }
   }
 
   const checkOutput = buildWorkerCheckOutput(gatedExecutionResult, delivery, postedCommentCount, {
@@ -2477,6 +2525,163 @@ function buildDebugMetadataSection(finding: Finding, dedupeKey: string): string 
     `findingId=${finding.findingId} ruleId=${finding.ruleId} ` +
     `category=${finding.category} confidence=${finding.confidence.toFixed(2)} -->`
   );
+}
+
+const PR_SUMMARY_COMMENT_MARKER = "<!-- mergewise-summary -->";
+
+/**
+ * Builds the Markdown body for the PR summary comment.
+ *
+ * @param filesReviewed - Number of files reviewed.
+ * @param findings - All findings from the analysis.
+ * @param repositoryFullName - Repository in `owner/name` format.
+ * @param headSha - PR head commit SHA for blob links.
+ * @returns Markdown string for the PR summary comment.
+ */
+export function buildPrSummaryComment(
+  filesReviewed: number,
+  findings: readonly Finding[],
+  repositoryFullName: string,
+  headSha: string,
+): string {
+  const lines: string[] = [PR_SUMMARY_COMMENT_MARKER, "## Mergewise Review Summary", ""];
+
+  lines.push(
+    `**${filesReviewed}** file${filesReviewed === 1 ? "" : "s"} reviewed, ` +
+    `**${findings.length}** finding${findings.length === 1 ? "" : "s"}`,
+    "",
+  );
+
+  const categoryOrder: readonly FindingCategory[] = ["safety", "perf", "clean", "idiomatic"];
+  const countsByCategory: Record<string, number> = {};
+  for (const finding of findings) {
+    countsByCategory[finding.category] = (countsByCategory[finding.category] ?? 0) + 1;
+  }
+
+  lines.push("| Category | Count |", "| --- | --- |");
+  for (const category of categoryOrder) {
+    const count = countsByCategory[category] ?? 0;
+    if (count > 0) {
+      lines.push(`| ${category} | ${count} |`);
+    }
+  }
+  lines.push("");
+
+  if (findings.length > 0) {
+    lines.push(
+      "<details>",
+      "<summary>Findings</summary>",
+      "",
+    );
+
+    const sortedFindings = [...findings].sort((left, right) => {
+      const fileCompare = left.filePath.localeCompare(right.filePath);
+      if (fileCompare !== 0) return fileCompare;
+      return left.line - right.line;
+    });
+
+    for (const finding of sortedFindings) {
+      const encodedFilePath = finding.filePath
+        .split("/")
+        .map((segment) => encodeURIComponent(segment))
+        .join("/");
+      const normalizedLine = Math.max(1, finding.line);
+      const blobUrl =
+        `https://github.com/${repositoryFullName}` +
+        `/blob/${encodeURIComponent(headSha)}/${encodedFilePath}#L${String(normalizedLine)}`;
+      const locationLink = `[${finding.filePath}:${String(finding.line)}](${blobUrl})`;
+      lines.push(`- **${finding.category}** ${locationLink}: ${finding.recommendation}`);
+    }
+
+    lines.push("", "</details>");
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Upserts the PR summary comment by finding an existing comment with the
+ * hidden marker or creating a new one.
+ *
+ * @param options - Repository coordinates, token, and comment body.
+ * @param dependencies - API function overrides for testing.
+ * @returns The created or updated comment.
+ */
+export async function upsertPrSummaryComment(
+  options: {
+    readonly owner: string;
+    readonly repository: string;
+    readonly pullRequestNumber: number;
+    readonly installationAccessToken: string;
+    readonly body: string;
+    readonly traceId: string;
+    readonly githubFetchOptions: WorkerGitHubFetchOptions;
+  },
+  dependencies: {
+    readonly listPullRequestSummaryCommentsFn?: (
+      opts: ListPullRequestCommentsOptions,
+    ) => Promise<GitHubIssueComment[]>;
+    readonly postPullRequestSummaryCommentFn?: (
+      opts: PostPullRequestSummaryCommentOptions,
+    ) => Promise<GitHubIssueComment>;
+    readonly updateIssueCommentFn?: (
+      opts: UpdateIssueCommentOptions,
+    ) => Promise<GitHubIssueComment>;
+    readonly logInfo?: (message: string) => void;
+    readonly logError?: (message: string) => void;
+  } = {},
+): Promise<GitHubIssueComment> {
+  const listFn = dependencies.listPullRequestSummaryCommentsFn ?? listPullRequestSummaryComments;
+  const postFn = dependencies.postPullRequestSummaryCommentFn ?? postPullRequestSummaryComment;
+  const updateFn = dependencies.updateIssueCommentFn ?? updateIssueComment;
+  const infoLogger = dependencies.logInfo ?? console.log;
+
+  const existingComments = await listFn({
+    owner: options.owner,
+    repository: options.repository,
+    pullRequestNumber: options.pullRequestNumber,
+    installationAccessToken: options.installationAccessToken,
+    apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
+    userAgent: options.githubFetchOptions.githubUserAgent,
+    requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
+    traceId: options.traceId,
+  });
+
+  const existingSummaryComment = existingComments.find(
+    (comment) => comment.body.includes(PR_SUMMARY_COMMENT_MARKER),
+  );
+
+  if (existingSummaryComment) {
+    infoLogger(
+      `[worker] updating_summary_comment trace=${options.traceId} commentId=${existingSummaryComment.id}`,
+    );
+    return updateFn({
+      owner: options.owner,
+      repository: options.repository,
+      commentId: existingSummaryComment.id,
+      installationAccessToken: options.installationAccessToken,
+      body: options.body,
+      apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
+      userAgent: options.githubFetchOptions.githubUserAgent,
+      requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
+      traceId: options.traceId,
+    });
+  }
+
+  infoLogger(
+    `[worker] creating_summary_comment trace=${options.traceId}`,
+  );
+  return postFn({
+    owner: options.owner,
+    repository: options.repository,
+    pullRequestNumber: options.pullRequestNumber,
+    installationAccessToken: options.installationAccessToken,
+    body: options.body,
+    apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
+    userAgent: options.githubFetchOptions.githubUserAgent,
+    requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
+    traceId: options.traceId,
+  });
 }
 
 function resolveGitHubFetchOptions(): WorkerGitHubFetchOptions {

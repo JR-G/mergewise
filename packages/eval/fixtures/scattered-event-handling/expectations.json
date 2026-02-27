@@ -1,0 +1,15 @@
+[
+  {
+    "description": "Flags scattered event listener registration",
+    "matchLineRange": [10, 49],
+    "matchCategory": "clean",
+    "matchRecommendationContainsAny": ["group", "centrali", "register", "dedicated", "separate", "extract", "together"],
+    "required": true
+  },
+  {
+    "description": "Flags SRP — setup function does too much",
+    "matchLineRange": [10, 49],
+    "matchRecommendationContainsAny": ["SRP", "responsibilit", "split", "extract"],
+    "required": false
+  }
+]

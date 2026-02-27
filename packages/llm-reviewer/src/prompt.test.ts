@@ -27,4 +27,28 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("string literals");
     expect(prompt).toContain("not a code issue");
   });
+
+  test("includes switch-on-type pattern in the default prompt", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("switch-on-type");
+    expect(prompt).toContain(
+      "switch or if-else chain with 4+ branches dispatching on a .type, .kind, or string-literal discriminator",
+    );
+  });
+
+  test("includes manual-object-construction pattern in the default prompt", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("manual-object-construction");
+    expect(prompt).toContain(
+      "3+ object literals with the same set of keys constructed in the same scope",
+    );
+  });
+
+  test("includes scattered-event-handling pattern in the default prompt", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("scattered-event-handling");
+    expect(prompt).toContain(
+      ".on(), .addEventListener(), or .subscribe() calls on the same target scattered across a function body",
+    );
+  });
 });
