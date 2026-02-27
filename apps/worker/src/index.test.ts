@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { GitHubApiError } from "@mergewise/github-client";
-import type { CreatePullRequestReviewOptions } from "@mergewise/github-client";
+import type { CreatePullRequestReviewOptions, GitHubReactionCounts } from "@mergewise/github-client";
 import type { Finding, FindingCategory, Rule } from "@mergewise/shared-types";
 
 import {
@@ -29,6 +29,7 @@ import {
   trackProcessedKey,
   upsertPrSummaryComment,
   wrapCodeIdentifiers,
+  collectCommentFeedback,
   type ExistingCommentState,
   type WorkerPollingTimerHandle,
   type WorkerGitHubFetchOptions,
@@ -2757,6 +2758,7 @@ describe("minimizeOutdatedComments", () => {
         ["key-b", "node-b"],
         ["key-c", "node-c"],
       ]),
+      allComments: [],
     };
     const newKeys = new Set(["key-b"]);
 
@@ -2790,6 +2792,7 @@ describe("minimizeOutdatedComments", () => {
     const existingState: ExistingCommentState = {
       dedupeKeys: new Set(["key-a"]),
       dedupeKeyToNodeId: new Map([["key-a", "node-a"]]),
+      allComments: [],
     };
     const newKeys = new Set(["key-a"]);
 
@@ -2824,6 +2827,7 @@ describe("minimizeOutdatedComments", () => {
         ["key-a", "node-a"],
         ["key-b", "node-b"],
       ]),
+      allComments: [],
     };
     const newKeys = new Set<string>();
 
@@ -2856,6 +2860,7 @@ describe("minimizeOutdatedComments", () => {
     const existingState: ExistingCommentState = {
       dedupeKeys: new Set<string>(),
       dedupeKeyToNodeId: new Map(),
+      allComments: [],
     };
 
     const result = await minimizeOutdatedComments(
@@ -3028,5 +3033,197 @@ describe("upsertPrSummaryComment", () => {
     );
 
     expect(postedBody).toContain("<!-- mergewise-summary -->");
+  });
+});
+
+const ZERO_REACTIONS: GitHubReactionCounts = {
+  "+1": 0, "-1": 0, laugh: 0, confused: 0, heart: 0, hooray: 0, rocket: 0, eyes: 0,
+};
+
+describe("collectCommentFeedback", () => {
+  test("extracts feedback from comments with mergewise-meta and reactions", () => {
+    const comments = [
+      {
+        body: "<!-- mergewise-meta dedupeKey=k1 findingId=f1 ruleId=ts-react/no-any category=safety confidence=0.92 -->",
+        reactions: { ...ZERO_REACTIONS, "+1": 3, "-1": 1 },
+      },
+    ];
+
+    const summary = collectCommentFeedback(comments);
+
+    expect(summary.totalComments).toBe(1);
+    expect(summary.withReactions).toBe(1);
+    expect(summary.thumbsUp).toBe(3);
+    expect(summary.thumbsDown).toBe(1);
+    expect(summary.records[0]!.findingId).toBe("f1");
+    expect(summary.records[0]!.ruleId).toBe("ts-react/no-any");
+    expect(summary.records[0]!.category).toBe("safety");
+    expect(summary.records[0]!.confidence).toBe("0.92");
+    expect(summary.records[0]!.thumbsUp).toBe(3);
+    expect(summary.records[0]!.thumbsDown).toBe(1);
+    expect(summary.records[0]!.otherReactions).toBe(0);
+  });
+
+  test("skips comments without mergewise-meta", () => {
+    const comments = [
+      { body: "Just a regular comment", reactions: { ...ZERO_REACTIONS, "+1": 5 } },
+      { body: "Another comment without meta" },
+    ];
+
+    const summary = collectCommentFeedback(comments);
+
+    expect(summary.totalComments).toBe(0);
+    expect(summary.withReactions).toBe(0);
+    expect(summary.records).toEqual([]);
+  });
+
+  test("skips mergewise comments with zero reactions", () => {
+    const comments = [
+      {
+        body: "<!-- mergewise-meta dedupeKey=k1 findingId=f1 ruleId=rule-a category=clean confidence=0.80 -->",
+        reactions: ZERO_REACTIONS,
+      },
+    ];
+
+    const summary = collectCommentFeedback(comments);
+
+    expect(summary.totalComments).toBe(1);
+    expect(summary.withReactions).toBe(0);
+    expect(summary.records).toEqual([]);
+  });
+
+  test("skips mergewise comments without reactions field", () => {
+    const comments = [
+      {
+        body: "<!-- mergewise-meta dedupeKey=k1 findingId=f1 ruleId=rule-a category=clean confidence=0.80 -->",
+      },
+    ];
+
+    const summary = collectCommentFeedback(comments);
+
+    expect(summary.totalComments).toBe(1);
+    expect(summary.withReactions).toBe(0);
+    expect(summary.records).toEqual([]);
+  });
+
+  test("counts other reaction types separately from thumbs", () => {
+    const comments = [
+      {
+        body: "<!-- mergewise-meta dedupeKey=k1 findingId=f1 ruleId=rule-a category=perf confidence=0.85 -->",
+        reactions: { ...ZERO_REACTIONS, "+1": 1, heart: 2, rocket: 3 },
+      },
+    ];
+
+    const summary = collectCommentFeedback(comments);
+
+    expect(summary.records[0]!.thumbsUp).toBe(1);
+    expect(summary.records[0]!.thumbsDown).toBe(0);
+    expect(summary.records[0]!.otherReactions).toBe(5);
+  });
+
+  test("aggregates totals across multiple reacted comments", () => {
+    const comments = [
+      {
+        body: "<!-- mergewise-meta dedupeKey=k1 findingId=f1 ruleId=rule-a category=safety confidence=0.90 -->",
+        reactions: { ...ZERO_REACTIONS, "+1": 2, "-1": 1 },
+      },
+      {
+        body: "<!-- mergewise-meta dedupeKey=k2 findingId=f2 ruleId=rule-b category=clean confidence=0.75 -->",
+        reactions: { ...ZERO_REACTIONS, "+1": 1 },
+      },
+      {
+        body: "<!-- mergewise-meta dedupeKey=k3 findingId=f3 ruleId=rule-c category=perf confidence=0.80 -->",
+        reactions: ZERO_REACTIONS,
+      },
+    ];
+
+    const summary = collectCommentFeedback(comments);
+
+    expect(summary.totalComments).toBe(3);
+    expect(summary.withReactions).toBe(2);
+    expect(summary.thumbsUp).toBe(3);
+    expect(summary.thumbsDown).toBe(1);
+  });
+});
+
+describe("processAnalyzePullRequestJob feedback logging", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  test("emits feedback_summary when existing comments have reactions", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    const logs: string[] = [];
+
+    await processAnalyzePullRequestJob(
+      {
+        job_id: "job-feedback",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 50,
+        head_sha: "abc123",
+        trace_id: "trace-feedback",
+        queued_at: "2026-01-01T00:00:00Z",
+      },
+      {
+        deliveryMode: "github",
+        rules: [createRule("rule-a")],
+        githubFetchOptions: workerFetchOptions,
+        logInfo: (msg: string) => logs.push(msg),
+        logError: () => {},
+        createGitHubAppJwtFn: () => "fake-jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "ghs_token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        fetchPullRequestFn: async () => openPullRequestState,
+        createPullRequestReviewFn: async () => ({
+          id: 1,
+          html_url: "",
+          body: null,
+          state: "COMMENTED",
+        }),
+        createCheckRunFn: async () => ({
+          id: 1,
+          html_url: "",
+          status: "completed",
+          conclusion: "success",
+        }),
+        listPullRequestSummaryCommentsFn: async () => [
+          {
+            id: 100,
+            node_id: "IC_100",
+            html_url: "",
+            body: "<!-- mergewise-meta dedupeKey=k1 findingId=f1 ruleId=rule-a category=safety confidence=0.90 -->",
+            reactions: { ...ZERO_REACTIONS, "+1": 2, "-1": 1 },
+          },
+        ],
+        listPullRequestInlineCommentsFn: async () => [],
+        postPullRequestSummaryCommentFn: async (opts) => ({
+          id: 200,
+          node_id: "IC_200",
+          html_url: "",
+          body: opts.body,
+        }),
+        now: () => new Date("2026-01-02T03:04:05Z"),
+      },
+    );
+
+    const feedbackLines = logs.filter((line) => line.includes("comment_feedback"));
+    expect(feedbackLines).toHaveLength(1);
+    expect(feedbackLines[0]).toContain("findingId=f1");
+    expect(feedbackLines[0]).toContain("ruleId=rule-a");
+    expect(feedbackLines[0]).toContain("thumbsUp=2");
+    expect(feedbackLines[0]).toContain("thumbsDown=1");
+
+    const summaryLines = logs.filter((line) => line.includes("feedback_summary"));
+    expect(summaryLines).toHaveLength(1);
+    expect(summaryLines[0]).toContain("totalComments=1");
+    expect(summaryLines[0]).toContain("withReactions=1");
   });
 });
