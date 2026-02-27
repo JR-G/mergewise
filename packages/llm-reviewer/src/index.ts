@@ -13,7 +13,7 @@ export { ANTI_PATTERNS } from "./anti-patterns";
 export type { ReviewClientConfig } from "./client";
 export { selectFilesForReview } from "./file-selection";
 export { buildSystemPrompt, buildFileReviewPrompt } from "./prompt";
-export { parseLlmResponse, extractAddedLineNumbers, extractAddedLineMap, deduplicateByProximity } from "./schema";
+export { parseLlmResponse, extractAddedLineNumbers, extractAddedLineMap, deduplicateByProximity, isCommentLine } from "./schema";
 export type { AddedLineInfo } from "./schema";
 export { extractStructuralSignals, type StructuralSignals } from "./signals";
 export { reviewFile } from "./review-file";

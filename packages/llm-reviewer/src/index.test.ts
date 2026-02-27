@@ -18,6 +18,7 @@ import {
   extractStructuralSignals,
   createLlmReviewerRule,
   createReviewClient,
+  isCommentLine,
 } from "./index";
 import type { AntiPattern } from "./index";
 import { reviewFile } from "./review-file";
@@ -458,6 +459,35 @@ describe("parseLlmResponse", () => {
     expect(result[0]!.patchPreview?.removedLines).toEqual(["added line 2"]);
   });
 });
+
+describe("isCommentLine", () => {
+  test("detects single-line comments", () => {
+    expect(isCommentLine("// this is a comment")).toBe(true);
+    expect(isCommentLine("  // indented comment")).toBe(true);
+  });
+
+  test("detects block comment start", () => {
+    expect(isCommentLine("/* block comment */")).toBe(true);
+    expect(isCommentLine("  /* indented */")).toBe(true);
+  });
+
+  test("detects TSDoc/JSDoc lines", () => {
+    expect(isCommentLine("/** TSDoc start */")).toBe(true);
+    expect(isCommentLine(" * continuation line")).toBe(true);
+    expect(isCommentLine(" */")).toBe(true);
+  });
+
+  test("does not match code lines", () => {
+    expect(isCommentLine("const x = 1;")).toBe(false);
+    expect(isCommentLine("  return value;")).toBe(false);
+    expect(isCommentLine("export function foo() {")).toBe(false);
+  });
+
+  test("does not match lines with trailing comments", () => {
+    expect(isCommentLine("const x = 1; // inline")).toBe(false);
+  });
+});
+
 
 function makeFinding(overrides: Partial<Finding> & Pick<Finding, "line" | "category" | "confidence">): Finding {
   return {

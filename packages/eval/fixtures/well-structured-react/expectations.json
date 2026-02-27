@@ -1,0 +1,16 @@
+[
+  {
+    "description": "Should not flag properly structured component as god-component",
+    "matchLineRange": [21, 50],
+    "matchRecommendationContainsAny": ["god", "too many responsibilities", "split"],
+    "required": false,
+    "forbidden": true
+  },
+  {
+    "description": "Should not flag correct useMemo/useCallback usage as unnecessary",
+    "matchLineRange": [24, 36],
+    "matchRecommendationContainsAny": ["unnecessary", "remove useMemo", "remove useCallback"],
+    "required": false,
+    "forbidden": true
+  }
+]

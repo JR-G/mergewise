@@ -27,6 +27,8 @@ export interface ExpectedFinding {
   readonly matchRecommendationContainsAny?: readonly string[];
   /** When true, this expectation counts towards recall. */
   readonly required: boolean;
+  /** When true, a matching finding is a false positive. Mutually exclusive with required. */
+  readonly forbidden?: boolean;
 }
 
 /**
@@ -73,6 +75,8 @@ export interface EvalScore {
   readonly precision: number;
   /** Findings that did not match any expectation. */
   readonly unmatchedFindings: readonly Finding[];
+  /** Findings that matched a forbidden expectation. */
+  readonly falsePositiveCount: number;
 }
 
 /**

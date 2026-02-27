@@ -192,9 +192,11 @@ export function parseLlmResponse(
       continue;
     }
 
+    const lineInfo = addedLineMap.get(rawFinding.line);
+
     const patchPreview = buildLlmPatchPreview(
       rawFinding.suggestedRewrite,
-      addedLineMap.get(rawFinding.line),
+      lineInfo,
     );
 
     findings.push({
@@ -285,6 +287,15 @@ function isLlmResponse(value: unknown): value is LlmResponse {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
   return Array.isArray(candidate.findings);
+}
+
+const COMMENT_LINE_PATTERN = /^\s*(?:\/\/|\/\*|\*\/|\*|\/\*\*)/;
+
+/**
+ * Returns true when a line's content is a comment or documentation line.
+ */
+export function isCommentLine(content: string): boolean {
+  return COMMENT_LINE_PATTERN.test(content);
 }
 
 function isValidRawFinding(
