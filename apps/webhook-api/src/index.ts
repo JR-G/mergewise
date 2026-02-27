@@ -1,5 +1,12 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
+import {
+  createGitHubAppJwt,
+  exchangeInstallationAccessToken,
+  createCheckRun,
+  updateCheckRun,
+} from "@mergewise/github-client";
+
 import type {
   AnalyzePullRequestJob,
   GitHubPullRequestAction,
@@ -291,6 +298,30 @@ export function isSupportedPullRequestAction(
 }
 
 /**
+ * Returns whether the webhook payload represents a draft pull request.
+ *
+ * @param payload - Parsed pull request webhook event.
+ * @returns `true` when the PR is a draft.
+ */
+export function isDraftPullRequest(
+  payload: GitHubPullRequestWebhookEvent,
+): boolean {
+  return payload.pull_request.draft === true;
+}
+
+/**
+ * Returns whether the webhook payload represents a closed or merged pull request.
+ *
+ * @param payload - Parsed pull request webhook event.
+ * @returns `true` when the PR is closed or merged.
+ */
+export function isClosedOrMergedPullRequest(
+  payload: GitHubPullRequestWebhookEvent,
+): boolean {
+  return payload.pull_request.state === "closed" || payload.pull_request.merged === true;
+}
+
+/**
  * Runtime configuration for the webhook API service.
  */
 export interface WebhookApiConfig {
@@ -302,6 +333,14 @@ export interface WebhookApiConfig {
    * Optional webhook secret used for `x-hub-signature-256` verification.
    */
   webhookSecret?: string;
+  /**
+   * GitHub App identifier for pending check run creation.
+   */
+  githubAppId?: number;
+  /**
+   * GitHub App private key PEM for pending check run creation.
+   */
+  githubAppPrivateKeyPem?: string;
 }
 
 /**
@@ -318,7 +357,16 @@ export function loadConfig(): WebhookApiConfig {
   }
 
   const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
-  return { port, webhookSecret };
+
+  const appIdRaw = process.env.GITHUB_APP_ID;
+  const githubAppId = appIdRaw ? Number.parseInt(appIdRaw, 10) : undefined;
+  const rawPrivateKey = process.env.GITHUB_APP_PRIVATE_KEY;
+  const normalizedPrivateKey = rawPrivateKey !== undefined
+    ? rawPrivateKey.replace(/\\n/g, "\n").trim()
+    : undefined;
+  const githubAppPrivateKeyPem = normalizedPrivateKey !== "" ? normalizedPrivateKey : undefined;
+
+  return { port, webhookSecret, githubAppId, githubAppPrivateKeyPem };
 }
 
 /**
@@ -407,4 +455,127 @@ export function buildAnalyzePullRequestJob(
     trace_id: traceId,
     queued_at: new Date().toISOString(),
   };
+}
+
+/**
+ * Dependency overrides for `createPendingCheckRun`.
+ */
+export interface CreatePendingCheckRunDependencies {
+  readonly createGitHubAppJwtFn?: typeof createGitHubAppJwt;
+  readonly exchangeInstallationAccessTokenFn?: typeof exchangeInstallationAccessToken;
+  readonly createCheckRunFn?: typeof createCheckRun;
+}
+
+/**
+ * Creates a "queued" check run so Mergewise appears in the PR checks list immediately.
+ *
+ * Best-effort — returns `null` on any failure or missing config so it never blocks enqueue.
+ *
+ * @param payload - Parsed pull request webhook event.
+ * @param config - Webhook API runtime config (must include App credentials).
+ * @param dependencies - Optional dependency overrides for testing.
+ * @returns Check run id on success, `null` otherwise.
+ */
+export async function createPendingCheckRun(
+  payload: GitHubPullRequestWebhookEvent,
+  config: WebhookApiConfig,
+  dependencies: CreatePendingCheckRunDependencies = {},
+): Promise<number | null> {
+  if (!config.githubAppId || !config.githubAppPrivateKeyPem) {
+    return null;
+  }
+
+  const installationId = payload.installation?.id;
+  if (installationId === undefined) {
+    return null;
+  }
+
+  try {
+    const createJwtFn = dependencies.createGitHubAppJwtFn ?? createGitHubAppJwt;
+    const exchangeTokenFn = dependencies.exchangeInstallationAccessTokenFn ?? exchangeInstallationAccessToken;
+    const createRunFn = dependencies.createCheckRunFn ?? createCheckRun;
+
+    const jwt = createJwtFn({ appId: config.githubAppId, privateKeyPem: config.githubAppPrivateKeyPem });
+    const token = await exchangeTokenFn(jwt, installationId);
+
+    const [owner, repository] = payload.repository.full_name.split("/");
+    if (!owner || !repository) {
+      return null;
+    }
+
+    const checkRun = await createRunFn({
+      owner,
+      repository,
+      headSha: payload.pull_request.head.sha,
+      installationAccessToken: token.token,
+      name: "Mergewise",
+      status: "queued",
+      output: { title: "Queued", summary: "Waiting for analysis to begin..." },
+    });
+
+    return checkRun.id;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(
+      `[webhook-api] failed to create pending check run: ${detail}`,
+    );
+    return null;
+  }
+}
+
+/**
+ * Best-effort cancellation of a queued check run when enqueue fails.
+ *
+ * @param checkRunId - Check run to cancel.
+ * @param payload - Original webhook payload for auth context.
+ * @param config - Webhook API config with App credentials.
+ * @param dependencies - Optional dependency overrides for testing.
+ */
+export async function cancelOrphanedCheckRun(
+  checkRunId: number,
+  payload: GitHubPullRequestWebhookEvent,
+  config: WebhookApiConfig,
+  dependencies: {
+    readonly createGitHubAppJwtFn?: typeof createGitHubAppJwt;
+    readonly exchangeInstallationAccessTokenFn?: typeof exchangeInstallationAccessToken;
+    readonly updateCheckRunFn?: typeof updateCheckRun;
+  } = {},
+): Promise<void> {
+  if (!config.githubAppId || !config.githubAppPrivateKeyPem) {
+    return;
+  }
+
+  const installationId = payload.installation?.id;
+  if (installationId === undefined) {
+    return;
+  }
+
+  try {
+    const createJwtFn = dependencies.createGitHubAppJwtFn ?? createGitHubAppJwt;
+    const exchangeTokenFn = dependencies.exchangeInstallationAccessTokenFn ?? exchangeInstallationAccessToken;
+    const updateRunFn = dependencies.updateCheckRunFn ?? updateCheckRun;
+
+    const jwt = createJwtFn({ appId: config.githubAppId, privateKeyPem: config.githubAppPrivateKeyPem });
+    const token = await exchangeTokenFn(jwt, installationId);
+
+    const [owner, repository] = payload.repository.full_name.split("/");
+    if (!owner || !repository) {
+      return;
+    }
+
+    await updateRunFn({
+      owner,
+      repository,
+      checkRunId,
+      installationAccessToken: token.token,
+      status: "completed",
+      conclusion: "failure",
+      output: { title: "Queue failed", summary: "Failed to enqueue analysis job." },
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(
+      `[webhook-api] failed to cancel orphaned check run ${checkRunId}: ${detail}`,
+    );
+  }
 }

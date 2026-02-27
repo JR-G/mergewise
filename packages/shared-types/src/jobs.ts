@@ -30,4 +30,8 @@ export interface AnalyzePullRequestJob {
    * ISO timestamp indicating when the job was queued.
    */
   queued_at: string;
+  /**
+   * GitHub check run identifier created at webhook intake for early PR status visibility.
+   */
+  check_run_id?: number;
 }

@@ -7,7 +7,10 @@
     "number": 3,
     "head": {
       "sha": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
-    }
+    },
+    "draft": false,
+    "state": "open",
+    "merged": false
   },
   "installation": {
     "id": 67890
