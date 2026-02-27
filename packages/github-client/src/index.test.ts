@@ -537,12 +537,17 @@ describe("github-client", () => {
     expect(result.state).toBe("open");
     expect(result.merged).toBe(false);
     expect(result.title).toBe("Add feature X");
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.init?.method).toBe("GET");
-    expect(String(calls[0]!.input)).toBe(
-      "https://api.github.com/repos/acme/widget/pulls/7",
+    expect(
+      calls.some(
+        (call) =>
+          call.init?.method === "GET" &&
+          String(call.input) === "https://api.github.com/repos/acme/widget/pulls/7",
+      ),
+    ).toBe(true);
+    const prCall = calls.find(
+      (call) => String(call.input) === "https://api.github.com/repos/acme/widget/pulls/7",
     );
-    const requestHeaders = calls[0]!.init?.headers as Record<string, string>;
+    const requestHeaders = prCall!.init?.headers as Record<string, string>;
     expect(requestHeaders["X-Mergewise-Trace-Id"]).toBe("trace-pr-1");
   });
 

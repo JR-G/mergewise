@@ -37,7 +37,7 @@ export interface GitHubPullRequest {
   /**
    * Current pull request state (`open` or `closed`).
    */
-  state?: string;
+  state?: "open" | "closed";
   /**
    * Whether the pull request has been merged.
    */

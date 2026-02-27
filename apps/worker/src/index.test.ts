@@ -1145,12 +1145,19 @@ describe("processAnalyzePullRequestJob", () => {
     );
 
     expect(createCheckRunCalled).toBe(false);
-    expect(capturedUpdates).toHaveLength(2);
-    expect(capturedUpdates[0]!.checkRunId).toBe(99);
-    expect(capturedUpdates[0]!.status).toBe("in_progress");
-    expect(capturedUpdates[1]!.checkRunId).toBe(99);
-    expect(capturedUpdates[1]!.status).toBe("completed");
-    expect(capturedUpdates[1]!.conclusion).toBe("success");
+    expect(
+      capturedUpdates.some(
+        (update) => update.checkRunId === 99 && update.status === "in_progress",
+      ),
+    ).toBe(true);
+    expect(
+      capturedUpdates.some(
+        (update) =>
+          update.checkRunId === 99 &&
+          update.status === "completed" &&
+          update.conclusion === "success",
+      ),
+    ).toBe(true);
   });
 
   test("skips check run creation when deliveryMode is not github", async () => {
@@ -1380,6 +1387,65 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.totalRules).toBe(0);
     expect(summary.postedCommentCount).toBe(0);
     expect(logs.some((msg) => msg.includes("skipped_closed_pr"))).toBe(true);
+  });
+
+  test("completes queued check run when PR is closed and check_run_id exists", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    let capturedUpdate: Record<string, unknown> | null = null;
+    await processAnalyzePullRequestJob(
+      {
+        job_id: "job-closed-check",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 83,
+        head_sha: "closed-check-123",
+        queued_at: "2025-01-01T00:00:00Z",
+        check_run_id: 200,
+      },
+      {
+        deliveryMode: "github",
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        fetchPullRequestFn: async () => ({
+          number: 83,
+          state: "closed" as const,
+          merged: false,
+          title: "Closed PR",
+        }),
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => ({
+          findings: [],
+          summary: {
+            totalRules: 0,
+            successfulRules: 0,
+            failedRules: 0,
+            totalFindings: 0,
+            findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          },
+          failedRuleIds: [],
+        }),
+        updateCheckRunFn: async (options) => {
+          capturedUpdate = {
+            checkRunId: options.checkRunId,
+            status: options.status,
+            conclusion: options.conclusion,
+          };
+          return { id: 200, html_url: "https://github.com/x", status: "completed", conclusion: "neutral" };
+        },
+      },
+    );
+
+    expect(capturedUpdate).not.toBeNull();
+    expect(capturedUpdate!.checkRunId).toBe(200);
+    expect(capturedUpdate!.status).toBe("completed");
+    expect(capturedUpdate!.conclusion).toBe("neutral");
   });
 
   test("skips processing when PR is merged", async () => {

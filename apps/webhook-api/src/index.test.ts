@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   buildAnalyzePullRequestJob,
+  cancelOrphanedCheckRun,
   computeGitHubSignature,
   createPendingCheckRun,
   createWebhookErrorResponse,
@@ -16,6 +17,7 @@ import {
   readWebhookRequestBody,
   SUPPORTED_PULL_REQUEST_ACTIONS,
 } from "./index";
+import type { WebhookApiConfig } from "./index";
 
 import type { GitHubPullRequestWebhookEvent } from "@mergewise/shared-types";
 
@@ -168,6 +170,15 @@ describe("loadConfig", () => {
     process.env.GITHUB_WEBHOOK_SECRET = "test-secret";
     const cfg = loadConfig();
     expect(cfg.webhookSecret).toBe("test-secret");
+  });
+
+  test("reads and normalises GitHub App credentials from env", () => {
+    delete process.env.WEBHOOK_PORT;
+    process.env.GITHUB_APP_ID = "456";
+    process.env.GITHUB_APP_PRIVATE_KEY = "-----BEGIN KEY-----\\nabc\\n-----END KEY-----\\n";
+    const cfg = loadConfig();
+    expect(cfg.githubAppId).toBe(456);
+    expect(cfg.githubAppPrivateKeyPem).toBe("-----BEGIN KEY-----\nabc\n-----END KEY-----");
   });
 
   test("throws for invalid port", () => {
@@ -448,7 +459,7 @@ describe("isClosedOrMergedPullRequest", () => {
   };
 
   test("returns true when state is closed", () => {
-    const payload = { ...basePayload, pull_request: { ...basePayload.pull_request, state: "closed" } };
+    const payload = { ...basePayload, pull_request: { ...basePayload.pull_request, state: "closed" as const } };
     expect(isClosedOrMergedPullRequest(payload)).toBe(true);
   });
 
@@ -535,6 +546,74 @@ describe("createPendingCheckRun", () => {
       );
       expect(result).toBeNull();
       expect(errors.some((msg) => String(msg).includes("API down"))).toBe(true);
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+});
+
+describe("cancelOrphanedCheckRun", () => {
+  const payload: GitHubPullRequestWebhookEvent = {
+    action: "opened",
+    repository: { full_name: "acme/widget" },
+    pull_request: { number: 1, head: { sha: "abc123" } },
+    installation: { id: 99 },
+  };
+
+  const validConfig: WebhookApiConfig = {
+    port: 8787,
+    githubAppId: 123,
+    githubAppPrivateKeyPem: "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----",
+  };
+
+  test("calls updateCheckRun with failure conclusion", async () => {
+    let capturedOptions: Record<string, unknown> | undefined;
+
+    await cancelOrphanedCheckRun(42, payload, validConfig, {
+      createGitHubAppJwtFn: () => "fake-jwt",
+      exchangeInstallationAccessTokenFn: async () => ({
+        token: "install-token",
+        expires_at: "2026-01-01T00:00:00Z",
+      }),
+      updateCheckRunFn: async (options) => {
+        capturedOptions = options as unknown as Record<string, unknown>;
+        return { id: 42, html_url: "https://github.com/x", status: "completed", conclusion: "failure" };
+      },
+    });
+
+    expect(capturedOptions).toBeDefined();
+    expect(capturedOptions?.checkRunId).toBe(42);
+    expect(capturedOptions?.status).toBe("completed");
+    expect(capturedOptions?.conclusion).toBe("failure");
+  });
+
+  test("does nothing when app credentials are missing", async () => {
+    let called = false;
+    await cancelOrphanedCheckRun(42, payload, { port: 8787 }, {
+      updateCheckRunFn: async () => {
+        called = true;
+        return { id: 42, html_url: "https://github.com/x", status: "completed", conclusion: "failure" };
+      },
+    });
+    expect(called).toBe(false);
+  });
+
+  test("swallows errors without throwing", async () => {
+    const originalConsoleError = console.error;
+    const errors: unknown[] = [];
+    console.error = (...args: unknown[]) => {
+      errors.push(args.join(" "));
+    };
+    try {
+      await cancelOrphanedCheckRun(42, payload, validConfig, {
+        createGitHubAppJwtFn: () => "fake-jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "install-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        updateCheckRunFn: async () => { throw new Error("network failure"); },
+      });
+      expect(errors.some((msg) => String(msg).includes("network failure"))).toBe(true);
     } finally {
       console.error = originalConsoleError;
     }

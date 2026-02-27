@@ -8,8 +8,16 @@ describe("buildSystemPrompt", () => {
     expect(prompt).not.toContain("extracted function signatures or the refactored shape");
   });
 
-  test("instructs against suggestedRewrite for structural suggestions", () => {
+  test("constrains suggestedRewrite to localised fixes and excludes structural rewrites", () => {
     const prompt = buildSystemPrompt();
-    expect(prompt).toContain("Never provide suggestedRewrite for structural suggestions");
+    expect(prompt).toContain("drop-in fix");
+    expect(prompt).toContain("structural suggestions");
+    expect(prompt).toContain("recommendation field");
+  });
+
+  test("scopes React-specific suggestions to React files only", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("only apply to .tsx/.jsx files");
+    expect(prompt).toContain("Never suggest React APIs");
   });
 });

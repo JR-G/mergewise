@@ -2,6 +2,7 @@ import { enqueueAnalyzePullRequestJob } from "@mergewise/job-store";
 
 import {
   buildAnalyzePullRequestJob,
+  cancelOrphanedCheckRun,
   createPendingCheckRun,
   createWebhookErrorResponse,
   createWebhookJsonResponse,
@@ -152,6 +153,9 @@ Bun.serve({
     try {
       enqueueAnalyzePullRequestJob(job);
     } catch (error) {
+      if (checkRunId !== null) {
+        await cancelOrphanedCheckRun(checkRunId, payload, config);
+      }
       const cause = error instanceof Error ? error.stack ?? error.message : String(error);
       logWebhookFailure({
         event: "webhook_request_failed",

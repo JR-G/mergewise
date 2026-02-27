@@ -1475,15 +1475,45 @@ export async function processAnalyzePullRequestJob(
     traceId,
   });
 
-  if (pullRequestState.state !== "open") {
+  const createCheckRunFn = dependencies.createCheckRunFn ?? createCheckRun;
+  const updateCheckRunFn = dependencies.updateCheckRunFn ?? updateCheckRun;
+
+  const isPrClosed = pullRequestState.state !== "open";
+  const queuedCheckRunId =
+    dependencies.deliveryMode === "github" ? job.check_run_id : undefined;
+
+  if (isPrClosed) {
     infoLogger(
       `[worker] skipped_closed_pr trace=${traceId} job=${job.job_id} state=${pullRequestState.state} merged=${String(pullRequestState.merged)}`,
     );
-    return buildSkippedJobSummary(job, traceId, "pr_not_open");
   }
 
-  const createCheckRunFn = dependencies.createCheckRunFn ?? createCheckRun;
-  const updateCheckRunFn = dependencies.updateCheckRunFn ?? updateCheckRun;
+  if (isPrClosed && queuedCheckRunId !== undefined) {
+    try {
+      await updateCheckRunFn({
+        owner: githubAnalysisContext.owner,
+        repository: githubAnalysisContext.repository,
+        checkRunId: queuedCheckRunId,
+        installationAccessToken: githubAnalysisContext.installationAccessToken,
+        status: "completed",
+        conclusion: "neutral",
+        output: { title: "Review skipped", summary: "Pull request is no longer open." },
+        apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+        userAgent: githubFetchOptions.githubUserAgent,
+        requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+        traceId,
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      errorLogger(
+        `[worker] failed to complete skipped check run trace=${traceId} job=${job.job_id}: ${detail}`,
+      );
+    }
+  }
+
+  if (isPrClosed) {
+    return buildSkippedJobSummary(job, traceId, "pr_not_open");
+  }
   let pendingCheckRunId: number | undefined;
   if (dependencies.deliveryMode === "github") {
     try {

@@ -4,6 +4,7 @@ import {
   createGitHubAppJwt,
   exchangeInstallationAccessToken,
   createCheckRun,
+  updateCheckRun,
 } from "@mergewise/github-client";
 
 import type {
@@ -519,5 +520,62 @@ export async function createPendingCheckRun(
       `[webhook-api] failed to create pending check run: ${detail}`,
     );
     return null;
+  }
+}
+
+/**
+ * Best-effort cancellation of a queued check run when enqueue fails.
+ *
+ * @param checkRunId - Check run to cancel.
+ * @param payload - Original webhook payload for auth context.
+ * @param config - Webhook API config with App credentials.
+ * @param dependencies - Optional dependency overrides for testing.
+ */
+export async function cancelOrphanedCheckRun(
+  checkRunId: number,
+  payload: GitHubPullRequestWebhookEvent,
+  config: WebhookApiConfig,
+  dependencies: {
+    readonly createGitHubAppJwtFn?: typeof createGitHubAppJwt;
+    readonly exchangeInstallationAccessTokenFn?: typeof exchangeInstallationAccessToken;
+    readonly updateCheckRunFn?: typeof updateCheckRun;
+  } = {},
+): Promise<void> {
+  if (!config.githubAppId || !config.githubAppPrivateKeyPem) {
+    return;
+  }
+
+  const installationId = payload.installation?.id;
+  if (installationId === undefined) {
+    return;
+  }
+
+  try {
+    const createJwtFn = dependencies.createGitHubAppJwtFn ?? createGitHubAppJwt;
+    const exchangeTokenFn = dependencies.exchangeInstallationAccessTokenFn ?? exchangeInstallationAccessToken;
+    const updateRunFn = dependencies.updateCheckRunFn ?? updateCheckRun;
+
+    const jwt = createJwtFn({ appId: config.githubAppId, privateKeyPem: config.githubAppPrivateKeyPem });
+    const token = await exchangeTokenFn(jwt, installationId);
+
+    const [owner, repository] = payload.repository.full_name.split("/");
+    if (!owner || !repository) {
+      return;
+    }
+
+    await updateRunFn({
+      owner,
+      repository,
+      checkRunId,
+      installationAccessToken: token.token,
+      status: "completed",
+      conclusion: "failure",
+      output: { title: "Queue failed", summary: "Failed to enqueue analysis job." },
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(
+      `[webhook-api] failed to cancel orphaned check run ${checkRunId}: ${detail}`,
+    );
   }
 }
