@@ -193,9 +193,6 @@ export function parseLlmResponse(
     }
 
     const lineInfo = addedLineMap.get(rawFinding.line);
-    if (lineInfo && isCommentLine(lineInfo.content)) {
-      continue;
-    }
 
     const patchPreview = buildLlmPatchPreview(
       rawFinding.suggestedRewrite,

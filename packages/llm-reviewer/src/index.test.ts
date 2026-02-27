@@ -488,47 +488,6 @@ describe("isCommentLine", () => {
   });
 });
 
-describe("parseLlmResponse — comment line filtering", () => {
-  test("discards findings that target comment lines", () => {
-    const diff = makeDiff("src/file.ts", [
-      makeHunk("@@ -0,0 +1,3 @@", [
-        "+// This is a comment",
-        "+const value = 42;",
-        "+/** TSDoc line */",
-      ]),
-    ]);
-
-    const raw = JSON.stringify({
-      findings: [
-        {
-          line: 1,
-          category: "clean",
-          confidence: 0.9,
-          evidence: "// This is a comment",
-          recommendation: "Remove comment.",
-        },
-        {
-          line: 2,
-          category: "clean",
-          confidence: 0.85,
-          evidence: "const value = 42",
-          recommendation: "Rename value.",
-        },
-        {
-          line: 3,
-          category: "safety",
-          confidence: 0.9,
-          evidence: "/** TSDoc line */",
-          recommendation: "Fix doc.",
-        },
-      ],
-    });
-
-    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.line).toBe(2);
-  });
-});
 
 function makeFinding(overrides: Partial<Finding> & Pick<Finding, "line" | "category" | "confidence">): Finding {
   return {
