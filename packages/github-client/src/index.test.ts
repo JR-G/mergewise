@@ -376,6 +376,8 @@ describe("github-client", () => {
     expect(calls[0]).toBeDefined();
     const requestUrl = String(calls[0]!.input);
     expect(requestUrl).toContain("/repos/acme/widget/check-runs");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(calls[0]!.init?.signal).toBeDefined();
     const requestBody = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
     expect(requestBody.name).toBe("Mergewise");
     expect(requestBody.head_sha).toBe("abc123");
