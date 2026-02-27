@@ -24,6 +24,7 @@ import {
   resolveJobTraceId,
   runPollCycleWithInFlightGuard,
   trackProcessedKey,
+  wrapCodeIdentifiers,
   type WorkerPollingTimerHandle,
   type WorkerGitHubFetchOptions,
 } from "./index";
@@ -998,11 +999,12 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.checkOutput?.title).toBe("Review completed");
   });
 
-  test("creates a check run on GitHub when deliveryMode is github", async () => {
+  test("creates in-progress check run then updates to completed when deliveryMode is github", async () => {
     process.env.GITHUB_APP_ID = "123";
     process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
 
-    let capturedCheckRun: Record<string, unknown> | null = null;
+    let capturedInProgressCreate: Record<string, unknown> | null = null;
+    let capturedCompletedUpdate: Record<string, unknown> | null = null;
     await processAnalyzePullRequestJob(
       {
         job_id: "job-check",
@@ -1034,25 +1036,36 @@ describe("processAnalyzePullRequestJob", () => {
           failedRuleIds: [],
         }),
         createCheckRunFn: async (options) => {
-          capturedCheckRun = {
+          capturedInProgressCreate = {
             owner: options.owner,
             repository: options.repository,
             headSha: options.headSha,
             name: options.name,
-            conclusion: options.conclusion,
-            title: options.output.title,
+            status: options.status,
           };
-          return { id: 1, html_url: "https://github.com/x", status: "completed", conclusion: "success" };
+          return { id: 42, html_url: "https://github.com/x", status: "in_progress", conclusion: null };
+        },
+        updateCheckRunFn: async (options) => {
+          capturedCompletedUpdate = {
+            owner: options.owner,
+            repository: options.repository,
+            checkRunId: options.checkRunId,
+            status: options.status,
+            conclusion: options.conclusion,
+          };
+          return { id: 42, html_url: "https://github.com/x", status: "completed", conclusion: "success" };
         },
       },
     );
 
-    expect(capturedCheckRun).not.toBeNull();
-    expect(capturedCheckRun!.owner).toBe("acme");
-    expect(capturedCheckRun!.repository).toBe("widget");
-    expect(capturedCheckRun!.headSha).toBe("check123");
-    expect(capturedCheckRun!.name).toBe("Mergewise");
-    expect(capturedCheckRun!.conclusion).toBe("success");
+    expect(capturedInProgressCreate).not.toBeNull();
+    expect(capturedInProgressCreate!.owner).toBe("acme");
+    expect(capturedInProgressCreate!.name).toBe("Mergewise");
+    expect(capturedInProgressCreate!.status).toBe("in_progress");
+    expect(capturedCompletedUpdate).not.toBeNull();
+    expect(capturedCompletedUpdate!.checkRunId).toBe(42);
+    expect(capturedCompletedUpdate!.status).toBe("completed");
+    expect(capturedCompletedUpdate!.conclusion).toBe("success");
   });
 
   test("skips check run creation when deliveryMode is not github", async () => {
@@ -1142,10 +1155,11 @@ describe("processAnalyzePullRequestJob", () => {
     );
 
     expect(summary.jobId).toBe("job-check-fail");
+    expect(errors.some((msg) => msg.includes("in-progress check run"))).toBe(true);
     expect(errors.some((msg) => msg.includes("check_run_failed"))).toBe(true);
   });
 
-  test("posts PR-level summary comment after inline comments", async () => {
+  test("posts PR-level summary comment before inline comments", async () => {
     process.env.GITHUB_APP_ID = "123";
     process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
 
@@ -1204,6 +1218,12 @@ describe("processAnalyzePullRequestJob", () => {
         createCheckRunFn: async () => ({
           id: 1,
           html_url: "https://github.com/x",
+          status: "in_progress" as const,
+          conclusion: null,
+        }),
+        updateCheckRunFn: async () => ({
+          id: 1,
+          html_url: "https://github.com/x",
           status: "completed" as const,
           conclusion: "success" as const,
         }),
@@ -1211,6 +1231,44 @@ describe("processAnalyzePullRequestJob", () => {
     );
 
     expect(capturedSummaryBodies).toEqual(["2 files reviewed, 0 comments"]);
+  });
+});
+
+describe("wrapCodeIdentifiers", () => {
+  test("wraps camelCase identifiers in backticks", () => {
+    expect(wrapCodeIdentifiers("Refactor processUserRequest to adhere to SRP")).toBe(
+      "Refactor `processUserRequest` to adhere to SRP",
+    );
+  });
+
+  test("wraps PascalCase identifiers in backticks", () => {
+    expect(wrapCodeIdentifiers("Extract UserService into a separate module")).toBe(
+      "Extract `UserService` into a separate module",
+    );
+  });
+
+  test("wraps dotted member access in backticks", () => {
+    expect(wrapCodeIdentifiers("Call this.handleRequest instead")).toBe(
+      "Call `this.handleRequest` instead",
+    );
+  });
+
+  test("preserves identifiers already in backticks", () => {
+    expect(wrapCodeIdentifiers("Use `processUserRequest` here")).toBe(
+      "Use `processUserRequest` here",
+    );
+  });
+
+  test("leaves plain words unchanged", () => {
+    expect(wrapCodeIdentifiers("Extract the logic into separate functions")).toBe(
+      "Extract the logic into separate functions",
+    );
+  });
+
+  test("leaves acronyms and uppercase words unchanged", () => {
+    expect(wrapCodeIdentifiers("Follow SRP and DRY principles")).toBe(
+      "Follow SRP and DRY principles",
+    );
   });
 });
 

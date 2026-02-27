@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
   createCheckRun,
+  updateCheckRun,
   createGitHubAppJwt,
   exchangeInstallationAccessToken,
   fetchPullRequestFiles,
@@ -409,5 +410,102 @@ describe("github-client", () => {
 
     expect(thrownError).toBeInstanceOf(GitHubApiError);
     expect((thrownError as GitHubApiError).status).toBe(403);
+  });
+
+  test("createCheckRun sends in_progress status without conclusion or output", async () => {
+    const calls: FetchCall[] = [];
+    const fetchMock: FetchMock = async (input, init) => {
+      calls.push({ input, init });
+      return makeJsonResponse({
+        id: 500,
+        html_url: "https://github.com/acme/widget/runs/500",
+        status: "in_progress",
+        conclusion: null,
+      }, 201);
+    };
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const result = await createCheckRun({
+      owner: "acme",
+      repository: "widget",
+      headSha: "def456",
+      installationAccessToken: "ghs_token",
+      name: "Mergewise",
+      status: "in_progress",
+      output: { title: "Review in progress", summary: "Analysing pull request..." },
+    });
+
+    expect(result.id).toBe(500);
+    expect(result.status).toBe("in_progress");
+    expect(result.conclusion).toBeNull();
+    expect(calls[0]).toBeDefined();
+    const requestBody = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
+    expect(requestBody.status).toBe("in_progress");
+    expect(requestBody.conclusion).toBeUndefined();
+    expect(requestBody.head_sha).toBe("def456");
+  });
+
+  test("updateCheckRun PATCHes the correct endpoint and returns updated check run", async () => {
+    const calls: FetchCall[] = [];
+    const fetchMock: FetchMock = async (input, init) => {
+      calls.push({ input, init });
+      return makeJsonResponse({
+        id: 500,
+        html_url: "https://github.com/acme/widget/runs/500",
+        status: "completed",
+        conclusion: "success",
+      });
+    };
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const result = await updateCheckRun({
+      owner: "acme",
+      repository: "widget",
+      checkRunId: 500,
+      installationAccessToken: "ghs_token",
+      status: "completed",
+      conclusion: "success",
+      output: {
+        title: "Review completed",
+        summary: "Rules=9/9 findings=2 posted=2",
+        text: "### Reviewer Summary",
+      },
+      traceId: "trace-update-1",
+    });
+
+    expect(result.id).toBe(500);
+    expect(result.conclusion).toBe("success");
+    expect(calls[0]).toBeDefined();
+    const requestUrl = String(calls[0]!.input);
+    expect(requestUrl).toContain("/repos/acme/widget/check-runs/500");
+    expect(calls[0]!.init?.method).toBe("PATCH");
+    const requestBody = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
+    expect(requestBody.status).toBe("completed");
+    expect(requestBody.conclusion).toBe("success");
+    const requestHeaders = calls[0]!.init?.headers as Record<string, string>;
+    expect(requestHeaders["X-Mergewise-Trace-Id"]).toBe("trace-update-1");
+  });
+
+  test("updateCheckRun throws GitHubApiError on failure", async () => {
+    const fetchMock: FetchMock = async () =>
+      new Response(JSON.stringify({ message: "not found" }), { status: 404 });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    let thrownError: unknown;
+    try {
+      await updateCheckRun({
+        owner: "acme",
+        repository: "widget",
+        checkRunId: 999,
+        installationAccessToken: "ghs_token",
+        status: "completed",
+        conclusion: "success",
+      });
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(GitHubApiError);
+    expect((thrownError as GitHubApiError).status).toBe(404);
   });
 });

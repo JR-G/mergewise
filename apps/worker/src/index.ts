@@ -16,7 +16,9 @@ import {
   type PostPullRequestSummaryCommentOptions,
   fetchFileContent,
   createCheckRun,
+  updateCheckRun,
   type CreateCheckRunOptions,
+  type UpdateCheckRunOptions,
   type GitHubCheckRun,
 } from "@mergewise/github-client";
 import { readFileSync } from "node:fs";
@@ -552,6 +554,12 @@ export interface WorkerProcessingDependencies {
    */
   readonly createCheckRunFn?: (
     options: CreateCheckRunOptions,
+  ) => Promise<GitHubCheckRun>;
+  /**
+   * GitHub check run update function override.
+   */
+  readonly updateCheckRunFn?: (
+    options: UpdateCheckRunOptions,
   ) => Promise<GitHubCheckRun>;
   /**
    * Runtime rule selection and gating config.
@@ -1472,6 +1480,36 @@ export async function processAnalyzePullRequestJob(
     },
   );
 
+  const createCheckRunFn = dependencies.createCheckRunFn ?? createCheckRun;
+  const updateCheckRunFn = dependencies.updateCheckRunFn ?? updateCheckRun;
+  let pendingCheckRunId: number | undefined;
+  if (dependencies.deliveryMode === "github") {
+    try {
+      const pendingCheckRun = await createCheckRunFn({
+        owner: githubAnalysisContext.owner,
+        repository: githubAnalysisContext.repository,
+        headSha: job.head_sha,
+        installationAccessToken: githubAnalysisContext.installationAccessToken,
+        name: "Mergewise",
+        status: "in_progress",
+        output: { title: "Review in progress", summary: "Analysing pull request..." },
+        apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+        userAgent: githubFetchOptions.githubUserAgent,
+        requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+        traceId,
+      });
+      pendingCheckRunId = pendingCheckRun.id;
+      infoLogger(
+        `[worker] check_run_in_progress trace=${traceId} job=${job.job_id} checkRunId=${pendingCheckRun.id}`,
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      errorLogger(
+        `[worker] failed to create in-progress check run trace=${traceId} job=${job.job_id}: ${detail}`,
+      );
+    }
+  }
+
   const hasCodebaseAwareRules = selectedRules.some((rule) => rule.kind === "codebase-aware");
   const codebaseContext: CodebaseContext | undefined = hasCodebaseAwareRules
     ? {
@@ -1519,6 +1557,31 @@ export async function processAnalyzePullRequestJob(
   const delivery = prepareFindingDelivery(executionResult.findings, findingDeliveryOptions);
 
   let postedCommentCount = 0;
+  if (dependencies.deliveryMode === "github") {
+    const postSummaryFn = dependencies.postPullRequestSummaryCommentFn ?? postPullRequestSummaryComment;
+    const fileCount = githubAnalysisContext.analysisContext.diffs.length;
+    const summaryBody =
+      `${fileCount} file${fileCount === 1 ? "" : "s"} reviewed, ` +
+      `${delivery.comments.length} comment${delivery.comments.length === 1 ? "" : "s"}`;
+    try {
+      await postSummaryFn({
+        owner: githubAnalysisContext.owner,
+        repository: githubAnalysisContext.repository,
+        pullRequestNumber: job.pr_number,
+        installationAccessToken: githubAnalysisContext.installationAccessToken,
+        body: summaryBody,
+        apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+        userAgent: githubFetchOptions.githubUserAgent,
+        requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+        traceId,
+      });
+    } catch (error) {
+      errorLogger(
+        `[worker] failed to post summary comment trace=${traceId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   if (dependencies.deliveryMode === "github" && delivery.comments.length > 0) {
     const postingResult = await postPreparedFindingComments(
       {
@@ -1537,31 +1600,6 @@ export async function processAnalyzePullRequestJob(
       },
     );
     postedCommentCount = postingResult.postedCount;
-  }
-
-  if (dependencies.deliveryMode === "github") {
-    const postSummaryFn = dependencies.postPullRequestSummaryCommentFn ?? postPullRequestSummaryComment;
-    const fileCount = githubAnalysisContext.analysisContext.diffs.length;
-    const summaryBody =
-      `${fileCount} file${fileCount === 1 ? "" : "s"} reviewed, ` +
-      `${postedCommentCount} comment${postedCommentCount === 1 ? "" : "s"}`;
-    try {
-      await postSummaryFn({
-        owner: githubAnalysisContext.owner,
-        repository: githubAnalysisContext.repository,
-        pullRequestNumber: job.pr_number,
-        installationAccessToken: githubAnalysisContext.installationAccessToken,
-        body: summaryBody,
-        apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
-        userAgent: githubFetchOptions.githubUserAgent,
-        requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
-        traceId,
-      });
-    } catch (error) {
-      errorLogger(
-        `[worker] failed to post summary comment trace=${traceId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
   }
 
   const checkOutput = buildWorkerCheckOutput(gatedExecutionResult, delivery, postedCommentCount, {
@@ -1583,23 +1621,38 @@ export async function processAnalyzePullRequestJob(
   );
 
   if (dependencies.deliveryMode === "github") {
-    const createCheckRunFn = dependencies.createCheckRunFn ?? createCheckRun;
     try {
-      await createCheckRunFn({
-        owner: githubAnalysisContext.owner,
-        repository: githubAnalysisContext.repository,
-        headSha: job.head_sha,
-        installationAccessToken: githubAnalysisContext.installationAccessToken,
-        name: "Mergewise",
-        conclusion: summary.totalFindings > 0 ? "neutral" : "success",
-        output: checkOutput,
-        apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
-        userAgent: githubFetchOptions.githubUserAgent,
-        requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
-        traceId,
-      });
+      if (pendingCheckRunId !== undefined) {
+        await updateCheckRunFn({
+          owner: githubAnalysisContext.owner,
+          repository: githubAnalysisContext.repository,
+          checkRunId: pendingCheckRunId,
+          installationAccessToken: githubAnalysisContext.installationAccessToken,
+          status: "completed",
+          conclusion: "success",
+          output: checkOutput,
+          apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+          userAgent: githubFetchOptions.githubUserAgent,
+          requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+          traceId,
+        });
+      } else {
+        await createCheckRunFn({
+          owner: githubAnalysisContext.owner,
+          repository: githubAnalysisContext.repository,
+          headSha: job.head_sha,
+          installationAccessToken: githubAnalysisContext.installationAccessToken,
+          name: "Mergewise",
+          conclusion: "success",
+          output: checkOutput,
+          apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+          userAgent: githubFetchOptions.githubUserAgent,
+          requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+          traceId,
+        });
+      }
       infoLogger(
-        `[worker] check_run_created trace=${traceId} job=${job.job_id}`,
+        `[worker] check_run_completed trace=${traceId} job=${job.job_id}`,
       );
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
@@ -2006,13 +2059,48 @@ function buildStructuredFindingComment(
   groupedFindings: readonly Finding[],
   dedupeKey: string,
 ): string {
-  const recommendation = finding.recommendation.trim();
+  const recommendation = wrapCodeIdentifiers(finding.recommendation.trim());
   const leadLine = `**${finding.category}**: ${recommendation}`;
   const suggestedRewrite = buildSuggestedRewriteSection(finding);
   const additionalLocations = buildAdditionalLocationsSection(groupedFindings);
   const debugMetadata = buildDebugMetadataSection(finding, dedupeKey);
 
   return [leadLine, "", ...suggestedRewrite, ...additionalLocations, debugMetadata].join("\n");
+}
+
+/**
+ * Wraps code identifiers (camelCase, PascalCase, snake_case with dots/hashes)
+ * in backtick code spans when not already inside backticks.
+ *
+ * @param text - Recommendation text that may contain bare code identifiers.
+ * @returns Text with code identifiers wrapped in backticks.
+ */
+export function wrapCodeIdentifiers(text: string): string {
+  return text.replace(
+    /`[^`]+`|(?<![`\w])([a-zA-Z_$][a-zA-Z0-9_$]*(?:\.[a-zA-Z_$][a-zA-Z0-9_$]*)*)(?![`\w])/g,
+    (match, identifier: string | undefined) => {
+      if (identifier === undefined) {
+        return match;
+      }
+
+      if (!isCamelCaseOrPascalCase(identifier)) {
+        return match;
+      }
+
+      return `\`${identifier}\``;
+    },
+  );
+}
+
+function isCamelCaseOrPascalCase(identifier: string): boolean {
+  const segments = identifier.split(".");
+  return segments.some((segment) => {
+    if (segment.length < 2) {
+      return false;
+    }
+
+    return /[a-z][A-Z]/.test(segment);
+  });
 }
 
 /**

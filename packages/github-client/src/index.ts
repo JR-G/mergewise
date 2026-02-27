@@ -710,13 +710,57 @@ export interface CreateCheckRunOptions extends GitHubApiOptions {
    */
   name: string;
   /**
-   * Check run conclusion.
+   * Check run status.
+   *
+   * @defaultValue `"completed"`
    */
-  conclusion: "success" | "failure" | "neutral";
+  status?: "in_progress" | "completed";
+  /**
+   * Check run conclusion. Required when status is "completed".
+   */
+  conclusion?: "success" | "failure" | "neutral";
   /**
    * Structured output displayed in the check run details.
    */
-  output: {
+  output?: {
+    readonly title: string;
+    readonly summary: string;
+    readonly text?: string;
+  };
+}
+
+/**
+ * Request options for updating an existing check run.
+ */
+export interface UpdateCheckRunOptions extends GitHubApiOptions {
+  /**
+   * Repository owner.
+   */
+  owner: string;
+  /**
+   * Repository name.
+   */
+  repository: string;
+  /**
+   * Identifier of the check run to update.
+   */
+  checkRunId: number;
+  /**
+   * Installation access token used for API authentication.
+   */
+  installationAccessToken: string;
+  /**
+   * Check run status.
+   */
+  status: "in_progress" | "completed";
+  /**
+   * Check run conclusion. Required when status is "completed".
+   */
+  conclusion?: "success" | "failure" | "neutral";
+  /**
+   * Structured output displayed in the check run details.
+   */
+  output?: {
     readonly title: string;
     readonly summary: string;
     readonly text?: string;
@@ -746,7 +790,7 @@ export interface GitHubCheckRun {
 }
 
 /**
- * Creates a completed check run on a commit via the GitHub Checks API.
+ * Creates a check run on a commit via the GitHub Checks API.
  *
  * @param options - Check run creation options.
  * @returns Created check run payload.
@@ -763,6 +807,17 @@ export async function createCheckRun(
     `${apiBaseUrl}/repos/${encodeURIComponent(options.owner)}` +
     `/${encodeURIComponent(options.repository)}` +
     `/check-runs`;
+  const requestBody: Record<string, unknown> = {
+    name: options.name,
+    head_sha: options.headSha,
+    status: options.status ?? "completed",
+  };
+  if (options.conclusion !== undefined) {
+    requestBody.conclusion = options.conclusion;
+  }
+  if (options.output !== undefined) {
+    requestBody.output = options.output;
+  }
   const response = await fetch(endpointUrl, {
     method: "POST",
     headers: buildHeaders({
@@ -771,16 +826,51 @@ export async function createCheckRun(
       contentType: "application/json",
       traceId: options.traceId,
     }),
-    body: JSON.stringify({
-      name: options.name,
-      head_sha: options.headSha,
-      status: "completed",
-      conclusion: options.conclusion,
-      output: options.output,
-    }),
+    body: JSON.stringify(requestBody),
     signal: AbortSignal.timeout(requestTimeoutMs),
   });
   return parseResponse<GitHubCheckRun>(response, "POST", endpointUrl);
+}
+
+/**
+ * Updates an existing check run via the GitHub Checks API.
+ *
+ * @param options - Check run update options.
+ * @returns Updated check run payload.
+ * @throws {@link GitHubApiError} when GitHub returns a non-success status.
+ */
+export async function updateCheckRun(
+  options: UpdateCheckRunOptions,
+): Promise<GitHubCheckRun> {
+  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
+  const apiBaseUrl = trimTrailingSlash(
+    options.apiBaseUrl ?? "https://api.github.com",
+  );
+  const endpointUrl =
+    `${apiBaseUrl}/repos/${encodeURIComponent(options.owner)}` +
+    `/${encodeURIComponent(options.repository)}` +
+    `/check-runs/${options.checkRunId}`;
+  const requestBody: Record<string, unknown> = {
+    status: options.status,
+  };
+  if (options.conclusion !== undefined) {
+    requestBody.conclusion = options.conclusion;
+  }
+  if (options.output !== undefined) {
+    requestBody.output = options.output;
+  }
+  const response = await fetch(endpointUrl, {
+    method: "PATCH",
+    headers: buildHeaders({
+      authorization: `Bearer ${options.installationAccessToken}`,
+      userAgent: options.userAgent,
+      contentType: "application/json",
+      traceId: options.traceId,
+    }),
+    body: JSON.stringify(requestBody),
+    signal: AbortSignal.timeout(requestTimeoutMs),
+  });
+  return parseResponse<GitHubCheckRun>(response, "PATCH", endpointUrl);
 }
 
 interface HeaderBuildOptions {
