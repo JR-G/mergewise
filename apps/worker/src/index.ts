@@ -1558,7 +1558,7 @@ export async function processAnalyzePullRequestJob(
         traceId,
       });
     } catch (error) {
-      warnLogger(
+      errorLogger(
         `[worker] failed to post summary comment trace=${traceId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
