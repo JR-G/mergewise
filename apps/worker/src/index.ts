@@ -15,6 +15,9 @@ import {
   type PostPullRequestInlineCommentOptions,
   type PostPullRequestSummaryCommentOptions,
   fetchFileContent,
+  createCheckRun,
+  type CreateCheckRunOptions,
+  type GitHubCheckRun,
 } from "@mergewise/github-client";
 import { readFileSync } from "node:fs";
 import {
@@ -544,6 +547,12 @@ export interface WorkerProcessingDependencies {
   readonly postPullRequestInlineCommentFn?: (
     options: PostPullRequestInlineCommentOptions,
   ) => Promise<GitHubPullRequestReviewComment>;
+  /**
+   * GitHub check run creation function override.
+   */
+  readonly createCheckRunFn?: (
+    options: CreateCheckRunOptions,
+  ) => Promise<GitHubCheckRun>;
   /**
    * Runtime rule selection and gating config.
    */
@@ -1542,6 +1551,33 @@ export async function processAnalyzePullRequestJob(
   infoLogger(
     `[worker] check_output trace=${summary.traceId} job=${summary.jobId} payload=${JSON.stringify(checkOutput)}`,
   );
+
+  if (dependencies.deliveryMode === "github") {
+    const createCheckRunFn = dependencies.createCheckRunFn ?? createCheckRun;
+    try {
+      await createCheckRunFn({
+        owner: githubAnalysisContext.owner,
+        repository: githubAnalysisContext.repository,
+        headSha: job.head_sha,
+        installationAccessToken: githubAnalysisContext.installationAccessToken,
+        name: "Mergewise",
+        conclusion: summary.totalFindings > 0 ? "neutral" : "success",
+        output: checkOutput,
+        apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+        userAgent: githubFetchOptions.githubUserAgent,
+        requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+        traceId,
+      });
+      infoLogger(
+        `[worker] check_run_created trace=${traceId} job=${job.job_id}`,
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      errorLogger(
+        `[worker] check_run_failed trace=${traceId} job=${job.job_id}: ${detail}`,
+      );
+    }
+  }
 
   return {
     ...summary,
