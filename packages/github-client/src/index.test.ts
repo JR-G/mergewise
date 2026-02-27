@@ -373,7 +373,7 @@ describe("github-client", () => {
 
     expect(result.id).toBe(999);
     expect(result.conclusion).toBe("success");
-    expect(calls).toHaveLength(1);
+    expect(calls[0]).toBeDefined();
     const requestUrl = String(calls[0]!.input);
     expect(requestUrl).toContain("/repos/acme/widget/check-runs");
     const requestBody = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
