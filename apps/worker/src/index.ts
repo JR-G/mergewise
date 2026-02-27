@@ -905,8 +905,12 @@ export function buildWorkerCheckOutput(
     `- skipped_by_cap=${delivery.skippedByCap}`,
   ].join("\n");
 
+  const title = postedCount > 0
+    ? `Review completed — ${postedCount} comment${postedCount === 1 ? "" : "s"}`
+    : "Review completed";
+
   return {
-    title: `Mergewise Findings (${postedCount} posted of ${totalFindings})`,
+    title,
     summary:
       `Rules=${executionResult.summary.successfulRules}/${executionResult.summary.totalRules}` +
       ` findings=${totalFindings} posted=${postedCount}`,

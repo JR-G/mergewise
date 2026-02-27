@@ -627,7 +627,7 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.skippedByCap).toBe(0);
     expect(summary.skippedByDeduplication).toBe(0);
     expect(summary.skippedByConfidence).toBe(0);
-    expect(summary.checkOutput?.title).toContain("Mergewise Findings");
+    expect(summary.checkOutput?.title).toContain("Review completed");
   });
 
   test("non-retryable GitHub fetch failure is surfaced", async () => {
@@ -995,7 +995,7 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.skippedByGrouping).toBe(2);
     expect(summary.skippedByCap).toBe(0);
     expect(summary.traceId).toBe("job-gating");
-    expect(summary.checkOutput?.title).toContain("0 posted of 3");
+    expect(summary.checkOutput?.title).toBe("Review completed");
   });
 
   test("creates a check run on GitHub when deliveryMode is github", async () => {
@@ -2100,7 +2100,7 @@ describe("finding delivery", () => {
       },
     );
 
-    expect(checkOutput.title).toContain("0 posted of 2");
+    expect(checkOutput.title).toBe("Review completed");
     expect(checkOutput.summary).toContain("Rules=3/3");
     expect(checkOutput.text).toContain("### Reviewer Summary");
     expect(checkOutput.text).toContain("- `safety` (1)");
