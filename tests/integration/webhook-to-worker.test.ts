@@ -87,6 +87,12 @@ describe("webhook-to-worker pipeline", () => {
         logInfo: () => {},
         logError: () => {},
         rules: [],
+        fetchPullRequestFn: async () => ({
+          number: 1,
+          state: "open" as const,
+          merged: false,
+          title: "Test PR",
+        }),
         createGitHubAppJwtFn: () => "jwt",
         exchangeInstallationAccessTokenFn: async () => ({
           token: "installation-token",

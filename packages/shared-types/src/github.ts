@@ -30,6 +30,18 @@ export interface GitHubPullRequest {
      */
     sha: string;
   };
+  /**
+   * Whether the pull request is a draft.
+   */
+  draft?: boolean;
+  /**
+   * Current pull request state (`open` or `closed`).
+   */
+  state?: string;
+  /**
+   * Whether the pull request has been merged.
+   */
+  merged?: boolean;
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   updateCheckRun,
   createGitHubAppJwt,
   exchangeInstallationAccessToken,
+  fetchPullRequest,
   fetchPullRequestFiles,
   GitHubApiError,
   listPullRequestInlineComments,
@@ -501,6 +502,62 @@ describe("github-client", () => {
         installationAccessToken: "ghs_token",
         status: "completed",
         conclusion: "success",
+      });
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(GitHubApiError);
+    expect((thrownError as GitHubApiError).status).toBe(404);
+  });
+
+  test("fetchPullRequest returns parsed pull request state", async () => {
+    const calls: FetchCall[] = [];
+    const fetchMock: FetchMock = async (input, init) => {
+      calls.push({ input, init });
+      return makeJsonResponse({
+        number: 7,
+        state: "open",
+        merged: false,
+        title: "Add feature X",
+      });
+    };
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const result = await fetchPullRequest({
+      owner: "acme",
+      repository: "widget",
+      pullRequestNumber: 7,
+      installationAccessToken: "installation-token",
+      apiBaseUrl: "https://api.github.com",
+      traceId: "trace-pr-1",
+    });
+
+    expect(result.number).toBe(7);
+    expect(result.state).toBe("open");
+    expect(result.merged).toBe(false);
+    expect(result.title).toBe("Add feature X");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.init?.method).toBe("GET");
+    expect(String(calls[0]!.input)).toBe(
+      "https://api.github.com/repos/acme/widget/pulls/7",
+    );
+    const requestHeaders = calls[0]!.init?.headers as Record<string, string>;
+    expect(requestHeaders["X-Mergewise-Trace-Id"]).toBe("trace-pr-1");
+  });
+
+  test("fetchPullRequest throws GitHubApiError on failure", async () => {
+    const fetchMock: FetchMock = async () =>
+      new Response(JSON.stringify({ message: "not found" }), { status: 404 });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    let thrownError: unknown;
+    try {
+      await fetchPullRequest({
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 999,
+        installationAccessToken: "installation-token",
       });
     } catch (error) {
       thrownError = error;

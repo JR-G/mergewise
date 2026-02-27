@@ -30,6 +30,13 @@ import {
   type WorkerGitHubFetchOptions,
 } from "./index";
 
+const openPullRequestState = {
+  number: 50,
+  state: "open" as const,
+  merged: false,
+  title: "Test PR",
+};
+
 const workerFetchOptions: WorkerGitHubFetchOptions = {
   githubApiBaseUrl: "https://api.github.com",
   githubUserAgent: "mergewise-worker-test",
@@ -571,6 +578,7 @@ describe("processAnalyzePullRequestJob", () => {
       {
         githubFetchOptions: workerFetchOptions,
         rules: [],
+        fetchPullRequestFn: async () => openPullRequestState,
         createGitHubAppJwtFn: () => "jwt",
         exchangeInstallationAccessTokenFn: async () => ({
           token: "installation-token",
@@ -649,6 +657,7 @@ describe("processAnalyzePullRequestJob", () => {
         },
         {
           githubFetchOptions: workerFetchOptions,
+          fetchPullRequestFn: async () => openPullRequestState,
           createGitHubAppJwtFn: () => "jwt",
           exchangeInstallationAccessTokenFn: async () => ({
             token: "installation-token",
@@ -679,6 +688,7 @@ describe("processAnalyzePullRequestJob", () => {
       {
         githubFetchOptions: workerFetchOptions,
         rules: [],
+        fetchPullRequestFn: async () => openPullRequestState,
         createGitHubAppJwtFn: () => "jwt",
         exchangeInstallationAccessTokenFn: async () => ({
           token: "installation-token",
@@ -731,6 +741,7 @@ describe("processAnalyzePullRequestJob", () => {
         {
           githubFetchOptions: workerFetchOptions,
           rules: [],
+          fetchPullRequestFn: async () => openPullRequestState,
           createGitHubAppJwtFn: () => "jwt",
           exchangeInstallationAccessTokenFn: async () => ({
             token: "installation-token",
@@ -783,6 +794,7 @@ describe("processAnalyzePullRequestJob", () => {
         {
           githubFetchOptions: workerFetchOptions,
           rules: [],
+          fetchPullRequestFn: async () => openPullRequestState,
           createGitHubAppJwtFn: () => "jwt",
           exchangeInstallationAccessTokenFn: async () => ({
             token: "installation-token",
@@ -830,6 +842,7 @@ describe("processAnalyzePullRequestJob", () => {
         {
           githubFetchOptions: workerFetchOptions,
           rules: [],
+          fetchPullRequestFn: async () => openPullRequestState,
           createGitHubAppJwtFn: () => "jwt",
           exchangeInstallationAccessTokenFn: async () => ({
             token: "installation-token",
@@ -876,6 +889,7 @@ describe("processAnalyzePullRequestJob", () => {
       {
         githubFetchOptions: workerFetchOptions,
         rules,
+        fetchPullRequestFn: async () => openPullRequestState,
         mergewiseConfig: {
           gating: {
             confidenceThreshold: 0,
@@ -938,6 +952,7 @@ describe("processAnalyzePullRequestJob", () => {
       },
       {
         githubFetchOptions: workerFetchOptions,
+        fetchPullRequestFn: async () => openPullRequestState,
         mergewiseConfig: {
           gating: {
             confidenceThreshold: 0.8,
@@ -1019,6 +1034,7 @@ describe("processAnalyzePullRequestJob", () => {
         deliveryMode: "github",
         githubFetchOptions: workerFetchOptions,
         rules: [],
+        fetchPullRequestFn: async () => openPullRequestState,
         createGitHubAppJwtFn: () => "jwt",
         exchangeInstallationAccessTokenFn: async () => ({
           token: "inst-token",
@@ -1072,6 +1088,71 @@ describe("processAnalyzePullRequestJob", () => {
     expect(capturedCompletedUpdate!.conclusion).toBe("success");
   });
 
+  test("updates existing check run instead of creating when check_run_id is present on job", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    let createCheckRunCalled = false;
+    const capturedUpdates: Record<string, unknown>[] = [];
+    await processAnalyzePullRequestJob(
+      {
+        job_id: "job-check-existing",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 63,
+        head_sha: "existing123",
+        queued_at: "2025-01-01T00:00:00Z",
+        check_run_id: 99,
+      },
+      {
+        deliveryMode: "github",
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        fetchPullRequestFn: async () => openPullRequestState,
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "inst-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => ({
+          findings: [],
+          summary: {
+            totalRules: 0,
+            successfulRules: 0,
+            failedRules: 0,
+            totalFindings: 0,
+            findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          },
+          failedRuleIds: [],
+        }),
+        createPullRequestReviewFn: async () => ({
+          id: 1, html_url: "https://github.com/x", body: null, state: "commented",
+        }),
+        createCheckRunFn: async () => {
+          createCheckRunCalled = true;
+          return { id: 1, html_url: "https://github.com/x", status: "in_progress" as const, conclusion: null };
+        },
+        updateCheckRunFn: async (options) => {
+          capturedUpdates.push({
+            checkRunId: options.checkRunId,
+            status: options.status,
+            conclusion: options.conclusion,
+          });
+          return { id: 99, html_url: "https://github.com/x", status: options.status, conclusion: options.conclusion ?? null };
+        },
+      },
+    );
+
+    expect(createCheckRunCalled).toBe(false);
+    expect(capturedUpdates).toHaveLength(2);
+    expect(capturedUpdates[0]!.checkRunId).toBe(99);
+    expect(capturedUpdates[0]!.status).toBe("in_progress");
+    expect(capturedUpdates[1]!.checkRunId).toBe(99);
+    expect(capturedUpdates[1]!.status).toBe("completed");
+    expect(capturedUpdates[1]!.conclusion).toBe("success");
+  });
+
   test("skips check run creation when deliveryMode is not github", async () => {
     process.env.GITHUB_APP_ID = "123";
     process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
@@ -1089,6 +1170,7 @@ describe("processAnalyzePullRequestJob", () => {
       {
         githubFetchOptions: workerFetchOptions,
         rules: [],
+        fetchPullRequestFn: async () => openPullRequestState,
         createGitHubAppJwtFn: () => "jwt",
         exchangeInstallationAccessTokenFn: async () => ({
           token: "inst-token",
@@ -1134,6 +1216,7 @@ describe("processAnalyzePullRequestJob", () => {
         deliveryMode: "github",
         githubFetchOptions: workerFetchOptions,
         rules: [],
+        fetchPullRequestFn: async () => openPullRequestState,
         createGitHubAppJwtFn: () => "jwt",
         exchangeInstallationAccessTokenFn: async () => ({
           token: "inst-token",
@@ -1184,6 +1267,7 @@ describe("processAnalyzePullRequestJob", () => {
         deliveryMode: "github",
         githubFetchOptions: workerFetchOptions,
         rules: [],
+        fetchPullRequestFn: async () => openPullRequestState,
         createGitHubAppJwtFn: () => "jwt",
         exchangeInstallationAccessTokenFn: async () => ({
           token: "inst-token",
@@ -1241,6 +1325,164 @@ describe("processAnalyzePullRequestJob", () => {
     expect(capturedReviewOptions[0]!.body).toBe("2 files reviewed, 0 comments");
     expect(capturedReviewOptions[0]!.event).toBe("COMMENT");
     expect(capturedReviewOptions[0]!.comments).toHaveLength(0);
+  });
+
+  test("skips processing when PR is closed", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    let executeRulesCalled = false;
+    const logs: string[] = [];
+    const summary = await processAnalyzePullRequestJob(
+      {
+        job_id: "job-closed-pr",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 80,
+        head_sha: "closed123",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        fetchPullRequestFn: async () => ({
+          number: 80,
+          state: "closed",
+          merged: false,
+          title: "Closed PR",
+        }),
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => {
+          executeRulesCalled = true;
+          return {
+            findings: [],
+            summary: {
+              totalRules: 0,
+              successfulRules: 0,
+              failedRules: 0,
+              totalFindings: 0,
+              findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+            },
+            failedRuleIds: [],
+          };
+        },
+        logInfo: (msg) => logs.push(msg),
+      },
+    );
+
+    expect(executeRulesCalled).toBe(false);
+    expect(summary.totalFindings).toBe(0);
+    expect(summary.totalRules).toBe(0);
+    expect(summary.postedCommentCount).toBe(0);
+    expect(logs.some((msg) => msg.includes("skipped_closed_pr"))).toBe(true);
+  });
+
+  test("skips processing when PR is merged", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    let executeRulesCalled = false;
+    const summary = await processAnalyzePullRequestJob(
+      {
+        job_id: "job-merged-pr",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 81,
+        head_sha: "merged456",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        fetchPullRequestFn: async () => ({
+          number: 81,
+          state: "closed",
+          merged: true,
+          title: "Merged PR",
+        }),
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => {
+          executeRulesCalled = true;
+          return {
+            findings: [],
+            summary: {
+              totalRules: 0,
+              successfulRules: 0,
+              failedRules: 0,
+              totalFindings: 0,
+              findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+            },
+            failedRuleIds: [],
+          };
+        },
+      },
+    );
+
+    expect(executeRulesCalled).toBe(false);
+    expect(summary.totalFindings).toBe(0);
+    expect(summary.totalRules).toBe(0);
+  });
+
+  test("continues processing when PR is open", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    let executeRulesCalled = false;
+    const summary = await processAnalyzePullRequestJob(
+      {
+        job_id: "job-open-pr",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 82,
+        head_sha: "open789",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        fetchPullRequestFn: async () => ({
+          number: 82,
+          state: "open",
+          merged: false,
+          title: "Open PR",
+        }),
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => {
+          executeRulesCalled = true;
+          return {
+            findings: [],
+            summary: {
+              totalRules: 1,
+              successfulRules: 1,
+              failedRules: 0,
+              totalFindings: 0,
+              findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+            },
+            failedRuleIds: [],
+          };
+        },
+        now: () => new Date("2026-01-02T03:04:05.000Z"),
+      },
+    );
+
+    expect(executeRulesCalled).toBe(true);
+    expect(summary.totalRules).toBe(1);
+    expect(summary.successfulRules).toBe(1);
   });
 });
 

@@ -3,9 +3,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   buildAnalyzePullRequestJob,
   computeGitHubSignature,
+  createPendingCheckRun,
   createWebhookErrorResponse,
   createWebhookJsonResponse,
   getRequestId,
+  isClosedOrMergedPullRequest,
+  isDraftPullRequest,
   isPullRequestWebhookEvent,
   isWebhookSignatureValid,
   loadConfig,
@@ -13,6 +16,8 @@ import {
   readWebhookRequestBody,
   SUPPORTED_PULL_REQUEST_ACTIONS,
 } from "./index";
+
+import type { GitHubPullRequestWebhookEvent } from "@mergewise/shared-types";
 
 describe("computeGitHubSignature", () => {
   test("produces deterministic sha256-prefixed hex", () => {
@@ -142,14 +147,20 @@ describe("loadConfig", () => {
   afterEach(() => {
     process.env.WEBHOOK_PORT = originalEnv.WEBHOOK_PORT;
     process.env.GITHUB_WEBHOOK_SECRET = originalEnv.GITHUB_WEBHOOK_SECRET;
+    process.env.GITHUB_APP_ID = originalEnv.GITHUB_APP_ID;
+    process.env.GITHUB_APP_PRIVATE_KEY = originalEnv.GITHUB_APP_PRIVATE_KEY;
   });
 
   test("returns default port when env is unset", () => {
     delete process.env.WEBHOOK_PORT;
     delete process.env.GITHUB_WEBHOOK_SECRET;
+    delete process.env.GITHUB_APP_ID;
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
     const cfg = loadConfig();
     expect(cfg.port).toBe(8787);
     expect(cfg.webhookSecret).toBeUndefined();
+    expect(cfg.githubAppId).toBeUndefined();
+    expect(cfg.githubAppPrivateKeyPem).toBeUndefined();
   });
 
   test("reads webhook secret from env", () => {
@@ -404,5 +415,128 @@ describe("logWebhookFailure", () => {
         pull_request_number: 13,
       }),
     );
+  });
+});
+
+describe("isDraftPullRequest", () => {
+  const basePayload: GitHubPullRequestWebhookEvent = {
+    action: "opened",
+    repository: { full_name: "acme/widget" },
+    pull_request: { number: 1, head: { sha: "abc" } },
+  };
+
+  test("returns true when draft is true", () => {
+    const payload = { ...basePayload, pull_request: { ...basePayload.pull_request, draft: true } };
+    expect(isDraftPullRequest(payload)).toBe(true);
+  });
+
+  test("returns false when draft is false", () => {
+    const payload = { ...basePayload, pull_request: { ...basePayload.pull_request, draft: false } };
+    expect(isDraftPullRequest(payload)).toBe(false);
+  });
+
+  test("returns false when draft is undefined", () => {
+    expect(isDraftPullRequest(basePayload)).toBe(false);
+  });
+});
+
+describe("isClosedOrMergedPullRequest", () => {
+  const basePayload: GitHubPullRequestWebhookEvent = {
+    action: "opened",
+    repository: { full_name: "acme/widget" },
+    pull_request: { number: 1, head: { sha: "abc" }, state: "open", merged: false },
+  };
+
+  test("returns true when state is closed", () => {
+    const payload = { ...basePayload, pull_request: { ...basePayload.pull_request, state: "closed" } };
+    expect(isClosedOrMergedPullRequest(payload)).toBe(true);
+  });
+
+  test("returns true when merged is true", () => {
+    const payload = { ...basePayload, pull_request: { ...basePayload.pull_request, merged: true } };
+    expect(isClosedOrMergedPullRequest(payload)).toBe(true);
+  });
+
+  test("returns false for open non-merged PR", () => {
+    expect(isClosedOrMergedPullRequest(basePayload)).toBe(false);
+  });
+
+  test("returns false when state and merged are undefined", () => {
+    const payload: GitHubPullRequestWebhookEvent = {
+      action: "opened",
+      repository: { full_name: "acme/widget" },
+      pull_request: { number: 1, head: { sha: "abc" } },
+    };
+    expect(isClosedOrMergedPullRequest(payload)).toBe(false);
+  });
+});
+
+describe("createPendingCheckRun", () => {
+  const payload: GitHubPullRequestWebhookEvent = {
+    action: "opened",
+    repository: { full_name: "acme/widget" },
+    pull_request: { number: 1, head: { sha: "abc123" } },
+    installation: { id: 99 },
+  };
+
+  test("returns null when app credentials are missing", async () => {
+    const result = await createPendingCheckRun(payload, { port: 8787 });
+    expect(result).toBeNull();
+  });
+
+  test("returns null when installation id is missing", async () => {
+    const { installation: _, ...noInstall } = payload;
+    const result = await createPendingCheckRun(noInstall, {
+      port: 8787,
+      githubAppId: 1,
+      githubAppPrivateKeyPem: "pem",
+    });
+    expect(result).toBeNull();
+  });
+
+  test("returns check run id on success", async () => {
+    const result = await createPendingCheckRun(
+      payload,
+      { port: 8787, githubAppId: 1, githubAppPrivateKeyPem: "pem" },
+      {
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "tok",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        createCheckRunFn: async () => ({
+          id: 77,
+          html_url: "https://github.com/x",
+          status: "queued" as const,
+          conclusion: null,
+        }),
+      },
+    );
+    expect(result).toBe(77);
+  });
+
+  test("returns null and logs when check run creation throws", async () => {
+    const originalConsoleError = console.error;
+    const errors: unknown[] = [];
+    console.error = (msg?: unknown) => { errors.push(msg); };
+
+    try {
+      const result = await createPendingCheckRun(
+        payload,
+        { port: 8787, githubAppId: 1, githubAppPrivateKeyPem: "pem" },
+        {
+          createGitHubAppJwtFn: () => "jwt",
+          exchangeInstallationAccessTokenFn: async () => ({
+            token: "tok",
+            expires_at: "2026-01-01T00:00:00Z",
+          }),
+          createCheckRunFn: async () => { throw new Error("API down"); },
+        },
+      );
+      expect(result).toBeNull();
+      expect(errors.some((msg) => String(msg).includes("API down"))).toBe(true);
+    } finally {
+      console.error = originalConsoleError;
+    }
   });
 });

@@ -739,6 +739,91 @@ export async function listPullRequestInlineComments(
 }
 
 /**
+ * Request options for fetching a single pull request.
+ */
+export interface FetchPullRequestOptions extends GitHubApiOptions {
+  /**
+   * Repository owner.
+   */
+  owner: string;
+  /**
+   * Repository name.
+   */
+  repository: string;
+  /**
+   * Pull request number.
+   */
+  pullRequestNumber: number;
+  /**
+   * Installation access token used for API authentication.
+   */
+  installationAccessToken: string;
+}
+
+/**
+ * Pull request state returned by GitHub REST API.
+ */
+export interface GitHubPullRequest {
+  /**
+   * Pull request number.
+   */
+  readonly number: number;
+  /**
+   * Pull request state.
+   */
+  readonly state: "open" | "closed";
+  /**
+   * Whether the pull request has been merged.
+   */
+  readonly merged: boolean;
+  /**
+   * Pull request title.
+   */
+  readonly title: string;
+}
+
+/**
+ * Fetches a single pull request from the GitHub REST API.
+ *
+ * @param options - Pull request fetch options.
+ * @returns Parsed pull request state.
+ * @throws {@link GitHubApiError} when GitHub returns a non-success status.
+ */
+export async function fetchPullRequest(
+  options: FetchPullRequestOptions,
+): Promise<GitHubPullRequest> {
+  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
+  const apiBaseUrl = trimTrailingSlash(
+    options.apiBaseUrl ?? "https://api.github.com",
+  );
+  const endpointUrl =
+    `${apiBaseUrl}/repos/${encodeURIComponent(options.owner)}` +
+    `/${encodeURIComponent(options.repository)}` +
+    `/pulls/${options.pullRequestNumber}`;
+  const response = await fetch(endpointUrl, {
+    method: "GET",
+    headers: buildHeaders({
+      authorization: `Bearer ${options.installationAccessToken}`,
+      userAgent: options.userAgent,
+      traceId: options.traceId,
+    }),
+    signal: AbortSignal.timeout(requestTimeoutMs),
+  });
+  const body = await parseResponse<{
+    number: number;
+    state: "open" | "closed";
+    merged: boolean;
+    title: string;
+  }>(response, "GET", endpointUrl);
+  return {
+    number: body.number,
+    state: body.state,
+    merged: body.merged,
+    title: body.title,
+  };
+}
+
+/**
  * Request options for fetching a single file's content from a repository.
  */
 export interface FetchFileContentOptions extends GitHubApiOptions {
@@ -841,7 +926,7 @@ export interface CreateCheckRunOptions extends GitHubApiOptions {
    *
    * @defaultValue `"completed"`
    */
-  status?: "in_progress" | "completed";
+  status?: "queued" | "in_progress" | "completed";
   /**
    * Check run conclusion. Required when status is "completed".
    */

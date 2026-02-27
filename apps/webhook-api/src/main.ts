@@ -2,9 +2,12 @@ import { enqueueAnalyzePullRequestJob } from "@mergewise/job-store";
 
 import {
   buildAnalyzePullRequestJob,
+  createPendingCheckRun,
   createWebhookErrorResponse,
   createWebhookJsonResponse,
   getRequestId,
+  isClosedOrMergedPullRequest,
+  isDraftPullRequest,
   isPullRequestWebhookEvent,
   isSupportedPullRequestAction,
   isWebhookSignatureValid,
@@ -125,7 +128,27 @@ Bun.serve({
       );
     }
 
+    if (isDraftPullRequest(payload)) {
+      return createWebhookJsonResponse(
+        { status: "ignored", request_id: requestId, reason: "draft_pull_request" },
+        202,
+        requestId,
+      );
+    }
+
+    if (isClosedOrMergedPullRequest(payload)) {
+      return createWebhookJsonResponse(
+        { status: "ignored", request_id: requestId, reason: "closed_or_merged_pull_request" },
+        202,
+        requestId,
+      );
+    }
+
+    const checkRunId = await createPendingCheckRun(payload, config);
     const job = buildAnalyzePullRequestJob(payload, requestId);
+    if (checkRunId !== null) {
+      job.check_run_id = checkRunId;
+    }
     try {
       enqueueAnalyzePullRequestJob(job);
     } catch (error) {

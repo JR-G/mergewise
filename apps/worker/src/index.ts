@@ -15,8 +15,11 @@ import {
   type CreatePullRequestReviewOptions,
   type PullRequestReviewComment,
   fetchFileContent,
+  fetchPullRequest,
   createCheckRun,
   updateCheckRun,
+  type FetchPullRequestOptions,
+  type GitHubPullRequest,
   type CreateCheckRunOptions,
   type UpdateCheckRunOptions,
   type GitHubCheckRun,
@@ -555,6 +558,12 @@ export interface WorkerProcessingDependencies {
   readonly updateCheckRunFn?: (
     options: UpdateCheckRunOptions,
   ) => Promise<GitHubCheckRun>;
+  /**
+   * Pull request state fetch function override.
+   */
+  readonly fetchPullRequestFn?: (
+    options: FetchPullRequestOptions,
+  ) => Promise<GitHubPullRequest>;
   /**
    * Runtime rule selection and gating config.
    */
@@ -1454,28 +1463,66 @@ export async function processAnalyzePullRequestJob(
     },
   );
 
+  const fetchPullRequestFn = dependencies.fetchPullRequestFn ?? fetchPullRequest;
+  const pullRequestState = await fetchPullRequestFn({
+    owner: githubAnalysisContext.owner,
+    repository: githubAnalysisContext.repository,
+    pullRequestNumber: job.pr_number,
+    installationAccessToken: githubAnalysisContext.installationAccessToken,
+    apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+    userAgent: githubFetchOptions.githubUserAgent,
+    requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+    traceId,
+  });
+
+  if (pullRequestState.state !== "open") {
+    infoLogger(
+      `[worker] skipped_closed_pr trace=${traceId} job=${job.job_id} state=${pullRequestState.state} merged=${String(pullRequestState.merged)}`,
+    );
+    return buildSkippedJobSummary(job, traceId, "pr_not_open");
+  }
+
   const createCheckRunFn = dependencies.createCheckRunFn ?? createCheckRun;
   const updateCheckRunFn = dependencies.updateCheckRunFn ?? updateCheckRun;
   let pendingCheckRunId: number | undefined;
   if (dependencies.deliveryMode === "github") {
     try {
-      const pendingCheckRun = await createCheckRunFn({
-        owner: githubAnalysisContext.owner,
-        repository: githubAnalysisContext.repository,
-        headSha: job.head_sha,
-        installationAccessToken: githubAnalysisContext.installationAccessToken,
-        name: "Mergewise",
-        status: "in_progress",
-        output: { title: "Review in progress", summary: "Analysing pull request..." },
-        apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
-        userAgent: githubFetchOptions.githubUserAgent,
-        requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
-        traceId,
-      });
-      pendingCheckRunId = pendingCheckRun.id;
-      infoLogger(
-        `[worker] check_run_in_progress trace=${traceId} job=${job.job_id} checkRunId=${pendingCheckRun.id}`,
-      );
+      if (job.check_run_id !== undefined) {
+        await updateCheckRunFn({
+          owner: githubAnalysisContext.owner,
+          repository: githubAnalysisContext.repository,
+          checkRunId: job.check_run_id,
+          installationAccessToken: githubAnalysisContext.installationAccessToken,
+          status: "in_progress",
+          output: { title: "Review in progress", summary: "Analysing pull request..." },
+          apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+          userAgent: githubFetchOptions.githubUserAgent,
+          requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+          traceId,
+        });
+        pendingCheckRunId = job.check_run_id;
+        infoLogger(
+          `[worker] check_run_in_progress trace=${traceId} job=${job.job_id} checkRunId=${job.check_run_id}`,
+        );
+      } else {
+        const pendingCheckRun = await createCheckRunFn({
+          owner: githubAnalysisContext.owner,
+          repository: githubAnalysisContext.repository,
+          headSha: job.head_sha,
+          installationAccessToken: githubAnalysisContext.installationAccessToken,
+          name: "Mergewise",
+          status: "in_progress",
+          output: { title: "Review in progress", summary: "Analysing pull request..." },
+          apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+          userAgent: githubFetchOptions.githubUserAgent,
+          requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+          traceId,
+        });
+        pendingCheckRunId = pendingCheckRun.id;
+        infoLogger(
+          `[worker] check_run_in_progress trace=${traceId} job=${job.job_id} checkRunId=${pendingCheckRun.id}`,
+        );
+      }
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       errorLogger(
@@ -1806,6 +1853,38 @@ export function buildJobSummary(
     failedRules: executionResult.summary.failedRules,
     failedRuleIds: executionResult.failedRuleIds,
     processedAt,
+  };
+}
+
+/**
+ * Builds a zeroed-out job summary for skipped jobs.
+ *
+ * @param job - Original queued job.
+ * @param traceId - Resolved trace identifier.
+ * @param _reason - Skip reason for diagnostics.
+ * @returns Worker summary payload with zeroed counters.
+ */
+export function buildSkippedJobSummary(
+  job: AnalyzePullRequestJob,
+  traceId: string,
+  _reason: string,
+): AnalyzePullRequestJobSummary {
+  const key = buildIdempotencyKey(job);
+  return {
+    jobId: job.job_id,
+    idempotencyKey: key,
+    repository: job.repo_full_name,
+    pullRequestNumber: job.pr_number,
+    headSha: job.head_sha,
+    traceId,
+    totalFindings: 0,
+    findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+    totalRules: 0,
+    successfulRules: 0,
+    failedRules: 0,
+    failedRuleIds: [],
+    processedAt: new Date().toISOString(),
+    postedCommentCount: 0,
   };
 }
 
