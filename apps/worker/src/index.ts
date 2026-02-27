@@ -1814,29 +1814,6 @@ export async function processAnalyzePullRequestJob(
       },
     );
 
-    const fileCount = githubAnalysisContext.analysisContext.diffs.length;
-    const summaryBody =
-      `${fileCount} file${fileCount === 1 ? "" : "s"} reviewed, ` +
-      `${delivery.comments.length} comment${delivery.comments.length === 1 ? "" : "s"}`;
-    const postingResult = await postPreparedFindingComments(
-      {
-        owner: githubAnalysisContext.owner,
-        repository: githubAnalysisContext.repository,
-        pullRequestNumber: job.pr_number,
-        pullRequestHeadSha: job.head_sha,
-        installationAccessToken: githubAnalysisContext.installationAccessToken,
-        traceId,
-        githubFetchOptions,
-        comments: delivery.comments,
-        summaryBody,
-      },
-      {
-        createPullRequestReviewFn: dependencies.createPullRequestReviewFn,
-        existingDedupeKeys: existingCommentState.dedupeKeys,
-      },
-    );
-    postedCommentCount = postingResult.postedCount;
-
     const prSummaryBody = buildPrSummaryComment({
       filePaths: githubAnalysisContext.analysisContext.diffs.map((diff) => diff.filePath),
       findings: gatedExecutionResult.findings,
@@ -1870,6 +1847,29 @@ export async function processAnalyzePullRequestJob(
         `[worker] summary_comment_failed trace=${traceId} job=${job.job_id}: ${detail}`,
       );
     }
+
+    const fileCount = githubAnalysisContext.analysisContext.diffs.length;
+    const summaryBody =
+      `${fileCount} file${fileCount === 1 ? "" : "s"} reviewed, ` +
+      `${delivery.comments.length} comment${delivery.comments.length === 1 ? "" : "s"}`;
+    const postingResult = await postPreparedFindingComments(
+      {
+        owner: githubAnalysisContext.owner,
+        repository: githubAnalysisContext.repository,
+        pullRequestNumber: job.pr_number,
+        pullRequestHeadSha: job.head_sha,
+        installationAccessToken: githubAnalysisContext.installationAccessToken,
+        traceId,
+        githubFetchOptions,
+        comments: delivery.comments,
+        summaryBody,
+      },
+      {
+        createPullRequestReviewFn: dependencies.createPullRequestReviewFn,
+        existingDedupeKeys: existingCommentState.dedupeKeys,
+      },
+    );
+    postedCommentCount = postingResult.postedCount;
   }
 
   const checkOutput = buildWorkerCheckOutput(gatedExecutionResult, delivery, postedCommentCount, {
