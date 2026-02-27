@@ -77,6 +77,7 @@ ${antiPatternSection}## What NOT to flag
 - Missing null checks on external input boundaries (unless clearly wrong)
 - Style preferences without clear engineering justification
 - Things that are already flagged by the structural signals provided
+- **Comment and documentation lines**: Never flag TSDoc (/** */), JSDoc, or inline comments (//). Anti-patterns only apply to executable code, not prose describing code. If a comment mentions null, undefined, or optional — that is documentation, not a code issue.
 
 ## Output format
 

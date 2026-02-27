@@ -20,4 +20,11 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("only apply to .tsx/.jsx files");
     expect(prompt).toContain("Never suggest React APIs");
   });
+
+  test("instructs LLM to never flag comment or documentation lines", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("Comment and documentation lines");
+    expect(prompt).toContain("Never flag TSDoc");
+    expect(prompt).toContain("not a code issue");
+  });
 });

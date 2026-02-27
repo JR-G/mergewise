@@ -384,7 +384,7 @@ catch (err) {
 }`,
     principle: "Consistency — pick one absent-value convention",
     detectionHint:
-      "Same interface or type using both '| null' and '?' (optional) or '| undefined' for fields that all represent 'no value'.",
+      "In an interface or type alias body, field declarations mixing both '| null' and '?' (optional) or '| undefined' for absence. Only flag actual property signature lines (name: type), never comments, TSDoc, or documentation lines.",
   },
 
 ];

@@ -118,11 +118,22 @@ export function extractAddedLineMap(
   return added;
 }
 
+function isCommentOrDocLine(line: string): boolean {
+  const trimmed = line.trimStart();
+  return (
+    trimmed.startsWith("//") ||
+    trimmed.startsWith("/*") ||
+    trimmed.startsWith("*") ||
+    trimmed.startsWith("/**")
+  );
+}
+
 function buildLlmPatchPreview(
   suggestedRewrite: string | undefined,
   lineInfo: AddedLineInfo | undefined,
 ): PatchPreview | undefined {
   if (!suggestedRewrite || !lineInfo) return undefined;
+  if (isCommentOrDocLine(lineInfo.content)) return undefined;
 
   return {
     removedLines: [lineInfo.content],
