@@ -1439,9 +1439,23 @@ export interface CommentFeedbackSummary {
   readonly records: readonly CommentFeedbackRecord[];
 }
 
+/**
+ * Matches the `mergewise-meta` HTML comment marker embedded in PR comments.
+ *
+ * Expected format (whitespace-separated key=value pairs inside an HTML comment):
+ * `<!-- mergewise-meta dedupeKey=… findingId=… ruleId=… category=… confidence=… -->`
+ *
+ * Capture groups: (1) findingId, (2) ruleId, (3) category, (4) confidence.
+ */
 const MERGEWISE_META_REGEX =
   /mergewise-meta[^>]*findingId=(\S+)\s+ruleId=(\S+)\s+category=(\S+)\s+confidence=(\S+)/;
 
+/**
+ * Parses the `mergewise-meta` HTML comment from a PR comment body.
+ *
+ * @param body - Full comment body potentially containing a mergewise-meta marker.
+ * @returns Parsed metadata fields, or `null` when the marker is absent or malformed.
+ */
 function extractMergewiseMeta(
   body: string,
 ): { findingId: string; ruleId: string; category: string; confidence: string } | null {
@@ -1456,6 +1470,15 @@ function extractMergewiseMeta(
   return { findingId, ruleId, category, confidence };
 }
 
+/**
+ * Splits {@link GitHubReactionCounts} into thumbs up, thumbs down, and everything else.
+ *
+ * `+1` maps to `thumbsUp`, `-1` maps to `thumbsDown`. The remaining six reaction types
+ * (`laugh`, `confused`, `heart`, `hooray`, `rocket`, `eyes`) are summed into `otherReactions`.
+ *
+ * @param reactions - Reaction counts from a GitHub comment.
+ * @returns Grouped reaction totals.
+ */
 function sumReactions(reactions: GitHubReactionCounts): {
   thumbsUp: number;
   thumbsDown: number;
