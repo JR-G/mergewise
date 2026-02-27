@@ -27,12 +27,15 @@ function colourScore(value: number): string {
 export function printReport(results: readonly EvalResult[]): void {
   console.log("\n=== Eval Report ===\n");
 
-  const header = `${"Fixture".padEnd(25)} ${"Variant".padEnd(18)} ${"Recall".padEnd(14)} ${"Precision".padEnd(14)} ${"Findings".padEnd(10)} ${"Duration".padEnd(10)}`;
+  const header = `${"Fixture".padEnd(25)} ${"Variant".padEnd(18)} ${"Recall".padEnd(14)} ${"Precision".padEnd(14)} ${"Findings".padEnd(10)} ${"FP".padEnd(6)} ${"Duration".padEnd(10)}`;
   console.log(header);
-  console.log("─".repeat(95));
+  console.log("─".repeat(105));
 
   for (const result of results) {
-    const line = `${result.fixtureId.padEnd(25)} ${result.variant.padEnd(18)} ${colourScore(result.score.recall).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(result.score.precision).padEnd(14 + ANSI_OVERHEAD)} ${String(result.score.totalFindings).padEnd(10)} ${DIM}${result.durationMs}ms${RESET}`;
+    const fpDisplay = result.score.falsePositiveCount > 0
+      ? `${RED}${result.score.falsePositiveCount}${RESET}`
+      : `${DIM}0${RESET}`;
+    const line = `${result.fixtureId.padEnd(25)} ${result.variant.padEnd(18)} ${colourScore(result.score.recall).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(result.score.precision).padEnd(14 + ANSI_OVERHEAD)} ${String(result.score.totalFindings).padEnd(10)} ${fpDisplay.padEnd(6 + ANSI_OVERHEAD)} ${DIM}${result.durationMs}ms${RESET}`;
     console.log(line);
   }
 

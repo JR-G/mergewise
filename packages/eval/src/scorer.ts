@@ -69,16 +69,34 @@ export function scoreFindings(
   findings: readonly Finding[],
   expectations: readonly ExpectedFinding[],
 ): EvalScore {
-  const requiredExpectations = expectations.filter(
-    (expectation) => expectation.required,
+  const forbiddenExpectations = expectations.filter(
+    (expectation) => expectation.forbidden === true,
   );
+  const requiredExpectations = expectations.filter(
+    (expectation) => expectation.required && !expectation.forbidden,
+  );
+  const optionalExpectations = expectations.filter(
+    (expectation) => !expectation.required && !expectation.forbidden,
+  );
+
   const matchedFindingIndices = new Set<number>();
+  const falsePositiveIndices = new Set<number>();
+
+  for (const expectation of forbiddenExpectations) {
+    for (const [index, finding] of findings.entries()) {
+      if (!falsePositiveIndices.has(index) && matchFinding(finding, expectation)) {
+        falsePositiveIndices.add(index);
+      }
+    }
+  }
+
   let requiredMatched = 0;
 
   for (const expectation of requiredExpectations) {
     const matchIndex = findings.findIndex(
       (finding, index) =>
         !matchedFindingIndices.has(index) &&
+        !falsePositiveIndices.has(index) &&
         matchFinding(finding, expectation),
     );
 
@@ -88,14 +106,11 @@ export function scoreFindings(
     }
   }
 
-  const optionalExpectations = expectations.filter(
-    (expectation) => !expectation.required,
-  );
-
   for (const expectation of optionalExpectations) {
     const matchIndex = findings.findIndex(
       (finding, index) =>
         !matchedFindingIndices.has(index) &&
+        !falsePositiveIndices.has(index) &&
         matchFinding(finding, expectation),
     );
 
@@ -105,7 +120,7 @@ export function scoreFindings(
   }
 
   const unmatchedFindings = findings.filter(
-    (_, index) => !matchedFindingIndices.has(index),
+    (_, index) => !matchedFindingIndices.has(index) && !falsePositiveIndices.has(index),
   );
 
   const totalFindings = findings.length;
@@ -122,5 +137,6 @@ export function scoreFindings(
     matchedFindings,
     precision: totalFindings === 0 ? 1.0 : matchedFindings / totalFindings,
     unmatchedFindings,
+    falsePositiveCount: falsePositiveIndices.size,
   };
 }
