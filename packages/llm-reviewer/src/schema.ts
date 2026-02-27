@@ -2,6 +2,7 @@ import type {
   FileDiff,
   Finding,
   FindingCategory,
+  PatchPreview,
   PullRequestMetadata,
 } from "@mergewise/shared-types";
 
@@ -21,6 +22,7 @@ export interface RawLlmFinding {
   readonly confidence: number;
   readonly evidence: string;
   readonly recommendation: string;
+  readonly suggestedRewrite?: string;
 }
 
 /**
@@ -68,6 +70,67 @@ export function extractAddedLineNumbers(diff: FileDiff): Set<number> {
   return added;
 }
 
+export interface AddedLineInfo {
+  readonly content: string;
+  readonly hunkHeader: string;
+}
+
+/**
+ * Extracts a map of added line numbers to their content and hunk header.
+ *
+ * @param diff - File diff to extract added line info from.
+ * @returns Map of 1-indexed line numbers to line content and hunk header.
+ */
+export function extractAddedLineMap(
+  diff: FileDiff,
+): Map<number, AddedLineInfo> {
+  const added = new Map<number, AddedLineInfo>();
+
+  for (const hunk of diff.hunks) {
+    const match = /\+(\d+)/.exec(hunk.header);
+    if (!match) continue;
+
+    const matchedLine = match[1];
+    if (!matchedLine) continue;
+    let currentLine = parseInt(matchedLine, 10);
+    for (const line of hunk.lines) {
+      if (line.startsWith("\\")) {
+        continue;
+      }
+
+      if (line.startsWith("+")) {
+        added.set(currentLine, {
+          content: line.slice(1),
+          hunkHeader: hunk.header,
+        });
+        currentLine += 1;
+        continue;
+      }
+
+      if (line.startsWith("-")) {
+        continue;
+      }
+
+      currentLine += 1;
+    }
+  }
+
+  return added;
+}
+
+function buildLlmPatchPreview(
+  suggestedRewrite: string | undefined,
+  lineInfo: AddedLineInfo | undefined,
+): PatchPreview | undefined {
+  if (!suggestedRewrite || !lineInfo) return undefined;
+
+  return {
+    removedLines: [lineInfo.content],
+    addedLines: suggestedRewrite.split("\n"),
+    hunkHeader: lineInfo.hunkHeader,
+  };
+}
+
 /**
  * Validates and parses raw LLM JSON output into a typed finding array.
  *
@@ -97,13 +160,19 @@ export function parseLlmResponse(
     return [];
   }
 
-  const addedLines = extractAddedLineNumbers(diff);
+  const addedLineMap = extractAddedLineMap(diff);
+  const addedLines = new Set(addedLineMap.keys());
   const findings: Finding[] = [];
 
   for (const rawFinding of parsed.findings) {
     if (!isValidRawFinding(rawFinding, addedLines)) {
       continue;
     }
+
+    const patchPreview = buildLlmPatchPreview(
+      rawFinding.suggestedRewrite,
+      addedLineMap.get(rawFinding.line),
+    );
 
     findings.push({
       findingId: `llm/reviewer:${pullRequest.repo}:${pullRequest.prNumber}:${diff.filePath}:${rawFinding.line}:${rawFinding.category}`,
@@ -117,7 +186,7 @@ export function parseLlmResponse(
       line: rawFinding.line,
       evidence: rawFinding.evidence.slice(0, 200),
       recommendation: rawFinding.recommendation.slice(0, 500),
-      patchSuggestionPolicy: "manual-only",
+      ...(patchPreview ? { patchPreview } : {}),
       confidence: rawFinding.confidence,
       status: "posted",
     });

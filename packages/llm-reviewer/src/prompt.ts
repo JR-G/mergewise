@@ -89,7 +89,8 @@ Respond with a JSON object containing a single key "findings" mapped to an array
   - 0.7–0.79: Marginal or stylistic suggestion — only include if the file has few other findings
   - Below 0.7: Do not include
 - "evidence": a short quote of the problematic code (max 120 chars)
-- "recommendation": a concise, actionable refactoring suggestion written as a direct instruction (not a question). Max 500 chars. Name the principle or pattern when applicable. Do not use filler words. Do not praise the code. Do not hedge.
+- "recommendation": a concise, actionable refactoring suggestion written as a direct instruction (not a question). Max 500 chars. Name the principle or pattern when applicable. Do not use filler words. Do not praise the code. Do not hedge. Wrap code identifiers (function names, variable names, type names) in backticks.
+- "suggestedRewrite" (optional): replacement code for the line referenced by "line". Provide when a concrete, compilable fix exists — even for structural suggestions, show extracted function signatures or the refactored shape. Omit when no rewrite is feasible. Multi-line rewrites: join with "\\n". Include leading whitespace to preserve indentation.
 
 If you have no findings, return {"findings": []}.
 
