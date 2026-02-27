@@ -245,6 +245,10 @@ export interface GitHubIssueComment {
    */
   id: number;
   /**
+   * Global node identifier for GraphQL operations.
+   */
+  node_id: string;
+  /**
    * HTML URL for the comment.
    */
   html_url: string;
@@ -262,6 +266,10 @@ export interface GitHubPullRequestReviewComment {
    * Review comment identifier.
    */
   id: number;
+  /**
+   * Global node identifier for GraphQL operations.
+   */
+  node_id: string;
   /**
    * HTML URL for the review comment.
    */
@@ -1083,6 +1091,141 @@ export async function updateCheckRun(
     signal: AbortSignal.timeout(requestTimeoutMs),
   });
   return parseResponse<GitHubCheckRun>(response, "PATCH", endpointUrl);
+}
+
+/**
+ * Request options for minimising a comment via the GitHub GraphQL API.
+ */
+export interface MinimizeCommentOptions extends GitHubApiOptions {
+  /**
+   * Global node identifier of the comment to minimise.
+   */
+  subjectId: string;
+  /**
+   * Classification reason for minimising the comment.
+   */
+  classifier:
+    | "OUTDATED"
+    | "OFF_TOPIC"
+    | "SPAM"
+    | "RESOLVED"
+    | "DUPLICATE"
+    | "ABUSE";
+  /**
+   * Installation access token used for API authentication.
+   */
+  installationAccessToken: string;
+}
+
+/**
+ * Response payload from the `minimizeComment` GraphQL mutation.
+ */
+export interface MinimizeCommentResult {
+  /**
+   * Whether the comment was successfully minimised.
+   */
+  readonly isMinimized: boolean;
+}
+
+/**
+ * Error representing a failed GitHub GraphQL request.
+ */
+export class GitHubGraphQlError extends Error {
+  /**
+   * GraphQL error entries returned by the API.
+   */
+  public readonly errors: readonly Record<string, unknown>[];
+
+  public constructor(
+    errors: readonly Record<string, unknown>[],
+    requestUrl: string,
+  ) {
+    const firstMessage =
+      (errors[0]?.message as string | undefined) ?? "Unknown GraphQL error";
+    super(`GitHub GraphQL request failed: ${requestUrl} — ${firstMessage}`);
+    this.name = "GitHubGraphQlError";
+    this.errors = errors;
+  }
+}
+
+/**
+ * Minimises a comment via the GitHub GraphQL `minimizeComment` mutation.
+ *
+ * @param options - Minimise comment request options.
+ * @returns Minimisation result.
+ * @throws {@link GitHubApiError} when the HTTP request itself fails.
+ * @throws {@link GitHubGraphQlError} when the GraphQL response contains errors.
+ */
+export async function minimizeComment(
+  options: MinimizeCommentOptions,
+): Promise<MinimizeCommentResult> {
+  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
+  const apiBaseUrl = trimTrailingSlash(
+    options.apiBaseUrl ?? "https://api.github.com",
+  );
+  const endpointUrl = `${apiBaseUrl}/graphql`;
+  const query = `mutation($subjectId: ID!, $classifier: ReportedContentClassifiers!) {
+  minimizeComment(input: { subjectId: $subjectId, classifier: $classifier }) {
+    minimizedComment { isMinimized }
+  }
+}`;
+  const response = await fetch(endpointUrl, {
+    method: "POST",
+    headers: buildHeaders({
+      authorization: `Bearer ${options.installationAccessToken}`,
+      userAgent: options.userAgent,
+      contentType: "application/json",
+      traceId: options.traceId,
+    }),
+    body: JSON.stringify({
+      query,
+      variables: {
+        subjectId: options.subjectId,
+        classifier: options.classifier,
+      },
+    }),
+    signal: AbortSignal.timeout(requestTimeoutMs),
+  });
+
+  return parseGraphQlResponse<MinimizeCommentResult>(
+    response,
+    endpointUrl,
+    (data) => {
+      const minimizedComment = (
+        data as {
+          minimizeComment?: { minimizedComment?: { isMinimized?: boolean } };
+        }
+      ).minimizeComment?.minimizedComment;
+      return { isMinimized: minimizedComment?.isMinimized === true };
+    },
+  );
+}
+
+async function parseGraphQlResponse<T>(
+  response: Response,
+  requestUrl: string,
+  extractData: (data: unknown) => T,
+): Promise<T> {
+  if (!response.ok) {
+    const responseBody = await response.text();
+    throw new GitHubApiError(
+      response.status,
+      "POST",
+      requestUrl,
+      responseBody,
+    );
+  }
+
+  const body = (await response.json()) as {
+    data?: unknown;
+    errors?: Record<string, unknown>[];
+  };
+
+  if (body.errors && body.errors.length > 0) {
+    throw new GitHubGraphQlError(body.errors, requestUrl);
+  }
+
+  return extractData(body.data);
 }
 
 interface HeaderBuildOptions {

@@ -6,6 +6,7 @@ import {
   exchangeInstallationAccessToken,
   fetchPullRequestFiles,
   GitHubApiError,
+  minimizeComment,
   type FetchPullRequestFilesOptions,
   type GitHubIssueComment,
   type GitHubPullRequestReviewComment,
@@ -13,6 +14,8 @@ import {
   type GitHubPullRequestFile,
   type ListPullRequestCommentsOptions,
   type CreatePullRequestReviewOptions,
+  type MinimizeCommentOptions,
+  type MinimizeCommentResult,
   type PullRequestReviewComment,
   fetchFileContent,
   fetchPullRequest,
@@ -454,6 +457,20 @@ export interface PreparedFindingDelivery {
 }
 
 /**
+ * Aggregated comment state from existing PR comments, used for deduplication and minimisation.
+ */
+export interface ExistingCommentState {
+  /**
+   * Set of dedupe keys found in existing PR comments.
+   */
+  readonly dedupeKeys: Set<string>;
+  /**
+   * Mapping from dedupe key to the comment's GraphQL node ID for minimisation.
+   */
+  readonly dedupeKeyToNodeId: ReadonlyMap<string, string>;
+}
+
+/**
  * Dependency hooks for retryable pull request file fetch.
  */
 export interface PullRequestFileRetryDependencies {
@@ -558,6 +575,24 @@ export interface WorkerProcessingDependencies {
   readonly updateCheckRunFn?: (
     options: UpdateCheckRunOptions,
   ) => Promise<GitHubCheckRun>;
+  /**
+   * Comment minimisation function override for testing.
+   */
+  readonly minimizeCommentFn?: (
+    options: MinimizeCommentOptions,
+  ) => Promise<MinimizeCommentResult>;
+  /**
+   * Summary comment listing function override for testing.
+   */
+  readonly listPullRequestSummaryCommentsFn?: (
+    options: ListPullRequestCommentsOptions,
+  ) => Promise<GitHubIssueComment[]>;
+  /**
+   * Inline comment listing function override for testing.
+   */
+  readonly listPullRequestInlineCommentsFn?: (
+    options: ListPullRequestCommentsOptions,
+  ) => Promise<GitHubPullRequestReviewComment[]>;
   /**
    * Pull request state fetch function override.
    */
@@ -1054,37 +1089,44 @@ export async function postPreparedFindingComments(
     readonly createPullRequestReviewFn?: (
       options: CreatePullRequestReviewOptions,
     ) => Promise<GitHubPullRequestReview>;
+    readonly existingDedupeKeys?: Set<string>;
   } = {},
 ): Promise<PostPreparedFindingCommentsResult> {
   const errorLogger = dependencies.logError ?? console.error;
-  const listPullRequestSummaryCommentsFn =
-    dependencies.listPullRequestSummaryCommentsFn ?? listPullRequestSummaryComments;
-  const listPullRequestInlineCommentsFn =
-    dependencies.listPullRequestInlineCommentsFn ?? listPullRequestInlineComments;
   const createPullRequestReviewFn =
     dependencies.createPullRequestReviewFn ?? createPullRequestReview;
 
-  const existingDedupeKeys = await loadExistingDedupeKeys(
-    {
-      owner: options.owner,
-      repository: options.repository,
-      pullRequestNumber: options.pullRequestNumber,
-      installationAccessToken: options.installationAccessToken,
-      apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
-      userAgent: options.githubFetchOptions.githubUserAgent,
-      requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
-      traceId: options.traceId,
-    },
-    {
-      listPullRequestSummaryCommentsFn,
-      listPullRequestInlineCommentsFn,
-    },
-  );
+  let resolvedDedupeKeys: Set<string>;
+  if (dependencies.existingDedupeKeys) {
+    resolvedDedupeKeys = dependencies.existingDedupeKeys;
+  } else {
+    const listPullRequestSummaryCommentsFn =
+      dependencies.listPullRequestSummaryCommentsFn ?? listPullRequestSummaryComments;
+    const listPullRequestInlineCommentsFn =
+      dependencies.listPullRequestInlineCommentsFn ?? listPullRequestInlineComments;
+    const commentState = await loadExistingDedupeKeys(
+      {
+        owner: options.owner,
+        repository: options.repository,
+        pullRequestNumber: options.pullRequestNumber,
+        installationAccessToken: options.installationAccessToken,
+        apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
+        userAgent: options.githubFetchOptions.githubUserAgent,
+        requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
+        traceId: options.traceId,
+      },
+      {
+        listPullRequestSummaryCommentsFn,
+        listPullRequestInlineCommentsFn,
+      },
+    );
+    resolvedDedupeKeys = commentState.dedupeKeys;
+  }
 
   const skipped: PostedFindingCommentSkipped[] = [];
   const filteredComments: { readonly index: number; readonly preparedComment: PreparedFindingComment }[] = [];
   for (const [index, preparedComment] of options.comments.entries()) {
-    if (existingDedupeKeys.has(preparedComment.dedupeKey)) {
+    if (resolvedDedupeKeys.has(preparedComment.dedupeKey)) {
       skipped.push({
         index,
         preparedComment,
@@ -1200,6 +1242,72 @@ export async function postPreparedFindingComments(
   }
 }
 
+/**
+ * Minimises PR comments whose dedupe keys are absent from the new set.
+ *
+ * @param existingCommentState - Existing comment state with dedupe key → node ID mapping.
+ * @param newDedupeKeys - Dedupe keys from the current analysis run.
+ * @param options - Authentication and API options.
+ * @param dependencies - Test overrides.
+ * @returns Count of minimised and failed comments.
+ */
+export async function minimizeOutdatedComments(
+  existingCommentState: ExistingCommentState,
+  newDedupeKeys: ReadonlySet<string>,
+  options: {
+    readonly installationAccessToken: string;
+    readonly traceId: string;
+    readonly githubFetchOptions: WorkerGitHubFetchOptions;
+  },
+  dependencies?: {
+    readonly minimizeCommentFn?: (
+      opts: MinimizeCommentOptions,
+    ) => Promise<MinimizeCommentResult>;
+    readonly logInfo?: (message: string) => void;
+    readonly logError?: (message: string) => void;
+  },
+): Promise<{ minimizedCount: number; failedCount: number }> {
+  const minimizeCommentFn = dependencies?.minimizeCommentFn ?? minimizeComment;
+  const infoLogger = dependencies?.logInfo ?? console.log;
+  const errorLogger = dependencies?.logError ?? console.error;
+
+  let minimizedCount = 0;
+  let failedCount = 0;
+
+  for (const [dedupeKey, nodeId] of existingCommentState.dedupeKeyToNodeId) {
+    if (newDedupeKeys.has(dedupeKey)) {
+      continue;
+    }
+
+    try {
+      await minimizeCommentFn({
+        subjectId: nodeId,
+        classifier: "OUTDATED",
+        installationAccessToken: options.installationAccessToken,
+        apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
+        userAgent: options.githubFetchOptions.githubUserAgent,
+        requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
+        traceId: options.traceId,
+      });
+      minimizedCount += 1;
+    } catch (error) {
+      failedCount += 1;
+      const detail = error instanceof Error ? error.message : String(error);
+      errorLogger(
+        `[worker] failed to minimise outdated comment trace=${options.traceId} nodeId=${nodeId} dedupeKey=${dedupeKey}: ${detail}`,
+      );
+    }
+  }
+
+  if (minimizedCount > 0) {
+    infoLogger(
+      `[worker] minimised_outdated_comments trace=${options.traceId} minimized=${minimizedCount} failed=${failedCount}`,
+    );
+  }
+
+  return { minimizedCount, failedCount };
+}
+
 async function loadExistingDedupeKeys(
   options: ListPullRequestCommentsOptions,
   dependencies: {
@@ -1210,15 +1318,22 @@ async function loadExistingDedupeKeys(
       options: ListPullRequestCommentsOptions,
     ) => Promise<GitHubPullRequestReviewComment[]>;
   },
-): Promise<Set<string>> {
+): Promise<ExistingCommentState> {
   const dedupeKeys = new Set<string>();
+  const dedupeKeyToNodeId = new Map<string, string>();
+
+  function indexComment(body: string | undefined, nodeId: string): void {
+    const dedupeKey = extractDedupeKeyFromCommentBody(body);
+    if (dedupeKey) {
+      dedupeKeys.add(dedupeKey);
+      dedupeKeyToNodeId.set(dedupeKey, nodeId);
+    }
+  }
+
   try {
     const summaryComments = await dependencies.listPullRequestSummaryCommentsFn(options);
     for (const comment of summaryComments) {
-      const dedupeKey = extractDedupeKeyFromCommentBody(comment.body);
-      if (dedupeKey) {
-        dedupeKeys.add(dedupeKey);
-      }
+      indexComment(comment.body, comment.node_id);
     }
   } catch (caughtError) {
     const errorDetail = caughtError instanceof Error
@@ -1239,10 +1354,7 @@ async function loadExistingDedupeKeys(
   try {
     const inlineComments = await dependencies.listPullRequestInlineCommentsFn(options);
     for (const comment of inlineComments) {
-      const dedupeKey = extractDedupeKeyFromCommentBody(comment.body);
-      if (dedupeKey) {
-        dedupeKeys.add(dedupeKey);
-      }
+      indexComment(comment.body, comment.node_id);
     }
   } catch (caughtError) {
     const errorDetail = caughtError instanceof Error
@@ -1260,7 +1372,7 @@ async function loadExistingDedupeKeys(
     );
   }
 
-  return dedupeKeys;
+  return { dedupeKeys, dedupeKeyToNodeId };
 }
 
 function extractDedupeKeyFromCommentBody(commentBody: string | undefined): string | null {
@@ -1463,20 +1575,58 @@ export async function processAnalyzePullRequestJob(
     },
   );
 
-  const fetchPullRequestFn = dependencies.fetchPullRequestFn ?? fetchPullRequest;
-  const pullRequestState = await fetchPullRequestFn({
-    owner: githubAnalysisContext.owner,
-    repository: githubAnalysisContext.repository,
-    pullRequestNumber: job.pr_number,
-    installationAccessToken: githubAnalysisContext.installationAccessToken,
-    apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
-    userAgent: githubFetchOptions.githubUserAgent,
-    requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
-    traceId,
-  });
-
   const createCheckRunFn = dependencies.createCheckRunFn ?? createCheckRun;
   const updateCheckRunFn = dependencies.updateCheckRunFn ?? updateCheckRun;
+
+  const fetchPullRequestFn = dependencies.fetchPullRequestFn ?? fetchPullRequest;
+  let pullRequestState: Awaited<ReturnType<typeof fetchPullRequestFn>>;
+  try {
+    pullRequestState = await fetchPullRequestFn({
+      owner: githubAnalysisContext.owner,
+      repository: githubAnalysisContext.repository,
+      pullRequestNumber: job.pr_number,
+      installationAccessToken: githubAnalysisContext.installationAccessToken,
+      apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+      userAgent: githubFetchOptions.githubUserAgent,
+      requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+      traceId,
+    });
+  } catch (fetchPrError) {
+    const detail = fetchPrError instanceof Error
+      ? fetchPrError.stack ?? fetchPrError.message
+      : String(fetchPrError);
+    errorLogger(
+      `[worker] fetchPullRequest failed trace=${traceId} job=${job.job_id}: ${detail}`,
+    );
+    if (dependencies.deliveryMode === "github" && job.check_run_id !== undefined) {
+      try {
+        await updateCheckRunFn({
+          owner: githubAnalysisContext.owner,
+          repository: githubAnalysisContext.repository,
+          checkRunId: job.check_run_id,
+          installationAccessToken: githubAnalysisContext.installationAccessToken,
+          status: "completed",
+          conclusion: "failure",
+          output: {
+            title: "Review failed",
+            summary: "Failed to fetch pull request state.",
+          },
+          apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+          userAgent: githubFetchOptions.githubUserAgent,
+          requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+          traceId,
+        });
+      } catch (checkRunError) {
+        const checkDetail = checkRunError instanceof Error
+          ? checkRunError.message
+          : String(checkRunError);
+        errorLogger(
+          `[worker] failed to complete errored check run trace=${traceId} job=${job.job_id}: ${checkDetail}`,
+        );
+      }
+    }
+    throw fetchPrError;
+  }
 
   const isPrClosed = pullRequestState.state !== "open";
   const queuedCheckRunId =
@@ -1609,6 +1759,43 @@ export async function processAnalyzePullRequestJob(
 
   let postedCommentCount = 0;
   if (dependencies.deliveryMode === "github") {
+    const listSummaryFn =
+      dependencies.listPullRequestSummaryCommentsFn ?? listPullRequestSummaryComments;
+    const listInlineFn =
+      dependencies.listPullRequestInlineCommentsFn ?? listPullRequestInlineComments;
+    const existingCommentState = await loadExistingDedupeKeys(
+      {
+        owner: githubAnalysisContext.owner,
+        repository: githubAnalysisContext.repository,
+        pullRequestNumber: job.pr_number,
+        installationAccessToken: githubAnalysisContext.installationAccessToken,
+        apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+        userAgent: githubFetchOptions.githubUserAgent,
+        requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+        traceId,
+      },
+      {
+        listPullRequestSummaryCommentsFn: listSummaryFn,
+        listPullRequestInlineCommentsFn: listInlineFn,
+      },
+    );
+
+    const newDedupeKeys = new Set(delivery.comments.map((comment) => comment.dedupeKey));
+    await minimizeOutdatedComments(
+      existingCommentState,
+      newDedupeKeys,
+      {
+        installationAccessToken: githubAnalysisContext.installationAccessToken,
+        traceId,
+        githubFetchOptions,
+      },
+      {
+        minimizeCommentFn: dependencies.minimizeCommentFn,
+        logInfo: infoLogger,
+        logError: errorLogger,
+      },
+    );
+
     const fileCount = githubAnalysisContext.analysisContext.diffs.length;
     const summaryBody =
       `${fileCount} file${fileCount === 1 ? "" : "s"} reviewed, ` +
@@ -1627,6 +1814,7 @@ export async function processAnalyzePullRequestJob(
       },
       {
         createPullRequestReviewFn: dependencies.createPullRequestReviewFn,
+        existingDedupeKeys: existingCommentState.dedupeKeys,
       },
     );
     postedCommentCount = postingResult.postedCount;

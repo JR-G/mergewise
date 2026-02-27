@@ -18,6 +18,7 @@ import {
   createPollingLoopController,
   fetchPullRequestFilesWithRetry,
   loadConfig,
+  minimizeOutdatedComments,
   parseRepositoryFullName,
   postPreparedFindingComments,
   prepareFindingDelivery,
@@ -26,6 +27,7 @@ import {
   runPollCycleWithInFlightGuard,
   trackProcessedKey,
   wrapCodeIdentifiers,
+  type ExistingCommentState,
   type WorkerPollingTimerHandle,
   type WorkerGitHubFetchOptions,
 } from "./index";
@@ -1550,6 +1552,141 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.totalRules).toBe(1);
     expect(summary.successfulRules).toBe(1);
   });
+
+  test("minimises outdated comments before posting new ones in github delivery mode", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    const minimizedNodeIds: string[] = [];
+    const finding = createFinding("finding-new", 0.95, "clean");
+
+    await processAnalyzePullRequestJob(
+      {
+        job_id: "job-minimize",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 90,
+        head_sha: "min123",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        deliveryMode: "github",
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        fetchPullRequestFn: async () => openPullRequestState,
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "inst-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [
+          {
+            filename: "src/index.ts",
+            status: "modified",
+            additions: 1,
+            deletions: 0,
+            changes: 1,
+            patch: "@@ -1,1 +1,2 @@\n-const a = 1;\n+const b = 2;",
+          },
+        ],
+        executeRulesFn: async () => ({
+          findings: [finding],
+          summary: {
+            totalRules: 1,
+            successfulRules: 1,
+            failedRules: 0,
+            totalFindings: 1,
+            findingsByCategory: { clean: 1, perf: 0, safety: 0, idiomatic: 0 },
+          },
+          failedRuleIds: [],
+        }),
+        listPullRequestSummaryCommentsFn: async () => [
+          {
+            id: 800,
+            node_id: "IC_kwDOold800",
+            html_url: "https://github.com/acme/widget/pull/90#issuecomment-800",
+            body: "<!-- mergewise-meta dedupeKey=acme/widget#90:old-finding findingId=old ruleId=rule-a category=clean confidence=0.90 -->",
+          },
+        ],
+        listPullRequestInlineCommentsFn: async () => [],
+        minimizeCommentFn: async (opts) => {
+          minimizedNodeIds.push(opts.subjectId);
+          return { isMinimized: true };
+        },
+        createPullRequestReviewFn: async () => ({
+          id: 1, html_url: "https://github.com/x", body: null, state: "commented",
+        }),
+        createCheckRunFn: async () => ({
+          id: 1, html_url: "https://github.com/x", status: "in_progress", conclusion: null,
+        }),
+        updateCheckRunFn: async () => ({
+          id: 1, html_url: "https://github.com/x", status: "completed", conclusion: "success",
+        }),
+        logInfo: () => {},
+        logError: () => {},
+        now: () => new Date("2026-01-02T03:04:05.000Z"),
+      },
+    );
+
+    expect(minimizedNodeIds).toContain("IC_kwDOold800");
+  });
+
+  test("transitions queued check run to failure when fetchPullRequest throws", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    let capturedCheckRunUpdate: Record<string, unknown> | null = null;
+    let thrownError: unknown;
+
+    try {
+      await processAnalyzePullRequestJob(
+        {
+          job_id: "job-fetch-fail",
+          installation_id: 44,
+          repo_full_name: "acme/widget",
+          pr_number: 95,
+          head_sha: "fail123",
+          queued_at: "2025-01-01T00:00:00Z",
+          check_run_id: 777,
+        },
+        {
+          deliveryMode: "github",
+          githubFetchOptions: workerFetchOptions,
+          rules: [],
+          createGitHubAppJwtFn: () => "jwt",
+          exchangeInstallationAccessTokenFn: async () => ({
+            token: "inst-token",
+            expires_at: "2026-01-01T00:00:00Z",
+          }),
+          fetchPullRequestFilesWithRetryFn: async () => [],
+          fetchPullRequestFn: async () => {
+            throw new GitHubApiError(500, "GET", "https://api.github.com/x", "server error");
+          },
+          updateCheckRunFn: async (options) => {
+            capturedCheckRunUpdate = {
+              checkRunId: options.checkRunId,
+              status: options.status,
+              conclusion: options.conclusion,
+            };
+            return { id: 777, html_url: "https://github.com/x", status: "completed", conclusion: "failure" };
+          },
+          createCheckRunFn: async () => ({
+            id: 1, html_url: "https://github.com/x", status: "in_progress", conclusion: null,
+          }),
+          logInfo: () => {},
+          logError: () => {},
+        },
+      );
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(GitHubApiError);
+    expect(capturedCheckRunUpdate).not.toBeNull();
+    expect(capturedCheckRunUpdate!.checkRunId).toBe(777);
+    expect(capturedCheckRunUpdate!.status).toBe("completed");
+    expect(capturedCheckRunUpdate!.conclusion).toBe("failure");
+  });
 });
 
 describe("wrapCodeIdentifiers", () => {
@@ -2270,6 +2407,7 @@ describe("finding delivery", () => {
         listPullRequestSummaryCommentsFn: async () => [
           {
             id: 901,
+            node_id: "IC_kwDOtest901",
             html_url: "https://github.com/acme/widget/pull/3#issuecomment-901",
             body:
               "<!-- mergewise-meta dedupeKey=acme/widget#3:one " +
@@ -2604,5 +2742,136 @@ describe("loadConfig", () => {
     expect(() => loadConfig()).toThrow(
       "Invalid WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD value",
     );
+  });
+});
+
+describe("minimizeOutdatedComments", () => {
+  test("minimises comments whose dedupe keys are absent from the new set", async () => {
+    const minimizedNodeIds: string[] = [];
+    const existingState: ExistingCommentState = {
+      dedupeKeys: new Set(["key-a", "key-b", "key-c"]),
+      dedupeKeyToNodeId: new Map([
+        ["key-a", "node-a"],
+        ["key-b", "node-b"],
+        ["key-c", "node-c"],
+      ]),
+    };
+    const newKeys = new Set(["key-b"]);
+
+    const result = await minimizeOutdatedComments(
+      existingState,
+      newKeys,
+      {
+        installationAccessToken: "ghs_token",
+        traceId: "trace-1",
+        githubFetchOptions: workerFetchOptions,
+      },
+      {
+        minimizeCommentFn: async (opts) => {
+          minimizedNodeIds.push(opts.subjectId);
+          return { isMinimized: true };
+        },
+        logInfo: () => {},
+        logError: () => {},
+      },
+    );
+
+    expect(result.minimizedCount).toBe(2);
+    expect(result.failedCount).toBe(0);
+    expect(minimizedNodeIds).toContain("node-a");
+    expect(minimizedNodeIds).toContain("node-c");
+    expect(minimizedNodeIds).not.toContain("node-b");
+  });
+
+  test("skips comments whose dedupe keys are in the new set", async () => {
+    const minimizedNodeIds: string[] = [];
+    const existingState: ExistingCommentState = {
+      dedupeKeys: new Set(["key-a"]),
+      dedupeKeyToNodeId: new Map([["key-a", "node-a"]]),
+    };
+    const newKeys = new Set(["key-a"]);
+
+    const result = await minimizeOutdatedComments(
+      existingState,
+      newKeys,
+      {
+        installationAccessToken: "ghs_token",
+        traceId: "trace-2",
+        githubFetchOptions: workerFetchOptions,
+      },
+      {
+        minimizeCommentFn: async (opts) => {
+          minimizedNodeIds.push(opts.subjectId);
+          return { isMinimized: true };
+        },
+        logInfo: () => {},
+        logError: () => {},
+      },
+    );
+
+    expect(result.minimizedCount).toBe(0);
+    expect(result.failedCount).toBe(0);
+    expect(minimizedNodeIds).toHaveLength(0);
+  });
+
+  test("counts per-comment failures and continues processing", async () => {
+    let callCount = 0;
+    const existingState: ExistingCommentState = {
+      dedupeKeys: new Set(["key-a", "key-b"]),
+      dedupeKeyToNodeId: new Map([
+        ["key-a", "node-a"],
+        ["key-b", "node-b"],
+      ]),
+    };
+    const newKeys = new Set<string>();
+
+    const result = await minimizeOutdatedComments(
+      existingState,
+      newKeys,
+      {
+        installationAccessToken: "ghs_token",
+        traceId: "trace-3",
+        githubFetchOptions: workerFetchOptions,
+      },
+      {
+        minimizeCommentFn: async () => {
+          callCount += 1;
+          if (callCount === 1) {
+            throw new Error("GraphQL failure");
+          }
+          return { isMinimized: true };
+        },
+        logInfo: () => {},
+        logError: () => {},
+      },
+    );
+
+    expect(result.minimizedCount).toBe(1);
+    expect(result.failedCount).toBe(1);
+  });
+
+  test("returns zero counts when there are no existing comments", async () => {
+    const existingState: ExistingCommentState = {
+      dedupeKeys: new Set<string>(),
+      dedupeKeyToNodeId: new Map(),
+    };
+
+    const result = await minimizeOutdatedComments(
+      existingState,
+      new Set(["key-x"]),
+      {
+        installationAccessToken: "ghs_token",
+        traceId: "trace-4",
+        githubFetchOptions: workerFetchOptions,
+      },
+      {
+        minimizeCommentFn: async () => ({ isMinimized: true }),
+        logInfo: () => {},
+        logError: () => {},
+      },
+    );
+
+    expect(result.minimizedCount).toBe(0);
+    expect(result.failedCount).toBe(0);
   });
 });
