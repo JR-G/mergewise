@@ -685,6 +685,104 @@ export async function fetchFileContent(
   return Buffer.from(body.content, "base64").toString("utf8");
 }
 
+/**
+ * Request options for creating a check run on a commit.
+ */
+export interface CreateCheckRunOptions extends GitHubApiOptions {
+  /**
+   * Repository owner.
+   */
+  owner: string;
+  /**
+   * Repository name.
+   */
+  repository: string;
+  /**
+   * Commit SHA to attach the check run to.
+   */
+  headSha: string;
+  /**
+   * Installation access token used for API authentication.
+   */
+  installationAccessToken: string;
+  /**
+   * Display name for the check run shown in the PR checks tab.
+   */
+  name: string;
+  /**
+   * Check run conclusion.
+   */
+  conclusion: "success" | "failure" | "neutral";
+  /**
+   * Structured output displayed in the check run details.
+   */
+  output: {
+    readonly title: string;
+    readonly summary: string;
+    readonly text?: string;
+  };
+}
+
+/**
+ * Response shape for a created GitHub check run.
+ */
+export interface GitHubCheckRun {
+  /**
+   * Check run identifier.
+   */
+  id: number;
+  /**
+   * HTML URL for the check run.
+   */
+  html_url: string;
+  /**
+   * Check run status.
+   */
+  status: string;
+  /**
+   * Check run conclusion.
+   */
+  conclusion: string | null;
+}
+
+/**
+ * Creates a completed check run on a commit via the GitHub Checks API.
+ *
+ * @param options - Check run creation options.
+ * @returns Created check run payload.
+ * @throws {@link GitHubApiError} when GitHub returns a non-success status.
+ */
+export async function createCheckRun(
+  options: CreateCheckRunOptions,
+): Promise<GitHubCheckRun> {
+  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
+  const apiBaseUrl = trimTrailingSlash(
+    options.apiBaseUrl ?? "https://api.github.com",
+  );
+  const endpointUrl =
+    `${apiBaseUrl}/repos/${encodeURIComponent(options.owner)}` +
+    `/${encodeURIComponent(options.repository)}` +
+    `/check-runs`;
+  const response = await fetch(endpointUrl, {
+    method: "POST",
+    headers: buildHeaders({
+      authorization: `Bearer ${options.installationAccessToken}`,
+      userAgent: options.userAgent,
+      contentType: "application/json",
+      traceId: options.traceId,
+    }),
+    body: JSON.stringify({
+      name: options.name,
+      head_sha: options.headSha,
+      status: "completed",
+      conclusion: options.conclusion,
+      output: options.output,
+    }),
+    signal: AbortSignal.timeout(requestTimeoutMs),
+  });
+  return parseResponse<GitHubCheckRun>(response, "POST", endpointUrl);
+}
+
 interface HeaderBuildOptions {
   authorization: string;
   userAgent?: string;

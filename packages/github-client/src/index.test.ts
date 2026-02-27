@@ -3,6 +3,7 @@ import { createVerify, generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
+  createCheckRun,
   createGitHubAppJwt,
   exchangeInstallationAccessToken,
   fetchPullRequestFiles,
@@ -341,5 +342,72 @@ describe("github-client", () => {
     const apiError = thrownError as GitHubApiError;
     expect(apiError.status).toBe(403);
     expect(apiError.responseBody).toContain("forbidden");
+  });
+
+  test("createCheckRun sends correct request and returns created check run", async () => {
+    const calls: FetchCall[] = [];
+    const fetchMock: FetchMock = async (input, init) => {
+      calls.push({ input, init });
+      return makeJsonResponse({
+        id: 999,
+        html_url: "https://github.com/acme/widget/runs/999",
+        status: "completed",
+        conclusion: "success",
+      }, 201);
+    };
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const result = await createCheckRun({
+      owner: "acme",
+      repository: "widget",
+      headSha: "abc123",
+      installationAccessToken: "ghs_token",
+      name: "Mergewise",
+      conclusion: "success",
+      output: {
+        title: "Mergewise Findings (0 posted of 0)",
+        summary: "Rules=9/9 findings=0 posted=0",
+        text: "### Reviewer Summary\nNo findings.",
+      },
+    });
+
+    expect(result.id).toBe(999);
+    expect(result.conclusion).toBe("success");
+    expect(calls[0]).toBeDefined();
+    const requestUrl = String(calls[0]!.input);
+    expect(requestUrl).toContain("/repos/acme/widget/check-runs");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(calls[0]!.init?.signal).toBeDefined();
+    const requestBody = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
+    expect(requestBody.name).toBe("Mergewise");
+    expect(requestBody.head_sha).toBe("abc123");
+    expect(requestBody.status).toBe("completed");
+    expect(requestBody.conclusion).toBe("success");
+    const requestOutput = requestBody.output as Record<string, unknown>;
+    expect(requestOutput.title).toBe("Mergewise Findings (0 posted of 0)");
+  });
+
+  test("createCheckRun throws GitHubApiError on failure", async () => {
+    const fetchMock: FetchMock = async () =>
+      new Response(JSON.stringify({ message: "resource not accessible" }), { status: 403 });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    let thrownError: unknown;
+    try {
+      await createCheckRun({
+        owner: "acme",
+        repository: "widget",
+        headSha: "abc123",
+        installationAccessToken: "ghs_token",
+        name: "Mergewise",
+        conclusion: "success",
+        output: { title: "test", summary: "test" },
+      });
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(GitHubApiError);
+    expect((thrownError as GitHubApiError).status).toBe(403);
   });
 });

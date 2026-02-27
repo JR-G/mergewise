@@ -997,6 +997,153 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.traceId).toBe("job-gating");
     expect(summary.checkOutput?.title).toContain("0 posted of 3");
   });
+
+  test("creates a check run on GitHub when deliveryMode is github", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    let capturedCheckRun: Record<string, unknown> | null = null;
+    await processAnalyzePullRequestJob(
+      {
+        job_id: "job-check",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 60,
+        head_sha: "check123",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        deliveryMode: "github",
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "inst-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => ({
+          findings: [],
+          summary: {
+            totalRules: 0,
+            successfulRules: 0,
+            failedRules: 0,
+            totalFindings: 0,
+            findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          },
+          failedRuleIds: [],
+        }),
+        createCheckRunFn: async (options) => {
+          capturedCheckRun = {
+            owner: options.owner,
+            repository: options.repository,
+            headSha: options.headSha,
+            name: options.name,
+            conclusion: options.conclusion,
+            title: options.output.title,
+          };
+          return { id: 1, html_url: "https://github.com/x", status: "completed", conclusion: "success" };
+        },
+      },
+    );
+
+    expect(capturedCheckRun).not.toBeNull();
+    expect(capturedCheckRun!.owner).toBe("acme");
+    expect(capturedCheckRun!.repository).toBe("widget");
+    expect(capturedCheckRun!.headSha).toBe("check123");
+    expect(capturedCheckRun!.name).toBe("Mergewise");
+    expect(capturedCheckRun!.conclusion).toBe("success");
+  });
+
+  test("skips check run creation when deliveryMode is not github", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    let checkRunCalled = false;
+    await processAnalyzePullRequestJob(
+      {
+        job_id: "job-no-check",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 61,
+        head_sha: "nocheck456",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "inst-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => ({
+          findings: [],
+          summary: {
+            totalRules: 0,
+            successfulRules: 0,
+            failedRules: 0,
+            totalFindings: 0,
+            findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          },
+          failedRuleIds: [],
+        }),
+        createCheckRunFn: async () => {
+          checkRunCalled = true;
+          return { id: 1, html_url: "https://github.com/x", status: "completed", conclusion: "success" };
+        },
+      },
+    );
+
+    expect(checkRunCalled).toBe(false);
+  });
+
+  test("continues gracefully when check run creation fails", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    const errors: string[] = [];
+    const summary = await processAnalyzePullRequestJob(
+      {
+        job_id: "job-check-fail",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 62,
+        head_sha: "failcheck789",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        deliveryMode: "github",
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "inst-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => ({
+          findings: [],
+          summary: {
+            totalRules: 0,
+            successfulRules: 0,
+            failedRules: 0,
+            totalFindings: 0,
+            findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          },
+          failedRuleIds: [],
+        }),
+        createCheckRunFn: async () => {
+          throw new Error("Checks API permission denied");
+        },
+        logError: (msg) => errors.push(msg),
+      },
+    );
+
+    expect(summary.jobId).toBe("job-check-fail");
+    expect(errors.some((msg) => msg.includes("check_run_failed"))).toBe(true);
+  });
 });
 
 describe("applyFindingGates", () => {
