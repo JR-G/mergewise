@@ -906,6 +906,64 @@ export async function fetchFileContent(
 }
 
 /**
+ * Request options for updating an existing issue comment.
+ */
+export interface UpdateIssueCommentOptions extends GitHubApiOptions {
+  /**
+   * Repository owner.
+   */
+  owner: string;
+  /**
+   * Repository name.
+   */
+  repository: string;
+  /**
+   * Identifier of the issue comment to update.
+   */
+  commentId: number;
+  /**
+   * Installation access token used for API authentication.
+   */
+  installationAccessToken: string;
+  /**
+   * Updated Markdown body for the comment.
+   */
+  body: string;
+}
+
+/**
+ * Updates an existing issue comment on a pull request conversation.
+ *
+ * @param options - Comment update options.
+ * @returns Updated issue comment payload.
+ * @throws {@link GitHubApiError} when GitHub returns a non-success status.
+ */
+export async function updateIssueComment(
+  options: UpdateIssueCommentOptions,
+): Promise<GitHubIssueComment> {
+  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
+  const apiBaseUrl = trimTrailingSlash(
+    options.apiBaseUrl ?? "https://api.github.com",
+  );
+  const endpointUrl =
+    `${apiBaseUrl}/repos/${encodeURIComponent(options.owner)}` +
+    `/${encodeURIComponent(options.repository)}` +
+    `/issues/comments/${options.commentId}`;
+  const response = await fetch(endpointUrl, {
+    method: "PATCH",
+    headers: buildHeaders({
+      authorization: `Bearer ${options.installationAccessToken}`,
+      userAgent: options.userAgent,
+      contentType: "application/json",
+      traceId: options.traceId,
+    }),
+    body: JSON.stringify({ body: options.body }),
+    signal: AbortSignal.timeout(requestTimeoutMs),
+  });
+  return parseResponse<GitHubIssueComment>(response, "PATCH", endpointUrl);
+}
+
+/**
  * Request options for creating a check run on a commit.
  */
 export interface CreateCheckRunOptions extends GitHubApiOptions {

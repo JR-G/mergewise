@@ -6,6 +6,7 @@ import {
   createCheckRun,
   createPullRequestReview,
   updateCheckRun,
+  updateIssueComment,
   createGitHubAppJwt,
   exchangeInstallationAccessToken,
   fetchPullRequest,
@@ -726,5 +727,61 @@ describe("github-client", () => {
 
     expect(thrownError).toBeInstanceOf(GitHubGraphQlError);
     expect((thrownError as GitHubGraphQlError).message).toContain("Could not resolve");
+  });
+
+  test("updateIssueComment PATCHes the correct endpoint and returns updated comment", async () => {
+    const calls: FetchCall[] = [];
+    const fetchMock: FetchMock = async (input, init) => {
+      calls.push({ input, init });
+      return makeJsonResponse({
+        id: 42,
+        node_id: "IC_42",
+        html_url: "https://github.com/acme/widget/issues/5#issuecomment-42",
+        body: "updated body",
+      });
+    };
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const result = await updateIssueComment({
+      owner: "acme",
+      repository: "widget",
+      commentId: 42,
+      installationAccessToken: "ghs_token",
+      body: "updated body",
+      traceId: "trace-update-comment-1",
+    });
+
+    expect(result.id).toBe(42);
+    expect(result.body).toBe("updated body");
+    expect(calls[0]).toBeDefined();
+    const requestUrl = String(calls[0]!.input);
+    expect(requestUrl).toContain("/repos/acme/widget/issues/comments/42");
+    expect(calls[0]!.init?.method).toBe("PATCH");
+    const requestBody = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
+    expect(requestBody.body).toBe("updated body");
+    const requestHeaders = calls[0]!.init?.headers as Record<string, string>;
+    expect(requestHeaders["X-Mergewise-Trace-Id"]).toBe("trace-update-comment-1");
+  });
+
+  test("updateIssueComment throws GitHubApiError on failure", async () => {
+    const fetchMock: FetchMock = async () =>
+      new Response(JSON.stringify({ message: "not found" }), { status: 404 });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    let thrownError: unknown;
+    try {
+      await updateIssueComment({
+        owner: "acme",
+        repository: "widget",
+        commentId: 999,
+        installationAccessToken: "ghs_token",
+        body: "should fail",
+      });
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(GitHubApiError);
+    expect((thrownError as GitHubApiError).status).toBe(404);
   });
 });

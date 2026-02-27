@@ -12,6 +12,7 @@ import {
   buildAnalysisContext,
   buildFindingDedupeKey,
   buildJobSummary,
+  buildPrSummaryComment,
   buildWorkerCheckOutput,
   buildIdempotencyKey,
   createProcessedKeyState,
@@ -26,6 +27,7 @@ import {
   resolveJobTraceId,
   runPollCycleWithInFlightGuard,
   trackProcessedKey,
+  upsertPrSummaryComment,
   wrapCodeIdentifiers,
   type ExistingCommentState,
   type WorkerPollingTimerHandle,
@@ -2873,5 +2875,158 @@ describe("minimizeOutdatedComments", () => {
 
     expect(result.minimizedCount).toBe(0);
     expect(result.failedCount).toBe(0);
+  });
+});
+
+describe("buildPrSummaryComment", () => {
+  test("includes hidden marker in output", () => {
+    const body = buildPrSummaryComment(0, [], "acme/widget", "abc123");
+    expect(body).toContain("<!-- mergewise-summary -->");
+  });
+
+  test("shows file and finding counts", () => {
+    const findings: Finding[] = [
+      createFinding("f1", 0.9, "safety"),
+      createFinding("f2", 0.85, "perf"),
+    ];
+    const body = buildPrSummaryComment(3, findings, "acme/widget", "abc123");
+    expect(body).toContain("**3** files reviewed");
+    expect(body).toContain("**2** findings");
+  });
+
+  test("renders category breakdown table", () => {
+    const findings: Finding[] = [
+      createFinding("f1", 0.9, "safety"),
+      createFinding("f2", 0.85, "safety"),
+      createFinding("f3", 0.8, "perf"),
+    ];
+    const body = buildPrSummaryComment(5, findings, "acme/widget", "abc123");
+    expect(body).toContain("| safety | 2 |");
+    expect(body).toContain("| perf | 1 |");
+    expect(body).not.toContain("| clean |");
+  });
+
+  test("renders collapsible findings list with file links", () => {
+    const findings: Finding[] = [
+      { ...createFinding("f1", 0.9, "safety"), filePath: "src/app.ts", line: 10 },
+    ];
+    const body = buildPrSummaryComment(1, findings, "acme/widget", "abc123");
+    expect(body).toContain("<details>");
+    expect(body).toContain("[src/app.ts:10]");
+    expect(body).toContain("https://github.com/acme/widget/blob/abc123/src/app.ts#L10");
+  });
+
+  test("omits findings section when no findings exist", () => {
+    const body = buildPrSummaryComment(2, [], "acme/widget", "abc123");
+    expect(body).not.toContain("<details>");
+  });
+
+  test("uses singular for one file and one finding", () => {
+    const findings: Finding[] = [createFinding("f1", 0.9, "clean")];
+    const body = buildPrSummaryComment(1, findings, "acme/widget", "abc123");
+    expect(body).toContain("**1** file reviewed");
+    expect(body).toContain("**1** finding");
+    expect(body).not.toContain("files");
+    expect(body).not.toContain("findings");
+  });
+});
+
+describe("upsertPrSummaryComment", () => {
+  test("creates a new comment when no existing summary comment is found", async () => {
+    let postedBody = "";
+    const result = await upsertPrSummaryComment(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 50,
+        installationAccessToken: "ghs_token",
+        body: "<!-- mergewise-summary -->\n## Summary",
+        traceId: "trace-1",
+        githubFetchOptions: workerFetchOptions,
+      },
+      {
+        listPullRequestSummaryCommentsFn: async () => [],
+        postPullRequestSummaryCommentFn: async (opts) => {
+          postedBody = opts.body;
+          return { id: 100, node_id: "IC_100", html_url: "", body: opts.body };
+        },
+        updateIssueCommentFn: async () => {
+          throw new Error("should not be called");
+        },
+        logInfo: () => {},
+      },
+    );
+
+    expect(result.id).toBe(100);
+    expect(postedBody).toContain("<!-- mergewise-summary -->");
+  });
+
+  test("updates existing comment when marker is found", async () => {
+    let updatedCommentId: number | undefined;
+    let updatedBody = "";
+    const result = await upsertPrSummaryComment(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 50,
+        installationAccessToken: "ghs_token",
+        body: "<!-- mergewise-summary -->\n## Updated",
+        traceId: "trace-2",
+        githubFetchOptions: workerFetchOptions,
+      },
+      {
+        listPullRequestSummaryCommentsFn: async () => [
+          {
+            id: 200,
+            node_id: "IC_200",
+            html_url: "",
+            body: "<!-- mergewise-summary -->\n## Old summary",
+          },
+        ],
+        postPullRequestSummaryCommentFn: async () => {
+          throw new Error("should not be called");
+        },
+        updateIssueCommentFn: async (opts) => {
+          updatedCommentId = opts.commentId;
+          updatedBody = opts.body;
+          return { id: opts.commentId, node_id: "IC_200", html_url: "", body: opts.body };
+        },
+        logInfo: () => {},
+      },
+    );
+
+    expect(result.id).toBe(200);
+    expect(updatedCommentId).toBe(200);
+    expect(updatedBody).toContain("## Updated");
+  });
+
+  test("ignores comments without the marker", async () => {
+    let postedBody = "";
+    await upsertPrSummaryComment(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 50,
+        installationAccessToken: "ghs_token",
+        body: "<!-- mergewise-summary -->\n## Summary",
+        traceId: "trace-3",
+        githubFetchOptions: workerFetchOptions,
+      },
+      {
+        listPullRequestSummaryCommentsFn: async () => [
+          { id: 300, node_id: "IC_300", html_url: "", body: "Just a normal comment" },
+        ],
+        postPullRequestSummaryCommentFn: async (opts) => {
+          postedBody = opts.body;
+          return { id: 301, node_id: "IC_301", html_url: "", body: opts.body };
+        },
+        updateIssueCommentFn: async () => {
+          throw new Error("should not be called");
+        },
+        logInfo: () => {},
+      },
+    );
+
+    expect(postedBody).toContain("<!-- mergewise-summary -->");
   });
 });
