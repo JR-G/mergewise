@@ -905,8 +905,12 @@ export function buildWorkerCheckOutput(
     `- skipped_by_cap=${delivery.skippedByCap}`,
   ].join("\n");
 
+  const title = postedCount > 0
+    ? `Review completed — ${postedCount} comment${postedCount === 1 ? "" : "s"}`
+    : "Review completed";
+
   return {
-    title: `Mergewise Findings (${postedCount} posted of ${totalFindings})`,
+    title,
     summary:
       `Rules=${executionResult.summary.successfulRules}/${executionResult.summary.totalRules}` +
       ` findings=${totalFindings} posted=${postedCount}`,
@@ -1534,6 +1538,32 @@ export async function processAnalyzePullRequestJob(
     );
     postedCommentCount = postingResult.postedCount;
   }
+
+  if (dependencies.deliveryMode === "github") {
+    const postSummaryFn = dependencies.postPullRequestSummaryCommentFn ?? postPullRequestSummaryComment;
+    const fileCount = githubAnalysisContext.analysisContext.diffs.length;
+    const summaryBody =
+      `${fileCount} file${fileCount === 1 ? "" : "s"} reviewed, ` +
+      `${postedCommentCount} comment${postedCommentCount === 1 ? "" : "s"}`;
+    try {
+      await postSummaryFn({
+        owner: githubAnalysisContext.owner,
+        repository: githubAnalysisContext.repository,
+        pullRequestNumber: job.pr_number,
+        installationAccessToken: githubAnalysisContext.installationAccessToken,
+        body: summaryBody,
+        apiBaseUrl: githubFetchOptions.githubApiBaseUrl,
+        userAgent: githubFetchOptions.githubUserAgent,
+        requestTimeoutMs: githubFetchOptions.githubRequestTimeoutMs,
+        traceId,
+      });
+    } catch (error) {
+      warnLogger(
+        `[worker] failed to post summary comment trace=${traceId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   const checkOutput = buildWorkerCheckOutput(gatedExecutionResult, delivery, postedCommentCount, {
     repositoryFullName: job.repo_full_name,
     headSha: job.head_sha,
@@ -1976,95 +2006,13 @@ function buildStructuredFindingComment(
   groupedFindings: readonly Finding[],
   dedupeKey: string,
 ): string {
-  const antiPattern = buildAntiPatternText(finding);
-  const whyThisMatters = buildWhyThisMattersText(finding.category);
-  const refactorSteps = buildRefactorSteps(finding);
+  const recommendation = finding.recommendation.trim();
+  const leadLine = `**${finding.category}**: ${recommendation}`;
   const suggestedRewrite = buildSuggestedRewriteSection(finding);
   const additionalLocations = buildAdditionalLocationsSection(groupedFindings);
   const debugMetadata = buildDebugMetadataSection(finding, dedupeKey);
 
-  return [
-    "## Mergewise Refactor Suggestion",
-    "",
-    "**Anti-pattern**",
-    antiPattern,
-    "",
-    "**Why this matters**",
-    whyThisMatters,
-    "",
-    "**Refactor path**",
-    ...refactorSteps.map((refactorStep) => `- ${refactorStep}`),
-    "",
-    ...additionalLocations,
-    ...suggestedRewrite,
-    debugMetadata,
-  ].join("\n");
-}
-
-/**
- * Builds the anti-pattern summary text for a finding.
- *
- * @param finding - Finding to summarize.
- * @returns Human-readable anti-pattern sentence.
- */
-function buildAntiPatternText(finding: Finding): string {
-  const normalizedEvidence = finding.evidence.replace(/\s+/g, " ").trim();
-  const evidenceFence = createInlineCodeFence(normalizedEvidence);
-  const evidenceSummary = normalizedEvidence.length > 0
-    ? `${evidenceFence}${normalizedEvidence}${evidenceFence}`
-    : "the changed code";
-  return `${finding.ruleId} triggered at \`${finding.filePath}:${finding.line}\` due to ${evidenceSummary}.`;
-}
-
-/**
- * Builds a short explanation of why the finding matters.
- *
- * @param category - Finding category.
- * @returns Category-specific impact statement.
- */
-function buildWhyThisMattersText(category: FindingCategory): string {
-  switch (category) {
-    case "safety":
-      return "This pattern increases the chance of runtime failures and weakens confidence in behavior under edge cases.";
-    case "perf":
-      return "This pattern can add avoidable compute cost and make performance regressions harder to detect.";
-    case "idiomatic":
-      return "Idiomatic code follows established language and framework conventions. Deviating raises onboarding cost and makes the codebase inconsistent.";
-    case "clean":
-      return "Clean code is easier to read, test, and refactor. This pattern increases cognitive load and makes future changes riskier.";
-    default:
-      return assertUnreachableFindingCategory(category);
-  }
-}
-
-/**
- * Raises a runtime error for unreachable finding categories.
- *
- * @param category - Category value that should be impossible at compile time.
- * @returns This function never returns.
- */
-function assertUnreachableFindingCategory(category: never): never {
-  throw new Error(`Unhandled finding category: ${String(category)}`);
-}
-
-/**
- * Builds deterministic refactor steps from the finding recommendation.
- *
- * @param finding - Finding used to generate steps.
- * @returns Ordered refactor steps.
- */
-function buildRefactorSteps(finding: Finding): readonly string[] {
-  const normalizedRecommendation = finding.recommendation.trim();
-  const firstSentenceMatch = /^(.+?[.!?])(\s|$)/.exec(normalizedRecommendation);
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty-string fallthrough is intentional
-  const firstStep = firstSentenceMatch?.[1]?.trim() || normalizedRecommendation || "Apply the recommended refactor.";
-  const secondStep = "Update related tests to lock the new behavior and prevent regressions.";
-
-  if (firstStep === secondStep) {
-    return [firstStep];
-  }
-
-  return [firstStep, secondStep];
+  return [leadLine, "", ...suggestedRewrite, ...additionalLocations, debugMetadata].join("\n");
 }
 
 /**
@@ -2112,13 +2060,16 @@ function buildAdditionalLocationsSection(groupedFindings: readonly Finding[]): r
   if (groupedFindings.length <= 1) {
     return [];
   }
-
-  const additionalLocations = groupedFindings
+  const count = groupedFindings.length - 1;
+  const locations = groupedFindings
     .slice(1)
-    .map((finding) => `${finding.filePath}:${String(finding.line)}`);
+    .map((grouped) => `- \`${grouped.filePath}:${String(grouped.line)}\``);
   return [
-    "**Also affects**",
-    ...additionalLocations.map((location) => `- \`${location}\``),
+    `<details><summary>Also affects ${count} other location${count === 1 ? "" : "s"}</summary>`,
+    "",
+    ...locations,
+    "",
+    "</details>",
     "",
   ];
 }
@@ -2131,17 +2082,6 @@ function buildAdditionalLocationsSection(groupedFindings: readonly Finding[]): r
  */
 function canRenderGitHubSuggestedChange(lines: readonly string[]): boolean {
   return lines.every((line) => !line.includes("```"));
-}
-
-/**
- * Builds a safe inline code fence for Markdown from text that may contain backticks.
- *
- * @param text - Text to wrap.
- * @returns Fence string safe for inline Markdown code.
- */
-function createInlineCodeFence(text: string): string {
-  const longestBacktickRun = getLongestBacktickRun(text);
-  return "`".repeat(Math.max(1, longestBacktickRun + 1));
 }
 
 /**
