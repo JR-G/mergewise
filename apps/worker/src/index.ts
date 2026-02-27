@@ -1664,7 +1664,7 @@ export async function processAnalyzePullRequestJob(
   }
 
   if (isPrClosed) {
-    return buildSkippedJobSummary(job, traceId, "pr_not_open");
+    return buildSkippedJobSummary(job, traceId, "pr_not_open", dependencies.now);
   }
   let pendingCheckRunId: number | undefined;
   if (dependencies.deliveryMode === "github") {
@@ -2088,6 +2088,7 @@ export function buildSkippedJobSummary(
   job: AnalyzePullRequestJob,
   traceId: string,
   _reason: string,
+  now: () => Date = () => new Date(),
 ): AnalyzePullRequestJobSummary {
   const key = buildIdempotencyKey(job);
   return {
@@ -2103,7 +2104,7 @@ export function buildSkippedJobSummary(
     successfulRules: 0,
     failedRules: 0,
     failedRuleIds: [],
-    processedAt: new Date().toISOString(),
+    processedAt: now().toISOString(),
     postedCommentCount: 0,
   };
 }
