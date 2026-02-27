@@ -84,4 +84,8 @@ function processUserData(
   return result;
 }
 
-export { processUserData, type UserData };
+function formatUser(user: UserData): string {
+  return `${user.name} (${user.email}) - ${user.role}/${user.department} age=${user.age} active=${user.isActive}`;
+}
+
+export { processUserData, formatUser, type UserData };
