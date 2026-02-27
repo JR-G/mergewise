@@ -866,11 +866,91 @@ h1 {
   }
 }
 
+/* --- Typewriter --- */
+
+[data-typewriter] {
+  visibility: hidden;
+}
+
+[data-typewriter]::after {
+  content: "\2588";
+  animation: blink 0.6s step-end infinite;
+  margin-left: 0.05em;
+}
+
+[data-typewriter].typewriter-done::after {
+  animation: blink 0.6s step-end 3, fade-out 0s 1.8s forwards;
+}
+
+@keyframes fade-out {
+  to { opacity: 0; }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* --- Scroll reveal --- */
+
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+[data-reveal].revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.steps-grid [data-reveal]:nth-child(1) { transition-delay: 0s; }
+.steps-grid [data-reveal]:nth-child(3) { transition-delay: 0.1s; }
+.steps-grid [data-reveal]:nth-child(5) { transition-delay: 0.2s; }
+
+.feature-grid [data-reveal]:nth-child(1) { transition-delay: 0s; }
+.feature-grid [data-reveal]:nth-child(2) { transition-delay: 0.08s; }
+.feature-grid [data-reveal]:nth-child(3) { transition-delay: 0.16s; }
+.feature-grid [data-reveal]:nth-child(4) { transition-delay: 0.24s; }
+.feature-grid [data-reveal]:nth-child(5) { transition-delay: 0.32s; }
+.feature-grid [data-reveal]:nth-child(6) { transition-delay: 0.4s; }
+
+/* --- Nav scroll state --- */
+
+.nav-scrolled {
+  box-shadow: 0 4px 0 rgba(22, 19, 16, 0.3);
+}
+
+/* --- FAQ smooth expand --- */
+
+.faq-answer {
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hero-copy,
   .hero-visual {
     opacity: 1;
     animation: none;
+  }
+
+  [data-reveal] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .faq-answer {
+    transition: none;
+  }
+
+  [data-typewriter] {
+    visibility: visible;
+  }
+
+  [data-typewriter]::after {
+    display: none;
   }
 }
 

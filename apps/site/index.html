@@ -16,6 +16,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./styles.css" />
+    <script src="./main.js" defer></script>
   </head>
   <body>
     <header class="nav">
@@ -47,7 +48,7 @@
             <p class="kicker">Code review for teams that care</p>
             <h1>
               Ship code worth
-              <span class="accent-red">maintaining.</span>
+              <span class="accent-red" data-typewriter>maintaining.</span>
             </h1>
             <p class="hero-sub">
               Mergewise reviews every pull request for design quality —
@@ -81,9 +82,9 @@
 
       <section class="how-it-works" id="how-it-works">
         <div class="container">
-          <h2 class="section-heading">How It Works</h2>
+          <h2 class="section-heading" data-reveal>How It Works</h2>
           <div class="steps-grid">
-            <div class="step">
+            <div class="step" data-reveal>
               <div class="step-number step-number-red">01</div>
               <h3 class="step-title">Install the App</h3>
               <p class="step-desc">
@@ -92,7 +93,7 @@
               </p>
             </div>
             <div class="step-divider" aria-hidden="true"></div>
-            <div class="step">
+            <div class="step" data-reveal>
               <div class="step-number step-number-blue">02</div>
               <h3 class="step-title">Push a PR</h3>
               <p class="step-desc">
@@ -101,7 +102,7 @@
               </p>
             </div>
             <div class="step-divider" aria-hidden="true"></div>
-            <div class="step">
+            <div class="step" data-reveal>
               <div class="step-number step-number-amber">03</div>
               <h3 class="step-title">Get Suggestions</h3>
               <p class="step-desc">
@@ -116,9 +117,9 @@
 
       <section class="features" id="features">
         <div class="container">
-          <h2 class="section-heading section-heading-light">Features</h2>
+          <h2 class="section-heading section-heading-light" data-reveal>Features</h2>
           <div class="feature-grid">
-            <div class="feature-card">
+            <div class="feature-card" data-reveal>
               <div class="feature-icon">
                 <span class="shape-square shape-red"></span>
               </div>
@@ -129,7 +130,7 @@
                 guesswork.
               </p>
             </div>
-            <div class="feature-card">
+            <div class="feature-card" data-reveal>
               <div class="feature-icon">
                 <span class="shape-triangle shape-blue"></span>
               </div>
@@ -139,7 +140,7 @@
                 analysis. The model sees code structure, not just text.
               </p>
             </div>
-            <div class="feature-card">
+            <div class="feature-card" data-reveal>
               <div class="feature-icon">
                 <span class="shape-circle shape-amber"></span>
               </div>
@@ -149,7 +150,7 @@
                 never reaches your PR. You only see what matters.
               </p>
             </div>
-            <div class="feature-card">
+            <div class="feature-card" data-reveal>
               <div class="feature-icon">
                 <span class="shape-bar shape-red"></span>
               </div>
@@ -159,7 +160,7 @@
                 and code smells. Each rule is tested against known fixtures.
               </p>
             </div>
-            <div class="feature-card">
+            <div class="feature-card" data-reveal>
               <div class="feature-icon">
                 <span class="shape-diamond shape-blue"></span>
               </div>
@@ -169,7 +170,7 @@
                 to apply, a principle to follow, or an idiom to adopt.
               </p>
             </div>
-            <div class="feature-card">
+            <div class="feature-card" data-reveal>
               <div class="feature-icon">
                 <span class="shape-half-circle shape-amber"></span>
               </div>
@@ -186,13 +187,13 @@
 
       <section class="demo" id="demo">
         <div class="container demo-grid">
-          <div class="demo-screenshot">
+          <div class="demo-screenshot" data-reveal>
             <img
               src="./assets/demo-screenshot.png"
               alt="Mergewise reviewing a pull request — flagging explicit any usage with a suggested fix to use unknown instead"
             />
           </div>
-          <div class="demo-copy">
+          <div class="demo-copy" data-reveal>
             <h2 class="section-heading">See It in Action</h2>
             <p class="demo-desc">
               Mergewise posts inline suggestions directly on the lines that
@@ -219,7 +220,7 @@
 
       <section class="comparison">
         <div class="container">
-          <h2 class="section-heading section-heading-light">
+          <h2 class="section-heading section-heading-light" data-reveal>
             They Catch Bugs. We Improve Design.
           </h2>
           <p class="comparison-intro">
@@ -227,7 +228,7 @@
             correctness problems. Mergewise does something different.
           </p>
           <div class="comparison-grid">
-            <div class="comparison-col comparison-them">
+            <div class="comparison-col comparison-them" data-reveal>
               <h3>What Others Do Well</h3>
               <ul>
                 <li>Bug detection and correctness checks</li>
@@ -237,7 +238,7 @@
               </ul>
             </div>
             <div class="comparison-divider" aria-hidden="true"></div>
-            <div class="comparison-col comparison-us">
+            <div class="comparison-col comparison-us" data-reveal>
               <h3>What Mergewise Adds</h3>
               <ul>
                 <li>Design quality and refactoring suggestions</li>
@@ -253,7 +254,7 @@
 
       <section class="faq" id="faq">
         <div class="container faq-container">
-          <h2 class="section-heading">FAQ</h2>
+          <h2 class="section-heading" data-reveal>FAQ</h2>
           <div class="faq-list">
             <details class="faq-item">
               <summary>What languages does Mergewise support?</summary>
