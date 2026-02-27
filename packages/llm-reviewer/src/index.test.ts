@@ -10,6 +10,7 @@ import {
   ANTI_PATTERNS,
   selectFilesForReview,
   extractAddedLineNumbers,
+  extractAddedLineMap,
   parseLlmResponse,
   deduplicateByProximity,
   buildSystemPrompt,
@@ -168,6 +169,38 @@ describe("extractAddedLineNumbers", () => {
   });
 });
 
+describe("extractAddedLineMap", () => {
+  test("returns content and hunk headers for added lines", () => {
+    const diff = makeDiff("src/file.ts", [
+      makeHunk("@@ -1,3 +1,5 @@", [
+        " existing",
+        "+added1",
+        "+added2",
+        " existing2",
+        "+added3",
+      ]),
+    ]);
+
+    const result = extractAddedLineMap(diff);
+    expect(result.get(2)).toEqual({ content: "added1", hunkHeader: "@@ -1,3 +1,5 @@" });
+    expect(result.get(3)).toEqual({ content: "added2", hunkHeader: "@@ -1,3 +1,5 @@" });
+    expect(result.get(5)).toEqual({ content: "added3", hunkHeader: "@@ -1,3 +1,5 @@" });
+    expect(result.has(1)).toBe(false);
+    expect(result.has(4)).toBe(false);
+  });
+
+  test("handles multiple hunks with different headers", () => {
+    const diff = makeDiff("src/file.ts", [
+      makeHunk("@@ -1,2 +1,3 @@", [" line1", "+addedA", " line3"]),
+      makeHunk("@@ -10,2 +11,3 @@", [" line10", "+addedB", " line12"]),
+    ]);
+
+    const result = extractAddedLineMap(diff);
+    expect(result.get(2)?.hunkHeader).toBe("@@ -1,2 +1,3 @@");
+    expect(result.get(12)?.hunkHeader).toBe("@@ -10,2 +11,3 @@");
+  });
+});
+
 describe("parseLlmResponse", () => {
   const diff = makeDiff("src/file.ts", [
     makeHunk("@@ -1,3 +1,5 @@", [
@@ -198,7 +231,7 @@ describe("parseLlmResponse", () => {
     expect(result[0]!.category).toBe("idiomatic");
     expect(result[0]!.confidence).toBe(0.85);
     expect(result[0]!.ruleId).toBe("llm/reviewer");
-    expect(result[0]!.patchSuggestionPolicy).toBe("manual-only");
+    expect(result[0]!.patchSuggestionPolicy).toBeUndefined();
     expect(result[0]!.status).toBe("posted");
   });
 
@@ -286,6 +319,68 @@ describe("parseLlmResponse", () => {
     const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
     expect(result[0]!.findingId).toBe("llm/reviewer:acme/widget:42:src/file.ts:3:safety");
   });
+
+  test("creates patchPreview when suggestedRewrite is present", () => {
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 2,
+          category: "clean",
+          confidence: 0.9,
+          evidence: "added line 2",
+          recommendation: "Rename variable.",
+          suggestedRewrite: "const userData = fetchUser()",
+        },
+      ],
+    });
+
+    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
+    expect(result[0]!.patchPreview).toEqual({
+      removedLines: ["added line 2"],
+      addedLines: ["const userData = fetchUser()"],
+      hunkHeader: "@@ -1,3 +1,5 @@",
+    });
+  });
+
+  test("omits patchPreview when suggestedRewrite is absent", () => {
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 2,
+          category: "clean",
+          confidence: 0.9,
+          evidence: "added line 2",
+          recommendation: "Rename variable.",
+        },
+      ],
+    });
+
+    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
+    expect(result[0]!.patchPreview).toBeUndefined();
+  });
+
+  test("splits multi-line suggestedRewrite into addedLines", () => {
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 2,
+          category: "clean",
+          confidence: 0.9,
+          evidence: "added line 2",
+          recommendation: "Extract function.",
+          suggestedRewrite: "function fetchUser() {\n  return api.get('/user')\n}",
+        },
+      ],
+    });
+
+    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
+    expect(result[0]!.patchPreview?.addedLines).toEqual([
+      "function fetchUser() {",
+      "  return api.get('/user')",
+      "}",
+    ]);
+    expect(result[0]!.patchPreview?.removedLines).toEqual(["added line 2"]);
+  });
 });
 
 function makeFinding(overrides: Partial<Finding> & Pick<Finding, "line" | "category" | "confidence">): Finding {
@@ -299,7 +394,6 @@ function makeFinding(overrides: Partial<Finding> & Pick<Finding, "line" | "categ
     filePath: "src/file.ts",
     evidence: "some code",
     recommendation: "fix it",
-    patchSuggestionPolicy: "manual-only",
     status: "posted",
     ...overrides,
   };
@@ -422,6 +516,18 @@ describe("buildSystemPrompt", () => {
       const escaped = pattern.detectionHint.replaceAll("|", "\\|");
       expect(prompt).toContain(escaped);
     }
+  });
+
+  test("includes suggestedRewrite in output format", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("suggestedRewrite");
+    expect(prompt).toContain("replacement code for the line");
+  });
+
+  test("includes backtick instruction in recommendation bullet", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("Wrap code identifiers");
+    expect(prompt).toContain("in backticks");
   });
 
   test("default catalogue does not include badExample/goodExample in prompt", () => {
@@ -782,7 +888,7 @@ describe("reviewFile (via fake HTTP server)", () => {
         expect(findings[0]!.confidence).toBe(0.85);
         expect(findings[0]!.ruleId).toBe("llm/reviewer");
         expect(findings[0]!.filePath).toBe("src/app.ts");
-        expect(findings[0]!.patchSuggestionPolicy).toBe("manual-only");
+        expect(findings[0]!.patchSuggestionPolicy).toBeUndefined();
         expect(findings[0]!.status).toBe("posted");
       },
     );

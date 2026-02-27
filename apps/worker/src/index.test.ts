@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { GitHubApiError } from "@mergewise/github-client";
+import type { CreatePullRequestReviewOptions } from "@mergewise/github-client";
 import type { Finding, FindingCategory, Rule } from "@mergewise/shared-types";
 
 import {
@@ -24,6 +25,7 @@ import {
   resolveJobTraceId,
   runPollCycleWithInFlightGuard,
   trackProcessedKey,
+  wrapCodeIdentifiers,
   type WorkerPollingTimerHandle,
   type WorkerGitHubFetchOptions,
 } from "./index";
@@ -998,11 +1000,12 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.checkOutput?.title).toBe("Review completed");
   });
 
-  test("creates a check run on GitHub when deliveryMode is github", async () => {
+  test("creates in-progress check run then updates to completed when deliveryMode is github", async () => {
     process.env.GITHUB_APP_ID = "123";
     process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
 
-    let capturedCheckRun: Record<string, unknown> | null = null;
+    let capturedInProgressCreate: Record<string, unknown> | null = null;
+    let capturedCompletedUpdate: Record<string, unknown> | null = null;
     await processAnalyzePullRequestJob(
       {
         job_id: "job-check",
@@ -1033,26 +1036,40 @@ describe("processAnalyzePullRequestJob", () => {
           },
           failedRuleIds: [],
         }),
+        createPullRequestReviewFn: async () => ({
+          id: 1, html_url: "https://github.com/x", body: null, state: "commented",
+        }),
         createCheckRunFn: async (options) => {
-          capturedCheckRun = {
+          capturedInProgressCreate = {
             owner: options.owner,
             repository: options.repository,
             headSha: options.headSha,
             name: options.name,
-            conclusion: options.conclusion,
-            title: options.output.title,
+            status: options.status,
           };
-          return { id: 1, html_url: "https://github.com/x", status: "completed", conclusion: "success" };
+          return { id: 42, html_url: "https://github.com/x", status: "in_progress", conclusion: null };
+        },
+        updateCheckRunFn: async (options) => {
+          capturedCompletedUpdate = {
+            owner: options.owner,
+            repository: options.repository,
+            checkRunId: options.checkRunId,
+            status: options.status,
+            conclusion: options.conclusion,
+          };
+          return { id: 42, html_url: "https://github.com/x", status: "completed", conclusion: "success" };
         },
       },
     );
 
-    expect(capturedCheckRun).not.toBeNull();
-    expect(capturedCheckRun!.owner).toBe("acme");
-    expect(capturedCheckRun!.repository).toBe("widget");
-    expect(capturedCheckRun!.headSha).toBe("check123");
-    expect(capturedCheckRun!.name).toBe("Mergewise");
-    expect(capturedCheckRun!.conclusion).toBe("success");
+    expect(capturedInProgressCreate).not.toBeNull();
+    expect(capturedInProgressCreate!.owner).toBe("acme");
+    expect(capturedInProgressCreate!.name).toBe("Mergewise");
+    expect(capturedInProgressCreate!.status).toBe("in_progress");
+    expect(capturedCompletedUpdate).not.toBeNull();
+    expect(capturedCompletedUpdate!.checkRunId).toBe(42);
+    expect(capturedCompletedUpdate!.status).toBe("completed");
+    expect(capturedCompletedUpdate!.conclusion).toBe("success");
   });
 
   test("skips check run creation when deliveryMode is not github", async () => {
@@ -1134,6 +1151,9 @@ describe("processAnalyzePullRequestJob", () => {
           },
           failedRuleIds: [],
         }),
+        createPullRequestReviewFn: async () => ({
+          id: 1, html_url: "https://github.com/x", body: null, state: "commented",
+        }),
         createCheckRunFn: async () => {
           throw new Error("Checks API permission denied");
         },
@@ -1142,14 +1162,15 @@ describe("processAnalyzePullRequestJob", () => {
     );
 
     expect(summary.jobId).toBe("job-check-fail");
+    expect(errors.some((msg) => msg.includes("in-progress check run"))).toBe(true);
     expect(errors.some((msg) => msg.includes("check_run_failed"))).toBe(true);
   });
 
-  test("posts PR-level summary comment after inline comments", async () => {
+  test("posts summary as review body via batch review API", async () => {
     process.env.GITHUB_APP_ID = "123";
     process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
 
-    const capturedSummaryBodies: string[] = [];
+    const capturedReviewOptions: CreatePullRequestReviewOptions[] = [];
     await processAnalyzePullRequestJob(
       {
         job_id: "job-summary",
@@ -1197,11 +1218,17 @@ describe("processAnalyzePullRequestJob", () => {
           },
           failedRuleIds: [],
         }),
-        postPullRequestSummaryCommentFn: async (options) => {
-          capturedSummaryBodies.push(options.body);
-          return { id: 1, html_url: "https://github.com/x", body: options.body };
+        createPullRequestReviewFn: async (options) => {
+          capturedReviewOptions.push(options);
+          return { id: 1, html_url: "https://github.com/x", body: options.body ?? null, state: "commented" };
         },
         createCheckRunFn: async () => ({
+          id: 1,
+          html_url: "https://github.com/x",
+          status: "in_progress" as const,
+          conclusion: null,
+        }),
+        updateCheckRunFn: async () => ({
           id: 1,
           html_url: "https://github.com/x",
           status: "completed" as const,
@@ -1210,7 +1237,60 @@ describe("processAnalyzePullRequestJob", () => {
       },
     );
 
-    expect(capturedSummaryBodies).toEqual(["2 files reviewed, 0 comments"]);
+    expect(capturedReviewOptions).toHaveLength(1);
+    expect(capturedReviewOptions[0]!.body).toBe("2 files reviewed, 0 comments");
+    expect(capturedReviewOptions[0]!.event).toBe("COMMENT");
+    expect(capturedReviewOptions[0]!.comments).toHaveLength(0);
+  });
+});
+
+describe("wrapCodeIdentifiers", () => {
+  test("wraps camelCase identifiers in backticks", () => {
+    expect(wrapCodeIdentifiers("Refactor processUserRequest to adhere to SRP")).toBe(
+      "Refactor `processUserRequest` to adhere to SRP",
+    );
+  });
+
+  test("wraps PascalCase identifiers in backticks", () => {
+    expect(wrapCodeIdentifiers("Extract UserService into a separate module")).toBe(
+      "Extract `UserService` into a separate module",
+    );
+  });
+
+  test("wraps dotted member access in backticks", () => {
+    expect(wrapCodeIdentifiers("Call this.handleRequest instead")).toBe(
+      "Call `this.handleRequest` instead",
+    );
+  });
+
+  test("preserves identifiers already in backticks", () => {
+    expect(wrapCodeIdentifiers("Use `processUserRequest` here")).toBe(
+      "Use `processUserRequest` here",
+    );
+  });
+
+  test("leaves plain words unchanged", () => {
+    expect(wrapCodeIdentifiers("Extract the logic into separate functions")).toBe(
+      "Extract the logic into separate functions",
+    );
+  });
+
+  test("leaves acronyms and uppercase words unchanged", () => {
+    expect(wrapCodeIdentifiers("Follow SRP and DRY principles")).toBe(
+      "Follow SRP and DRY principles",
+    );
+  });
+
+  test("wraps single-quoted camelCase identifiers in backticks", () => {
+    expect(wrapCodeIdentifiers("Use the 'suggestedRewrite' field")).toBe(
+      "Use the `suggestedRewrite` field",
+    );
+  });
+
+  test("leaves single-quoted plain words unchanged", () => {
+    expect(wrapCodeIdentifiers("This is a 'simple' example")).toBe(
+      "This is a 'simple' example",
+    );
   });
 });
 
@@ -1706,7 +1786,7 @@ describe("finding delivery", () => {
     expect(delivery.skippedByConfidence).toBe(2);
   });
 
-  test("postPreparedFindingComments only posts prepared bounded payload", async () => {
+  test("postPreparedFindingComments posts bounded payload via batch review", async () => {
     const delivery = prepareFindingDelivery(
       [
         {
@@ -1736,7 +1816,7 @@ describe("finding delivery", () => {
       },
     );
 
-    const postedBodies: string[] = [];
+    const capturedReviewOptions: CreatePullRequestReviewOptions[] = [];
     const postingResult = await postPreparedFindingComments(
       {
         owner: "acme",
@@ -1747,19 +1827,14 @@ describe("finding delivery", () => {
         traceId: "trace-post-1",
         githubFetchOptions: workerFetchOptions,
         comments: delivery.comments,
+        summaryBody: "1 file reviewed, 1 comment",
       },
       {
         listPullRequestSummaryCommentsFn: async () => [],
         listPullRequestInlineCommentsFn: async () => [],
-        postPullRequestInlineCommentFn: async (options) => {
-          postedBodies.push(options.body);
-          return {
-            id: 1,
-            html_url: "https://github.com/acme/widget/pull/3#discussion_r1",
-            body: options.body,
-            path: options.path,
-            line: options.line,
-          };
+        createPullRequestReviewFn: async (options) => {
+          capturedReviewOptions.push(options);
+          return { id: 1, html_url: "https://github.com/x", body: options.body ?? null, state: "commented" };
         },
       },
     );
@@ -1767,15 +1842,17 @@ describe("finding delivery", () => {
     expect(postingResult.postedCount).toBe(1);
     expect(postingResult.successes).toHaveLength(1);
     expect(postingResult.failures).toHaveLength(0);
-    expect(postedBodies).toHaveLength(1);
-    expect(postedBodies[0]!).toContain("**safety**: Use a typed value.");
-    expect(postedBodies[0]!).toContain("dedupeKey=acme/widget#3:one");
-    expect(postedBodies[0]!).not.toContain("Structured Payload");
+    expect(capturedReviewOptions).toHaveLength(1);
+    expect(capturedReviewOptions[0]!.body).toBe("1 file reviewed, 1 comment");
+    expect(capturedReviewOptions[0]!.event).toBe("COMMENT");
+    expect(capturedReviewOptions[0]!.comments).toHaveLength(1);
+    expect(capturedReviewOptions[0]!.comments[0]!.body).toContain("**safety**: Use a typed value.");
+    expect(capturedReviewOptions[0]!.comments[0]!.body).toContain("dedupeKey=acme/widget#3:one");
     expect(postingResult.successes[0]!.requestOptions.installationAccessToken).toBe("[REDACTED]");
     expect(postingResult.successes[0]!.requestOptions.traceId).toBe("trace-post-1");
   });
 
-  test("postPreparedFindingComments reports partial failures without throwing", async () => {
+  test("postPreparedFindingComments reports all as failures when batch review fails", async () => {
     const delivery = prepareFindingDelivery(
       [
         {
@@ -1806,63 +1883,36 @@ describe("finding delivery", () => {
     );
 
     const loggedErrors: string[] = [];
-    const originalConsoleError = console.error;
-    console.error = (value?: unknown): void => {
-      loggedErrors.push(String(value));
-    };
-
-    try {
-      const postingResult = await postPreparedFindingComments(
-        {
-          owner: "acme",
-          repository: "widget",
-          pullRequestNumber: 3,
-          pullRequestHeadSha: "abc123",
-          installationAccessToken: "token",
-          traceId: "trace-post-2",
-          githubFetchOptions: workerFetchOptions,
-          comments: delivery.comments,
+    const postingResult = await postPreparedFindingComments(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 3,
+        pullRequestHeadSha: "abc123",
+        installationAccessToken: "token",
+        traceId: "trace-post-2",
+        githubFetchOptions: workerFetchOptions,
+        comments: delivery.comments,
+        summaryBody: "summary",
+      },
+      {
+        listPullRequestSummaryCommentsFn: async () => [],
+        listPullRequestInlineCommentsFn: async () => [],
+        createPullRequestReviewFn: async () => {
+          throw new Error("batch review failed");
         },
-        {
-          listPullRequestSummaryCommentsFn: async () => [],
-          listPullRequestInlineCommentsFn: async () => [],
-          postPullRequestInlineCommentFn: async (options) => {
-            if (options.body.includes("dedupeKey=acme/widget#3:two")) {
-              throw new Error("secondary post failed");
-            }
+        logError: (msg) => loggedErrors.push(msg),
+      },
+    );
 
-            return {
-              id: 1,
-              html_url: "https://github.com/acme/widget/pull/3#discussion_r1",
-              body: options.body,
-              path: options.path,
-              line: options.line,
-            };
-          },
-          postPullRequestSummaryCommentFn: async () => {
-            throw new Error("secondary post failed");
-          },
-        },
-      );
-
-      expect(postingResult.postedCount).toBe(1);
-      expect(postingResult.successes).toHaveLength(1);
-      expect(postingResult.failures).toHaveLength(1);
-      expect(postingResult.successes[0]!.index).toBe(0);
-      expect(postingResult.failures[0]!.index).toBe(1);
-      expect(postingResult.failures[0]!.errorMessage).toBe("secondary post failed");
-      expect(postingResult.failures[0]!.preparedComment.dedupeKey).toBe("acme/widget#3:two");
-      expect(postingResult.failures[0]!.requestOptions.installationAccessToken).toBe("[REDACTED]");
-      expect(postingResult.failures[0]!.requestOptions.traceId).toBe("trace-post-2");
-      expect(loggedErrors.length).toBeGreaterThanOrEqual(1);
-      expect(loggedErrors.some((entry) => entry.includes("acme/widget#3:two"))).toBe(true);
-      expect(loggedErrors.some((entry) => entry.includes("[REDACTED]"))).toBe(true);
-      expect(
-        loggedErrors.some((entry) => entry.includes("\"installationAccessToken\":\"token\"")),
-      ).toBe(false);
-    } finally {
-      console.error = originalConsoleError;
-    }
+    expect(postingResult.postedCount).toBe(0);
+    expect(postingResult.successes).toHaveLength(0);
+    expect(postingResult.failures).toHaveLength(2);
+    expect(postingResult.failures[0]!.errorMessage).toBe("batch review failed");
+    expect(postingResult.failures[0]!.requestOptions.installationAccessToken).toBe("[REDACTED]");
+    expect(postingResult.failures[0]!.requestOptions.traceId).toBe("trace-post-2");
+    expect(loggedErrors.length).toBeGreaterThanOrEqual(1);
+    expect(loggedErrors.some((entry) => entry.includes("batch review post failed"))).toBe(true);
   });
 
   test("postPreparedFindingComments skips already-posted dedupe keys on the pull request", async () => {
@@ -1895,7 +1945,7 @@ describe("finding delivery", () => {
       },
     );
 
-    const postedDedupeKeys: string[] = [];
+    const capturedReviewComments: { body: string }[] = [];
     const postingResult = await postPreparedFindingComments(
       {
         owner: "acme",
@@ -1906,6 +1956,7 @@ describe("finding delivery", () => {
         traceId: "trace-post-skip-existing",
         githubFetchOptions: workerFetchOptions,
         comments: delivery.comments,
+        summaryBody: "summary",
       },
       {
         listPullRequestSummaryCommentsFn: async () => [
@@ -1918,16 +1969,11 @@ describe("finding delivery", () => {
           },
         ],
         listPullRequestInlineCommentsFn: async () => [],
-        postPullRequestInlineCommentFn: async (options) => {
-          const dedupeKeyMatch = /dedupeKey=([^\s>]+)/.exec(options.body);
-          postedDedupeKeys.push(dedupeKeyMatch?.[1] ?? "unknown");
-          return {
-            id: 11,
-            html_url: "https://github.com/acme/widget/pull/3#discussion_r11",
-            body: options.body,
-            path: options.path,
-            line: options.line,
-          };
+        createPullRequestReviewFn: async (options) => {
+          for (const comment of options.comments) {
+            capturedReviewComments.push({ body: comment.body });
+          }
+          return { id: 1, html_url: "https://github.com/x", body: options.body ?? null, state: "commented" };
         },
       },
     );
@@ -1937,7 +1983,8 @@ describe("finding delivery", () => {
     expect(postingResult.failures).toHaveLength(0);
     expect(postingResult.skipped).toHaveLength(1);
     expect(postingResult.skipped[0]!.preparedComment.dedupeKey).toBe("acme/widget#3:one");
-    expect(postedDedupeKeys).toEqual(["acme/widget#3:two"]);
+    expect(capturedReviewComments).toHaveLength(1);
+    expect(capturedReviewComments[0]!.body).toContain("dedupeKey=acme/widget#3:two");
   });
 
   test("comment body starts with category and recommendation", async () => {
@@ -1960,7 +2007,7 @@ describe("finding delivery", () => {
       },
     );
 
-    const postedBodies: string[] = [];
+    const capturedCommentBodies: string[] = [];
     await postPreparedFindingComments(
       {
         owner: "acme",
@@ -1971,25 +2018,22 @@ describe("finding delivery", () => {
         traceId: "trace-inline-fence",
         githubFetchOptions: workerFetchOptions,
         comments: delivery.comments,
+        summaryBody: "summary",
       },
       {
         listPullRequestSummaryCommentsFn: async () => [],
         listPullRequestInlineCommentsFn: async () => [],
-        postPullRequestInlineCommentFn: async (options) => {
-          postedBodies.push(options.body);
-          return {
-            id: 1,
-            html_url: "https://github.com/acme/widget/pull/3#discussion_r1",
-            body: options.body,
-            path: options.path,
-            line: options.line,
-          };
+        createPullRequestReviewFn: async (options) => {
+          for (const comment of options.comments) {
+            capturedCommentBodies.push(comment.body);
+          }
+          return { id: 1, html_url: "https://github.com/x", body: options.body ?? null, state: "commented" };
         },
       },
     );
 
-    expect(postedBodies).toHaveLength(1);
-    expect(postedBodies[0]!).toMatch(/^\*\*safety\*\*: Use a safer pattern\./);
+    expect(capturedCommentBodies).toHaveLength(1);
+    expect(capturedCommentBodies[0]!).toMatch(/^\*\*safety\*\*: Use a safer pattern\./);
   });
 
   test("builds suggested rewrite with dynamic markdown fences", async () => {
@@ -2017,7 +2061,7 @@ describe("finding delivery", () => {
       },
     );
 
-    const postedBodies: string[] = [];
+    const capturedCommentBodies: string[] = [];
     await postPreparedFindingComments(
       {
         owner: "acme",
@@ -2028,26 +2072,23 @@ describe("finding delivery", () => {
         traceId: "trace-block-fence",
         githubFetchOptions: workerFetchOptions,
         comments: delivery.comments,
+        summaryBody: "summary",
       },
       {
         listPullRequestSummaryCommentsFn: async () => [],
         listPullRequestInlineCommentsFn: async () => [],
-        postPullRequestInlineCommentFn: async (options) => {
-          postedBodies.push(options.body);
-          return {
-            id: 2,
-            html_url: "https://github.com/acme/widget/pull/3#discussion_r2",
-            body: options.body,
-            path: options.path,
-            line: options.line,
-          };
+        createPullRequestReviewFn: async (options) => {
+          for (const comment of options.comments) {
+            capturedCommentBodies.push(comment.body);
+          }
+          return { id: 1, html_url: "https://github.com/x", body: options.body ?? null, state: "commented" };
         },
       },
     );
 
-    expect(postedBodies).toHaveLength(1);
-    expect(postedBodies[0]!).toContain("````typescript");
-    expect(postedBodies[0]!).toContain("\n````\n");
+    expect(capturedCommentBodies).toHaveLength(1);
+    expect(capturedCommentBodies[0]!).toContain("````typescript");
+    expect(capturedCommentBodies[0]!).toContain("\n````\n");
   });
 
   test("builds GitHub suggested-change block when patch preview is suggestion-safe", async () => {
@@ -2075,7 +2116,7 @@ describe("finding delivery", () => {
       },
     );
 
-    const postedBodies: string[] = [];
+    const capturedCommentBodies: string[] = [];
     await postPreparedFindingComments(
       {
         owner: "acme",
@@ -2086,26 +2127,23 @@ describe("finding delivery", () => {
         traceId: "trace-suggestion-block",
         githubFetchOptions: workerFetchOptions,
         comments: delivery.comments,
+        summaryBody: "summary",
       },
       {
         listPullRequestSummaryCommentsFn: async () => [],
         listPullRequestInlineCommentsFn: async () => [],
-        postPullRequestInlineCommentFn: async (options) => {
-          postedBodies.push(options.body);
-          return {
-            id: 3,
-            html_url: "https://github.com/acme/widget/pull/3#discussion_r3",
-            body: options.body,
-            path: options.path,
-            line: options.line,
-          };
+        createPullRequestReviewFn: async (options) => {
+          for (const comment of options.comments) {
+            capturedCommentBodies.push(comment.body);
+          }
+          return { id: 1, html_url: "https://github.com/x", body: options.body ?? null, state: "commented" };
         },
       },
     );
 
-    expect(postedBodies).toHaveLength(1);
-    expect(postedBodies[0]!).toContain("**Suggested change**");
-    expect(postedBodies[0]!).toContain("```suggestion");
+    expect(capturedCommentBodies).toHaveLength(1);
+    expect(capturedCommentBodies[0]!).toContain("**Suggested change**");
+    expect(capturedCommentBodies[0]!).toContain("```suggestion");
   });
 
   test("buildWorkerCheckOutput formats reviewer summary grouped by category and rule", () => {
