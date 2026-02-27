@@ -118,14 +118,25 @@ export function extractAddedLineMap(
   return added;
 }
 
-function isCommentOrDocLine(line: string): boolean {
+function isNonCodeLine(line: string): boolean {
   const trimmed = line.trimStart();
-  return (
+  if (
     trimmed.startsWith("//") ||
     trimmed.startsWith("/*") ||
     trimmed.startsWith("*") ||
     trimmed.startsWith("/**")
-  );
+  ) {
+    return true;
+  }
+  const stripped = trimmed.replace(/,?\s*$/, "");
+  if (
+    (stripped.startsWith('"') && stripped.endsWith('"')) ||
+    (stripped.startsWith("'") && stripped.endsWith("'")) ||
+    (stripped.startsWith("`") && stripped.endsWith("`"))
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function buildLlmPatchPreview(
@@ -133,7 +144,7 @@ function buildLlmPatchPreview(
   lineInfo: AddedLineInfo | undefined,
 ): PatchPreview | undefined {
   if (!suggestedRewrite || !lineInfo) return undefined;
-  if (isCommentOrDocLine(lineInfo.content)) return undefined;
+  if (isNonCodeLine(lineInfo.content)) return undefined;
 
   return {
     removedLines: [lineInfo.content],

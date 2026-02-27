@@ -21,10 +21,10 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("Never suggest React APIs");
   });
 
-  test("instructs LLM to never flag comment or documentation lines", () => {
+  test("instructs LLM to never flag non-code content", () => {
     const prompt = buildSystemPrompt();
-    expect(prompt).toContain("Comment and documentation lines");
-    expect(prompt).toContain("Never flag TSDoc");
+    expect(prompt).toContain("Non-code content");
+    expect(prompt).toContain("string literals");
     expect(prompt).toContain("not a code issue");
   });
 });
