@@ -1144,6 +1144,74 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.jobId).toBe("job-check-fail");
     expect(errors.some((msg) => msg.includes("check_run_failed"))).toBe(true);
   });
+
+  test("posts PR-level summary comment after inline comments", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    const capturedSummaryBodies: string[] = [];
+    await processAnalyzePullRequestJob(
+      {
+        job_id: "job-summary",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 70,
+        head_sha: "sum123",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        deliveryMode: "github",
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "inst-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [
+          {
+            filename: "src/a.ts",
+            status: "modified",
+            additions: 1,
+            deletions: 0,
+            changes: 1,
+            patch: "@@ -1,1 +1,1 @@\n-old\n+new",
+          },
+          {
+            filename: "src/b.ts",
+            status: "modified",
+            additions: 1,
+            deletions: 0,
+            changes: 1,
+            patch: "@@ -1,1 +1,1 @@\n-old\n+new",
+          },
+        ],
+        executeRulesFn: async () => ({
+          findings: [],
+          summary: {
+            totalRules: 0,
+            successfulRules: 0,
+            failedRules: 0,
+            totalFindings: 0,
+            findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          },
+          failedRuleIds: [],
+        }),
+        postPullRequestSummaryCommentFn: async (options) => {
+          capturedSummaryBodies.push(options.body);
+          return { id: 1, html_url: "https://github.com/x", body: options.body };
+        },
+        createCheckRunFn: async () => ({
+          id: 1,
+          html_url: "https://github.com/x",
+          status: "completed" as const,
+          conclusion: "success" as const,
+        }),
+      },
+    );
+
+    expect(capturedSummaryBodies).toEqual(["2 files reviewed, 0 comments"]);
+  });
 });
 
 describe("applyFindingGates", () => {
@@ -1418,7 +1486,7 @@ describe("finding delivery", () => {
     expect(delivery.comments).toHaveLength(1);
     expect(delivery.skippedByGrouping).toBe(1);
     expect(delivery.comments[0]!.groupedFindings).toHaveLength(2);
-    expect(delivery.comments[0]!.body).toContain("**Also affects**");
+    expect(delivery.comments[0]!.body).toContain("Also affects 1 other location");
     expect(delivery.comments[0]!.body).toContain("`src/a.ts:25`");
   });
 
@@ -1700,10 +1768,7 @@ describe("finding delivery", () => {
     expect(postingResult.successes).toHaveLength(1);
     expect(postingResult.failures).toHaveLength(0);
     expect(postedBodies).toHaveLength(1);
-    expect(postedBodies[0]!).toContain("## Mergewise Refactor Suggestion");
-    expect(postedBodies[0]!).toContain("**Anti-pattern**");
-    expect(postedBodies[0]!).toContain("**Why this matters**");
-    expect(postedBodies[0]!).toContain("**Refactor path**");
+    expect(postedBodies[0]!).toContain("**safety**: Use a typed value.");
     expect(postedBodies[0]!).toContain("dedupeKey=acme/widget#3:one");
     expect(postedBodies[0]!).not.toContain("Structured Payload");
     expect(postingResult.successes[0]!.requestOptions.installationAccessToken).toBe("[REDACTED]");
@@ -1875,7 +1940,7 @@ describe("finding delivery", () => {
     expect(postedDedupeKeys).toEqual(["acme/widget#3:two"]);
   });
 
-  test("builds anti-pattern evidence as single-line markdown-safe inline code", async () => {
+  test("comment body starts with category and recommendation", async () => {
     const delivery = prepareFindingDelivery(
       [
         {
@@ -1924,8 +1989,7 @@ describe("finding delivery", () => {
     );
 
     expect(postedBodies).toHaveLength(1);
-    expect(postedBodies[0]!).toContain("````const value = ```x``` nextLine````");
-    expect(postedBodies[0]!).not.toContain("```x```\nnextLine");
+    expect(postedBodies[0]!).toMatch(/^\*\*safety\*\*: Use a safer pattern\./);
   });
 
   test("builds suggested rewrite with dynamic markdown fences", async () => {
