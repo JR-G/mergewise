@@ -365,7 +365,7 @@ describe("github-client", () => {
       name: "Mergewise",
       conclusion: "success",
       output: {
-        title: "Mergewise Findings (0 posted of 0)",
+        title: "Review completed",
         summary: "Rules=9/9 findings=0 posted=0",
         text: "### Reviewer Summary\nNo findings.",
       },
@@ -384,7 +384,7 @@ describe("github-client", () => {
     expect(requestBody.status).toBe("completed");
     expect(requestBody.conclusion).toBe("success");
     const requestOutput = requestBody.output as Record<string, unknown>;
-    expect(requestOutput.title).toBe("Mergewise Findings (0 posted of 0)");
+    expect(requestOutput.title).toBe("Review completed");
   });
 
   test("createCheckRun throws GitHubApiError on failure", async () => {
