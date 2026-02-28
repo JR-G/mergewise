@@ -2970,8 +2970,8 @@ describe("buildPrSummaryComment", () => {
 
   test("shows stats line with file count, finding count, and rules", () => {
     const findings: Finding[] = [
-      createFinding("f1", 0.9, "safety"),
-      createFinding("f2", 0.85, "perf"),
+      { ...createFinding("f1", 0.9, "safety"), ruleId: "r1", recommendation: "Fix A" },
+      { ...createFinding("f2", 0.85, "perf"), ruleId: "r2", recommendation: "Fix B" },
     ];
     const body = buildPrSummaryComment({
       ...defaultInput,
@@ -2980,27 +2980,61 @@ describe("buildPrSummaryComment", () => {
     });
     expect(body).toContain("**3** files reviewed");
     expect(body).toContain("**2** findings");
-    expect(body).toContain("**5**/5 rules passed");
+    expect(body).toContain("**5/5** rules passed");
   });
 
-  test("renders findings as a table with severity emoji and file links", () => {
+  test("renders grouped table with severity, recommendation, and locations columns", () => {
     const findings: Finding[] = [
-      { ...createFinding("f1", 0.9, "safety"), filePath: "src/app.ts", line: 10 },
-      { ...createFinding("f2", 0.85, "perf"), filePath: "src/utils.ts", line: 25 },
+      { ...createFinding("f1", 0.9, "safety"), ruleId: "r1", filePath: "src/app.ts", line: 10, recommendation: "Fix null" },
+      { ...createFinding("f2", 0.85, "perf"), ruleId: "r2", filePath: "src/utils.ts", line: 25, recommendation: "Cache result" },
     ];
     const body = buildPrSummaryComment({ ...defaultInput, findings });
-    expect(body).toContain("| Severity | File | Recommendation |");
+    expect(body).toContain("| Severity | Recommendation | Locations |");
     expect(body).toContain("🔴 safety");
     expect(body).toContain("🟡 perf");
+    expect(body).toContain("Fix null");
     expect(body).toContain("[`src/app.ts:10`]");
     expect(body).toContain("https://github.com/acme/widget/blob/abc123/src/app.ts#L10");
   });
 
-  test("sorts findings by severity then file path", () => {
+  test("groups findings with the same ruleId and recommendation into one row", () => {
     const findings: Finding[] = [
-      { ...createFinding("f1", 0.8, "clean"), filePath: "src/z.ts", line: 1 },
-      { ...createFinding("f2", 0.9, "safety"), filePath: "src/a.ts", line: 5 },
-      { ...createFinding("f3", 0.85, "perf"), filePath: "src/b.ts", line: 3 },
+      { ...createFinding("f1", 0.9, "safety"), ruleId: "no-bang", filePath: "a.ts", line: 10, recommendation: "Avoid non-null" },
+      { ...createFinding("f2", 0.9, "safety"), ruleId: "no-bang", filePath: "a.ts", line: 20, recommendation: "Avoid non-null" },
+      { ...createFinding("f3", 0.9, "safety"), ruleId: "no-bang", filePath: "b.ts", line: 5, recommendation: "Avoid non-null" },
+    ];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    const rows = body.split("\n").filter((line) => line.startsWith("| 🔴"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toContain("Avoid non-null");
+    expect(rows[0]).toContain("[`a.ts:10`]");
+    expect(rows[0]).toContain("[`a.ts:20`]");
+    expect(rows[0]).toContain("[`b.ts:5`]");
+  });
+
+  test("renders collapsible detail section for groups with 4+ locations", () => {
+    const findings: Finding[] = Array.from({ length: 5 }, (_, index) => ({
+      ...createFinding(`f${String(index)}`, 0.9, "safety"),
+      ruleId: "no-bang",
+      filePath: index < 3 ? "src/a.test.ts" : "src/b.test.ts",
+      line: (index + 1) * 10,
+      recommendation: "Avoid non-null assertions",
+    }));
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    const tableRows = body.split("\n").filter((line) => line.startsWith("| 🔴"));
+    expect(tableRows).toHaveLength(1);
+    expect(tableRows[0]).toContain("5 locations across 2 files");
+    expect(body).toContain("<details>");
+    expect(body).toContain("5 ×");
+    expect(body).toContain("`src/a.test.ts`");
+    expect(body).toContain("`src/b.test.ts`");
+  });
+
+  test("sorts groups by severity then first file path", () => {
+    const findings: Finding[] = [
+      { ...createFinding("f1", 0.8, "clean"), ruleId: "r-clean", filePath: "src/z.ts", line: 1, recommendation: "Clean up" },
+      { ...createFinding("f2", 0.9, "safety"), ruleId: "r-safety", filePath: "src/a.ts", line: 5, recommendation: "Fix null" },
+      { ...createFinding("f3", 0.85, "perf"), ruleId: "r-perf", filePath: "src/b.ts", line: 3, recommendation: "Cache it" },
     ];
     const body = buildPrSummaryComment({ ...defaultInput, findings });
     const safetyIdx = body.indexOf("🔴 safety");
@@ -3047,6 +3081,16 @@ describe("buildPrSummaryComment", () => {
     const body = buildPrSummaryComment({ ...defaultInput, findings });
     expect(body).toContain("Use A \\| B instead of C");
     expect(body).not.toContain("Use A | B");
+  });
+
+  test("does not group findings with different ruleIds even if recommendation matches", () => {
+    const findings: Finding[] = [
+      { ...createFinding("f1", 0.9, "safety"), ruleId: "rule-x", filePath: "a.ts", line: 1, recommendation: "Same text" },
+      { ...createFinding("f2", 0.9, "safety"), ruleId: "rule-y", filePath: "b.ts", line: 2, recommendation: "Same text" },
+    ];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    const rows = body.split("\n").filter((line) => line.startsWith("| 🔴"));
+    expect(rows).toHaveLength(2);
   });
 });
 
