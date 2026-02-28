@@ -105,10 +105,15 @@ export {
 
 export {
   type PullRequestFileRetryDependencies,
-  type WorkerProcessingDependencies,
+  type GitHubAnalysisContextResult,
+  type BuildAnalysisContextDependencies,
   fetchPullRequestFilesWithRetry,
-  processAnalyzePullRequestJob,
   buildAnalysisContextFromGitHub,
   defaultSleep,
   isRetryablePullRequestFileFetchError,
+} from "./github-fetch";
+
+export {
+  type WorkerProcessingDependencies,
+  processAnalyzePullRequestJob,
 } from "./process-job";

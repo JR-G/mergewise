@@ -104,7 +104,6 @@ export default [
   {
     files: [
       "apps/worker/src/main.ts",
-      "apps/worker/src/process-job.ts",
       "apps/webhook-api/src/index.ts",
       "apps/webhook-api/src/main.ts",
       "packages/github-client/src/index.ts",
