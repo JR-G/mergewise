@@ -1542,6 +1542,13 @@ h1 {
   transition: opacity 0.5s ease, transform 0.5s ease;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] {
+    transform: none;
+    transition: opacity 0.4s ease;
+  }
+}
+
 [data-reveal].revealed {
   opacity: 1;
   transform: translateY(0);
@@ -1578,23 +1585,8 @@ h1 {
     animation: none;
   }
 
-  [data-reveal] {
-    opacity: 1;
-    transform: none;
-    transition: none;
-  }
-
   .faq-answer {
     transition: none;
-  }
-
-  [data-typewriter] {
-    visibility: visible;
-  }
-
-  [data-typewriter] {
-    border-right: none;
-    animation: none;
   }
 
   .demo-line-flagged { opacity: 1; animation: none; }
