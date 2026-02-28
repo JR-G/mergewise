@@ -15,6 +15,10 @@ pre-commit:
           echo "Unresolved merge conflict markers found in staged files."
           exit 1
         fi
+        if echo "$staged" | grep -q '^+======='; then
+          echo "Unresolved merge conflict markers found in staged files."
+          exit 1
+        fi
         if echo "$staged" | grep -q '^+>>>>>>>'; then
           echo "Unresolved merge conflict markers found in staged files."
           exit 1
@@ -22,21 +26,9 @@ pre-commit:
     no-console-log:
       run: |
         added=$(git diff --cached --diff-filter=ACM -U0 -- '*.ts' '*.tsx' | grep '^+' | grep -v '^+++')
-        if echo "$added" | grep -q 'console.log'; then
-          echo "console.log found in staged changes. Use structured logging instead."
-          echo "$added" | grep 'console.log'
-          exit 1
-        fi
-        if echo "$added" | grep -q 'console.debug'; then
-          echo "console.debug found in staged changes. Use structured logging instead."
-          exit 1
-        fi
-        if echo "$added" | grep -q 'console.warn'; then
-          echo "console.warn found in staged changes. Use structured logging instead."
-          exit 1
-        fi
-        if echo "$added" | grep -q 'console.info'; then
-          echo "console.info found in staged changes. Use structured logging instead."
+        if echo "$added" | grep -Eq 'console\.(log|debug|warn|info)'; then
+          echo "console.* found in staged changes. Use structured logging instead."
+          echo "$added" | grep -En 'console\.(log|debug|warn|info)'
           exit 1
         fi
     lint:
@@ -66,7 +58,12 @@ pre-push:
           echo "Could not parse coverage output."
           exit 1
         fi
-        line_coverage=$(echo "$all_files_line" | awk -F'|' '{gsub(/[[:space:]]/, "", $3); print $3}')
+        header_line=$(echo "$output" | grep -E '^\s*(File|All files)\s*\|' | head -1)
+        lines_col=$(echo "$header_line" | awk -F'|' '{ for (i=1; i<=NF; i++) { gsub(/[[:space:]]/, "", $i); if ($i == "%Lines") print i } }')
+        if [ -z "$lines_col" ]; then
+          lines_col=3
+        fi
+        line_coverage=$(echo "$all_files_line" | awk -F'|' -v col="$lines_col" '{gsub(/[[:space:]%]/, "", $col); print $col}')
         threshold=90
         pass=$(awk "BEGIN {print ($line_coverage >= $threshold) ? 1 : 0}")
         if [ "$pass" -eq 0 ]; then
