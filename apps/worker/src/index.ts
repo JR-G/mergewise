@@ -1837,12 +1837,14 @@ export async function processAnalyzePullRequestJob(
     );
     postedCommentCount = postingResult.postedCount;
 
-    const prSummaryBody = buildPrSummaryComment(
-      githubAnalysisContext.analysisContext.diffs.length,
-      gatedExecutionResult.findings,
-      job.repo_full_name,
-      job.head_sha,
-    );
+    const prSummaryBody = buildPrSummaryComment({
+      filePaths: githubAnalysisContext.analysisContext.diffs.map((diff) => diff.filePath),
+      findings: gatedExecutionResult.findings,
+      repositoryFullName: job.repo_full_name,
+      headSha: job.head_sha,
+      rulesRan: gatedExecutionResult.summary.totalRules,
+      rulesPassed: gatedExecutionResult.summary.successfulRules,
+    });
     try {
       await upsertPrSummaryComment(
         {
@@ -2530,56 +2532,72 @@ function buildDebugMetadataSection(finding: Finding, dedupeKey: string): string 
 const PR_SUMMARY_COMMENT_MARKER = "<!-- mergewise-summary -->";
 
 /**
- * Builds the Markdown body for the PR summary comment.
- *
- * @param filesReviewed - Number of files reviewed.
- * @param findings - All findings from the analysis.
- * @param repositoryFullName - Repository in `owner/name` format.
- * @param headSha - PR head commit SHA for blob links.
- * @returns Markdown string for the PR summary comment.
+ * Input for {@link buildPrSummaryComment}.
  */
-export function buildPrSummaryComment(
-  filesReviewed: number,
-  findings: readonly Finding[],
-  repositoryFullName: string,
-  headSha: string,
-): string {
+export interface PrSummaryInput {
+  /** Relative paths of all files included in the review. */
+  readonly filePaths: readonly string[];
+  /** Gated findings produced by the analysis pipeline. */
+  readonly findings: readonly Finding[];
+  /** Repository in `owner/name` format for blob links. */
+  readonly repositoryFullName: string;
+  /** PR head commit SHA used to construct permalink URLs. */
+  readonly headSha: string;
+  /** Total number of rules that were executed. */
+  readonly rulesRan: number;
+  /** Number of rules that completed without errors. */
+  readonly rulesPassed: number;
+}
+
+const CATEGORY_EMOJI: Readonly<Record<FindingCategory, string>> = {
+  safety: "🔴",
+  perf: "🟡",
+  clean: "🔵",
+  idiomatic: "🟢",
+};
+
+const CATEGORY_SEVERITY_ORDER: readonly FindingCategory[] = [
+  "safety",
+  "perf",
+  "clean",
+  "idiomatic",
+];
+
+function escapeTableCell(text: string): string {
+  return text.replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+
+/**
+ * Builds the Markdown body for the PR summary comment.
+ */
+export function buildPrSummaryComment(input: PrSummaryInput): string {
+  const { filePaths, findings, repositoryFullName, headSha, rulesRan, rulesPassed } = input;
+  const fileCount = filePaths.length;
   const lines: string[] = [PR_SUMMARY_COMMENT_MARKER, "## Mergewise Review Summary", ""];
 
-  lines.push(
-    `**${filesReviewed}** file${filesReviewed === 1 ? "" : "s"} reviewed, ` +
-    `**${findings.length}** finding${findings.length === 1 ? "" : "s"}`,
-    "",
-  );
-
-  const categoryOrder: readonly FindingCategory[] = ["safety", "perf", "clean", "idiomatic"];
-  const countsByCategory: Record<string, number> = {};
-  for (const finding of findings) {
-    countsByCategory[finding.category] = (countsByCategory[finding.category] ?? 0) + 1;
-  }
-
-  lines.push("| Category | Count |", "| --- | --- |");
-  for (const category of categoryOrder) {
-    const count = countsByCategory[category] ?? 0;
-    if (count > 0) {
-      lines.push(`| ${category} | ${count} |`);
-    }
-  }
-  lines.push("");
+  const fileStat = `**${fileCount}** file${fileCount === 1 ? "" : "s"} reviewed`;
+  const ruleStat = `**${rulesPassed}**/${rulesRan} rules passed`;
 
   if (findings.length > 0) {
-    lines.push(
-      "<details>",
-      "<summary>Findings</summary>",
-      "",
-    );
+    const findingStat =
+      `**${findings.length}** finding${findings.length === 1 ? "" : "s"}`;
+    lines.push(`${fileStat} · ${findingStat} · ${ruleStat}`, "");
+  } else {
+    lines.push(`${fileStat} · ✅ No issues found · ${ruleStat}`, "");
+  }
 
+  if (findings.length > 0) {
     const sortedFindings = [...findings].sort((left, right) => {
+      const severityDiff =
+        CATEGORY_SEVERITY_ORDER.indexOf(left.category) -
+        CATEGORY_SEVERITY_ORDER.indexOf(right.category);
+      if (severityDiff !== 0) return severityDiff;
       const fileCompare = left.filePath.localeCompare(right.filePath);
       if (fileCompare !== 0) return fileCompare;
       return left.line - right.line;
     });
 
+    lines.push("| Severity | File | Recommendation |", "| --- | --- | --- |");
     for (const finding of sortedFindings) {
       const encodedFilePath = finding.filePath
         .split("/")
@@ -2589,10 +2607,27 @@ export function buildPrSummaryComment(
       const blobUrl =
         `https://github.com/${repositoryFullName}` +
         `/blob/${encodeURIComponent(headSha)}/${encodedFilePath}#L${String(normalizedLine)}`;
-      const locationLink = `[${finding.filePath}:${String(finding.line)}](${blobUrl})`;
-      lines.push(`- **${finding.category}** ${locationLink}: ${finding.recommendation}`);
+      const emoji = CATEGORY_EMOJI[finding.category];
+      const locationLink =
+        `[\`${finding.filePath}:${String(finding.line)}\`](${blobUrl})`;
+      const safeRecommendation = escapeTableCell(finding.recommendation);
+      lines.push(
+        `| ${emoji} ${finding.category} | ${locationLink} | ${safeRecommendation} |`,
+      );
     }
+    lines.push("");
+  }
 
+  if (fileCount > 0) {
+    lines.push(
+      "<details>",
+      `<summary>Files reviewed (${fileCount})</summary>`,
+      "",
+    );
+    const sortedPaths = [...filePaths].sort((left, right) => left.localeCompare(right));
+    for (const filePath of sortedPaths) {
+      lines.push(`- \`${filePath}\``);
+    }
     lines.push("", "</details>");
   }
 
