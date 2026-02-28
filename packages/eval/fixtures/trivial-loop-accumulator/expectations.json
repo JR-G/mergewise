@@ -1,0 +1,17 @@
+[
+  {
+    "description": "Should not suggest reduce over a clear for-of loop with multiple accumulators",
+    "matchLineRange": [15, 32],
+    "matchRecommendationContainsAny": ["reduce", "functional", "declarative", "map", "flatMap"],
+    "required": false,
+    "forbidden": true
+  },
+  {
+    "description": "Should not flag let accumulators in a simple aggregation loop",
+    "matchLineRange": [16, 18],
+    "matchCategory": "clean",
+    "matchRecommendationContainsAny": ["mutable", "const", "immutable"],
+    "required": false,
+    "forbidden": true
+  }
+]

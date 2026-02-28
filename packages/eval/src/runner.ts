@@ -24,7 +24,7 @@ export async function runFixture(
   const client = new ReviewClient(variant.clientConfig);
   const antiPatterns = variant.antiPatterns ?? ANTI_PATTERNS;
 
-  const systemPrompt = buildSystemPrompt(antiPatterns);
+  const systemPrompt = buildSystemPrompt(antiPatterns, variant.confidenceThreshold);
   const signals = extractStructuralSignals(fixture.fileDiff);
   const userPrompt = buildFileReviewPrompt(
     fixture.fileDiff,

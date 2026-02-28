@@ -1742,6 +1742,7 @@ export async function processAnalyzePullRequestJob(
           },
           tokenBudget: llmConfig.tokenBudget,
           userSkipPatterns: reviewConfig.skipPatterns.length > 0 ? reviewConfig.skipPatterns : undefined,
+          confidenceThreshold: mergewiseConfigResolved.gating.confidenceThreshold,
           onFileReviewError: (filePath, error) => {
             warnLogger(
               `[worker] llm review failed trace=${traceId} file=${filePath} error=${error instanceof Error ? error.message : String(error)}`,

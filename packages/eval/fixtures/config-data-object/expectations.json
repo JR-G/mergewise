@@ -1,0 +1,15 @@
+[
+  {
+    "description": "Should not flag static route config array as needing extraction or restructuring",
+    "matchLineRange": [14, 19],
+    "matchRecommendationContainsAny": ["extract", "split", "SRP", "responsibility", "simplify"],
+    "required": false,
+    "forbidden": true
+  },
+  {
+    "description": "Should not flag HTTP status constant map as an anti-pattern",
+    "matchLineRange": [21, 29],
+    "required": false,
+    "forbidden": true
+  }
+]

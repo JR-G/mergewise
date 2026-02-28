@@ -40,6 +40,7 @@ export interface LlmReviewerConfig {
    * When omitted, only built-in patterns apply.
    */
   readonly userSkipPatterns?: readonly string[];
+  readonly confidenceThreshold?: number;
   readonly onFileReviewError?: (filePath: string, error: unknown) => void;
   readonly onFileReviewComplete?: (filePath: string, findingCount: number, promptTokens: number, completionTokens: number) => void;
 }
@@ -63,6 +64,7 @@ export function createLlmReviewerRule(
   const client = createReviewClient(config.clientConfig);
   const tokenBudget = config.tokenBudget ?? DEFAULT_TOKEN_BUDGET;
   const userSkipPatterns = config.userSkipPatterns;
+  const confidenceThreshold = config.confidenceThreshold;
   const onFileReviewError = config.onFileReviewError ?? noop;
 
   return {
@@ -94,6 +96,7 @@ export function createLlmReviewerRule(
             pullRequest: context.pullRequest,
             codebaseContext,
             client,
+            confidenceThreshold,
           });
           allFindings.push(...result.findings);
           config.onFileReviewComplete?.(

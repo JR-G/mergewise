@@ -223,6 +223,7 @@ export function parseLlmResponse(
 const PROXIMITY_THRESHOLD = 5;
 const MAX_FINDINGS_PER_FILE = 8;
 
+
 /**
  * Collapses nearby findings of the same category into a single
  * highest-confidence representative, then caps the total count.
