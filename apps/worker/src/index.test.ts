@@ -2911,13 +2911,13 @@ describe("minimizeOutdatedComments", () => {
       },
     );
 
-    expect(result.minimizedCount).toBe(1);
     expect(minimizedNodeIds).toContain("node-a");
     expect(minimizedNodeIds).not.toContain("node-b");
     expect(result.minimizedOutdatedDedupeKeys).toContain("key-a");
   });
 
   test("does not return non-outdated minimised keys in minimizedOutdatedDedupeKeys", async () => {
+    const minimizedNodeIds: string[] = [];
     const existingState: ExistingCommentState = {
       dedupeKeys: new Set(["key-gone", "key-outdated"]),
       dedupeKeyToNodeId: new Map([
@@ -2937,13 +2937,17 @@ describe("minimizeOutdatedComments", () => {
         githubFetchOptions: workerFetchOptions,
       },
       {
-        minimizeCommentFn: async () => ({ isMinimized: true }),
+        minimizeCommentFn: async (opts) => {
+          minimizedNodeIds.push(opts.subjectId);
+          return { isMinimized: true };
+        },
         logInfo: () => {},
         logError: () => {},
       },
     );
 
-    expect(result.minimizedCount).toBe(2);
+    expect(minimizedNodeIds).toContain("node-gone");
+    expect(minimizedNodeIds).toContain("node-outdated");
     expect(result.minimizedOutdatedDedupeKeys).toContain("key-outdated");
     expect(result.minimizedOutdatedDedupeKeys.has("key-gone")).toBe(false);
   });
