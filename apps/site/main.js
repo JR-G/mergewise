@@ -7,7 +7,7 @@
 
   // --- Typewriter effect on hero headline ---
   var typewriterEl = document.querySelector("[data-typewriter]");
-  if (typewriterEl && !prefersReduced) {
+  if (typewriterEl) {
     var words = [
       "maintaining.",
       "inheriting.",
@@ -27,31 +27,39 @@
     typewriterEl.textContent = "";
     typewriterEl.style.visibility = "visible";
 
-    function typeWord() {
-      var word = words[wordIndex];
-      if (charIndex < word.length) {
-        typewriterEl.textContent = word.substring(0, charIndex + 1);
-        charIndex++;
-        setTimeout(typeWord, typeSpeed);
-      } else {
-        setTimeout(deleteWord, pauseAfterType);
-      }
-    }
-
-    function deleteWord() {
-      if (charIndex > 0) {
-        charIndex--;
-        typewriterEl.textContent = words[wordIndex].substring(0, charIndex);
-        setTimeout(deleteWord, deleteSpeed);
-      } else {
+    if (prefersReduced) {
+      typewriterEl.textContent = words[0];
+      function cycleWord() {
         wordIndex = (wordIndex + 1) % words.length;
-        setTimeout(typeWord, pauseAfterDelete);
+        typewriterEl.textContent = words[wordIndex];
+        setTimeout(cycleWord, pauseAfterType);
       }
-    }
+      setTimeout(cycleWord, pauseAfterType);
+    } else {
+      function typeWord() {
+        var word = words[wordIndex];
+        if (charIndex < word.length) {
+          typewriterEl.textContent = word.substring(0, charIndex + 1);
+          charIndex++;
+          setTimeout(typeWord, typeSpeed);
+        } else {
+          setTimeout(deleteWord, pauseAfterType);
+        }
+      }
 
-    setTimeout(typeWord, 400);
-  } else if (typewriterEl) {
-    typewriterEl.style.visibility = "visible";
+      function deleteWord() {
+        if (charIndex > 0) {
+          charIndex--;
+          typewriterEl.textContent = words[wordIndex].substring(0, charIndex);
+          setTimeout(deleteWord, deleteSpeed);
+        } else {
+          wordIndex = (wordIndex + 1) % words.length;
+          setTimeout(typeWord, pauseAfterDelete);
+        }
+      }
+
+      setTimeout(typeWord, 400);
+    }
   }
 
   // --- Scroll-triggered reveals ---
