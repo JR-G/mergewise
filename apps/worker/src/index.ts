@@ -1,23 +1,24 @@
 import {
-  listPullRequestInlineComments,
+  listPullRequestReviewThreads,
   listPullRequestSummaryComments,
   createPullRequestReview,
   createGitHubAppJwt,
   exchangeInstallationAccessToken,
   fetchPullRequestFiles,
   GitHubApiError,
-  minimizeComment,
+  resolveReviewThread,
   postPullRequestSummaryComment,
   updateIssueComment,
   type FetchPullRequestFilesOptions,
   type GitHubIssueComment,
-  type GitHubPullRequestReviewComment,
   type GitHubPullRequestReview,
   type GitHubPullRequestFile,
   type ListPullRequestCommentsOptions,
+  type ListPullRequestReviewThreadsOptions,
   type CreatePullRequestReviewOptions,
-  type MinimizeCommentOptions,
-  type MinimizeCommentResult,
+  type ResolveReviewThreadOptions,
+  type ResolveReviewThreadResult,
+  type ReviewThread,
   type PullRequestReviewComment,
   type PostPullRequestSummaryCommentOptions,
   type UpdateIssueCommentOptions,
@@ -30,6 +31,7 @@ import {
   type CreateCheckRunOptions,
   type UpdateCheckRunOptions,
   type GitHubCheckRun,
+  type GitHubReactionCounts,
 } from "@mergewise/github-client";
 import { readFileSync } from "node:fs";
 import {
@@ -469,9 +471,14 @@ export interface ExistingCommentState {
    */
   readonly dedupeKeys: Set<string>;
   /**
-   * Mapping from dedupe key to the comment's GraphQL node ID for minimisation.
+   * Mapping from dedupe key to the review thread's GraphQL node ID for resolution.
    */
-  readonly dedupeKeyToNodeId: ReadonlyMap<string, string>;
+  readonly dedupeKeyToThreadId: ReadonlyMap<string, string>;
+  /**
+   * All fetched comments (summary + inline review thread) for downstream feedback extraction.
+   * Reactions are only available on summary comments; review thread entries have no reactions.
+   */
+  readonly allComments: readonly { readonly body: string; readonly reactions?: GitHubReactionCounts }[];
   /**
    * Dedupe keys belonging to inline comments that GitHub has marked as outdated
    * (the anchored code changed since the comment was posted).
@@ -585,11 +592,11 @@ export interface WorkerProcessingDependencies {
     options: UpdateCheckRunOptions,
   ) => Promise<GitHubCheckRun>;
   /**
-   * Comment minimisation function override for testing.
+   * Review thread resolution function override for testing.
    */
-  readonly minimizeCommentFn?: (
-    options: MinimizeCommentOptions,
-  ) => Promise<MinimizeCommentResult>;
+  readonly resolveReviewThreadFn?: (
+    options: ResolveReviewThreadOptions,
+  ) => Promise<ResolveReviewThreadResult>;
   /**
    * Summary comment listing function override for testing.
    */
@@ -597,11 +604,11 @@ export interface WorkerProcessingDependencies {
     options: ListPullRequestCommentsOptions,
   ) => Promise<GitHubIssueComment[]>;
   /**
-   * Inline comment listing function override for testing.
+   * Review thread listing function override for testing.
    */
-  readonly listPullRequestInlineCommentsFn?: (
-    options: ListPullRequestCommentsOptions,
-  ) => Promise<GitHubPullRequestReviewComment[]>;
+  readonly listPullRequestReviewThreadsFn?: (
+    options: ListPullRequestReviewThreadsOptions,
+  ) => Promise<ReviewThread[]>;
   /**
    * Pull request state fetch function override.
    */
@@ -1104,9 +1111,9 @@ export async function postPreparedFindingComments(
     readonly listPullRequestSummaryCommentsFn?: (
       options: ListPullRequestCommentsOptions,
     ) => Promise<GitHubIssueComment[]>;
-    readonly listPullRequestInlineCommentsFn?: (
-      options: ListPullRequestCommentsOptions,
-    ) => Promise<GitHubPullRequestReviewComment[]>;
+    readonly listPullRequestReviewThreadsFn?: (
+      options: ListPullRequestReviewThreadsOptions,
+    ) => Promise<ReviewThread[]>;
     readonly createPullRequestReviewFn?: (
       options: CreatePullRequestReviewOptions,
     ) => Promise<GitHubPullRequestReview>;
@@ -1123,8 +1130,8 @@ export async function postPreparedFindingComments(
   } else {
     const listPullRequestSummaryCommentsFn =
       dependencies.listPullRequestSummaryCommentsFn ?? listPullRequestSummaryComments;
-    const listPullRequestInlineCommentsFn =
-      dependencies.listPullRequestInlineCommentsFn ?? listPullRequestInlineComments;
+    const listPullRequestReviewThreadsFn =
+      dependencies.listPullRequestReviewThreadsFn ?? listPullRequestReviewThreads;
     const commentState = await loadExistingDedupeKeys(
       {
         owner: options.owner,
@@ -1138,7 +1145,7 @@ export async function postPreparedFindingComments(
       },
       {
         listPullRequestSummaryCommentsFn,
-        listPullRequestInlineCommentsFn,
+        listPullRequestReviewThreadsFn,
       },
     );
     resolvedDedupeKeys = commentState.dedupeKeys;
@@ -1264,15 +1271,16 @@ export async function postPreparedFindingComments(
 }
 
 /**
- * Minimises PR comments whose dedupe keys are absent from the new set.
+ * Resolves review threads whose dedupe keys are absent from the new set or
+ * whose anchored code has been changed (GitHub-outdated).
  *
- * @param existingCommentState - Existing comment state with dedupe key → node ID mapping.
+ * @param existingCommentState - Existing comment state with dedupe key → thread ID mapping.
  * @param newDedupeKeys - Dedupe keys from the current analysis run.
  * @param options - Authentication and API options.
  * @param dependencies - Test overrides.
- * @returns Count of minimised and failed comments.
+ * @returns Count of resolved and failed threads.
  */
-export async function minimizeOutdatedComments(
+export async function resolveOutdatedComments(
   existingCommentState: ExistingCommentState,
   newDedupeKeys: ReadonlySet<string>,
   options: {
@@ -1281,59 +1289,58 @@ export async function minimizeOutdatedComments(
     readonly githubFetchOptions: WorkerGitHubFetchOptions;
   },
   dependencies?: {
-    readonly minimizeCommentFn?: (
-      opts: MinimizeCommentOptions,
-    ) => Promise<MinimizeCommentResult>;
+    readonly resolveReviewThreadFn?: (
+      opts: ResolveReviewThreadOptions,
+    ) => Promise<ResolveReviewThreadResult>;
     readonly logInfo?: (message: string) => void;
     readonly logError?: (message: string) => void;
   },
-): Promise<{ minimizedCount: number; failedCount: number; minimizedOutdatedDedupeKeys: Set<string> }> {
-  const minimizeCommentFn = dependencies?.minimizeCommentFn ?? minimizeComment;
+): Promise<{ resolvedCount: number; failedCount: number; resolvedOutdatedDedupeKeys: Set<string> }> {
+  const resolveReviewThreadFn = dependencies?.resolveReviewThreadFn ?? resolveReviewThread;
   const infoLogger = dependencies?.logInfo ?? console.log;
   const errorLogger = dependencies?.logError ?? console.error;
 
-  let minimizedCount = 0;
+  let resolvedCount = 0;
   let failedCount = 0;
-  const minimizedOutdatedDedupeKeys = new Set<string>();
+  const resolvedOutdatedDedupeKeys = new Set<string>();
 
-  for (const [dedupeKey, nodeId] of existingCommentState.dedupeKeyToNodeId) {
+  for (const [dedupeKey, threadId] of existingCommentState.dedupeKeyToThreadId) {
     const isGitHubOutdated = existingCommentState.outdatedDedupeKeys.has(dedupeKey);
     if (newDedupeKeys.has(dedupeKey) && !isGitHubOutdated) {
       continue;
     }
 
     try {
-      const result = await minimizeCommentFn({
-        subjectId: nodeId,
-        classifier: "OUTDATED",
+      const result = await resolveReviewThreadFn({
+        threadId,
         installationAccessToken: options.installationAccessToken,
         apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
         userAgent: options.githubFetchOptions.githubUserAgent,
         requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
         traceId: options.traceId,
       });
-      if (result.isMinimized) {
-        minimizedCount += 1;
+      if (result.isResolved) {
+        resolvedCount += 1;
       }
-      if (result.isMinimized && isGitHubOutdated && newDedupeKeys.has(dedupeKey)) {
-        minimizedOutdatedDedupeKeys.add(dedupeKey);
+      if (result.isResolved && isGitHubOutdated && newDedupeKeys.has(dedupeKey)) {
+        resolvedOutdatedDedupeKeys.add(dedupeKey);
       }
     } catch (error) {
       failedCount += 1;
       const detail = error instanceof Error ? error.message : String(error);
       errorLogger(
-        `[worker] failed to minimise outdated comment trace=${options.traceId} nodeId=${nodeId} dedupeKey=${dedupeKey}: ${detail}`,
+        `[worker] failed to resolve outdated thread trace=${options.traceId} threadId=${threadId} dedupeKey=${dedupeKey}: ${detail}`,
       );
     }
   }
 
-  if (minimizedCount > 0) {
+  if (resolvedCount > 0) {
     infoLogger(
-      `[worker] minimised_outdated_comments trace=${options.traceId} minimized=${minimizedCount} failed=${failedCount}`,
+      `[worker] resolved_outdated_threads trace=${options.traceId} resolved=${resolvedCount} failed=${failedCount}`,
     );
   }
 
-  return { minimizedCount, failedCount, minimizedOutdatedDedupeKeys };
+  return { resolvedCount, failedCount, resolvedOutdatedDedupeKeys };
 }
 
 async function loadExistingDedupeKeys(
@@ -1342,31 +1349,24 @@ async function loadExistingDedupeKeys(
     readonly listPullRequestSummaryCommentsFn: (
       options: ListPullRequestCommentsOptions,
     ) => Promise<GitHubIssueComment[]>;
-    readonly listPullRequestInlineCommentsFn: (
-      options: ListPullRequestCommentsOptions,
-    ) => Promise<GitHubPullRequestReviewComment[]>;
+    readonly listPullRequestReviewThreadsFn: (
+      options: ListPullRequestReviewThreadsOptions,
+    ) => Promise<ReviewThread[]>;
   },
 ): Promise<ExistingCommentState> {
   const dedupeKeys = new Set<string>();
-  const dedupeKeyToNodeId = new Map<string, string>();
+  const dedupeKeyToThreadId = new Map<string, string>();
+  const allComments: { body: string; reactions?: GitHubReactionCounts }[] = [];
   const outdatedDedupeKeys = new Set<string>();
-
-  function indexComment(body: string | undefined, nodeId: string, isOutdated = false): void {
-    const dedupeKey = extractDedupeKeyFromCommentBody(body);
-    if (!dedupeKey) {
-      return;
-    }
-    dedupeKeys.add(dedupeKey);
-    dedupeKeyToNodeId.set(dedupeKey, nodeId);
-    if (isOutdated) {
-      outdatedDedupeKeys.add(dedupeKey);
-    }
-  }
 
   try {
     const summaryComments = await dependencies.listPullRequestSummaryCommentsFn(options);
     for (const comment of summaryComments) {
-      indexComment(comment.body, comment.node_id);
+      const dedupeKey = extractDedupeKeyFromCommentBody(comment.body);
+      if (dedupeKey) {
+        dedupeKeys.add(dedupeKey);
+      }
+      allComments.push({ body: comment.body, reactions: comment.reactions });
     }
   } catch (caughtError) {
     const errorDetail = caughtError instanceof Error
@@ -1385,17 +1385,37 @@ async function loadExistingDedupeKeys(
   }
 
   try {
-    const inlineComments = await dependencies.listPullRequestInlineCommentsFn(options);
-    for (const comment of inlineComments) {
-      const isOutdated = comment.position === null || comment.position === undefined;
-      indexComment(comment.body, comment.node_id, isOutdated);
+    const reviewThreads = await dependencies.listPullRequestReviewThreadsFn({
+      owner: options.owner,
+      repository: options.repository,
+      pullRequestNumber: options.pullRequestNumber,
+      installationAccessToken: options.installationAccessToken,
+      apiBaseUrl: options.apiBaseUrl,
+      userAgent: options.userAgent,
+      requestTimeoutMs: options.requestTimeoutMs,
+      traceId: options.traceId,
+    });
+    for (const thread of reviewThreads) {
+      allComments.push({ body: thread.firstCommentBody });
+      if (thread.isResolved) {
+        continue;
+      }
+      const dedupeKey = extractDedupeKeyFromCommentBody(thread.firstCommentBody);
+      if (!dedupeKey) {
+        continue;
+      }
+      dedupeKeys.add(dedupeKey);
+      dedupeKeyToThreadId.set(dedupeKey, thread.id);
+      if (thread.isOutdated) {
+        outdatedDedupeKeys.add(dedupeKey);
+      }
     }
   } catch (caughtError) {
     const errorDetail = caughtError instanceof Error
       ? caughtError.stack ?? caughtError.message
       : String(caughtError);
     console.error(
-      "[worker] failed to list inline comments for dedupe owner=" +
+      "[worker] failed to list review threads for dedupe owner=" +
         options.owner +
         " repo=" +
         options.repository +
@@ -1406,7 +1426,7 @@ async function loadExistingDedupeKeys(
     );
   }
 
-  return { dedupeKeys, dedupeKeyToNodeId, outdatedDedupeKeys };
+  return { dedupeKeys, dedupeKeyToThreadId, allComments, outdatedDedupeKeys };
 }
 
 function extractDedupeKeyFromCommentBody(commentBody: string | undefined): string | null {
@@ -1421,6 +1441,155 @@ function extractDedupeKeyFromCommentBody(commentBody: string | undefined): strin
 
   const dedupeKey = dedupeKeyMatch[1]?.trim() ?? "";
   return dedupeKey || null;
+}
+
+function logFeedbackSummary(
+  feedbackSummary: CommentFeedbackSummary,
+  traceId: string,
+  jobId: string,
+  infoLogger: (msg: string) => void,
+): void {
+  if (feedbackSummary.totalComments === 0) {
+    return;
+  }
+  infoLogger(
+    `[worker] feedback_summary trace=${traceId} job=${jobId}` +
+      ` totalComments=${feedbackSummary.totalComments}` +
+      ` withReactions=${feedbackSummary.withReactions}` +
+      ` thumbsUp=${feedbackSummary.thumbsUp}` +
+      ` thumbsDown=${feedbackSummary.thumbsDown}`,
+  );
+}
+
+/**
+ * Structured feedback record extracted from a single Mergewise comment's reactions.
+ */
+export interface CommentFeedbackRecord {
+  readonly findingId: string;
+  readonly ruleId: string;
+  readonly category: string;
+  readonly confidence: string;
+  readonly thumbsUp: number;
+  readonly thumbsDown: number;
+  readonly otherReactions: number;
+}
+
+/**
+ * Aggregate feedback summary across all Mergewise comments on a PR.
+ */
+export interface CommentFeedbackSummary {
+  readonly totalComments: number;
+  readonly withReactions: number;
+  readonly thumbsUp: number;
+  readonly thumbsDown: number;
+  readonly records: readonly CommentFeedbackRecord[];
+}
+
+/**
+ * Matches the `mergewise-meta` HTML comment marker embedded in PR comments.
+ *
+ * Expected format (whitespace-separated key=value pairs inside an HTML comment):
+ * `<!-- mergewise-meta dedupeKey=… findingId=… ruleId=… category=… confidence=… -->`
+ *
+ * Capture groups: (1) findingId, (2) ruleId, (3) category, (4) confidence.
+ */
+const MERGEWISE_META_REGEX =
+  /mergewise-meta[^>]*findingId=(\S+)\s+ruleId=(\S+)\s+category=(\S+)\s+confidence=(\S+)/;
+
+/**
+ * Parses the `mergewise-meta` HTML comment from a PR comment body.
+ *
+ * @param body - Full comment body potentially containing a mergewise-meta marker.
+ * @returns Parsed metadata fields, or `null` when the marker is absent or malformed.
+ */
+function extractMergewiseMeta(
+  body: string,
+): { findingId: string; ruleId: string; category: string; confidence: string } | null {
+  const match = MERGEWISE_META_REGEX.exec(body);
+  const findingId = match?.[1];
+  const ruleId = match?.[2];
+  const category = match?.[3];
+  const confidence = match?.[4];
+  if (!findingId || !ruleId || !category || !confidence) {
+    return null;
+  }
+  return { findingId, ruleId, category, confidence };
+}
+
+/**
+ * Splits {@link GitHubReactionCounts} into thumbs up, thumbs down, and everything else.
+ *
+ * `+1` maps to `thumbsUp`, `-1` maps to `thumbsDown`. The remaining six reaction types
+ * (`laugh`, `confused`, `heart`, `hooray`, `rocket`, `eyes`) are summed into `otherReactions`.
+ *
+ * @param reactions - Reaction counts from a GitHub comment.
+ * @returns Grouped reaction totals.
+ */
+function sumReactions(reactions: GitHubReactionCounts): {
+  thumbsUp: number;
+  thumbsDown: number;
+  otherReactions: number;
+} {
+  const thumbsUp = reactions["+1"];
+  const thumbsDown = reactions["-1"];
+  const otherReactions =
+    reactions.laugh +
+    reactions.confused +
+    reactions.heart +
+    reactions.hooray +
+    reactions.rocket +
+    reactions.eyes;
+  return { thumbsUp, thumbsDown, otherReactions };
+}
+
+/**
+ * Extracts feedback records from Mergewise comments that have reactions.
+ *
+ * @param comments - Issue or review comments with optional reaction counts.
+ * @returns Feedback summary with per-comment records for reacted comments.
+ */
+export function collectCommentFeedback(
+  comments: readonly { readonly body: string; readonly reactions?: GitHubReactionCounts }[],
+): CommentFeedbackSummary {
+  const records: CommentFeedbackRecord[] = [];
+  let totalComments = 0;
+
+  for (const comment of comments) {
+    const meta = extractMergewiseMeta(comment.body);
+    if (!meta) {
+      continue;
+    }
+
+    totalComments += 1;
+
+    if (!comment.reactions) {
+      continue;
+    }
+
+    const { thumbsUp, thumbsDown, otherReactions } = sumReactions(comment.reactions);
+    const totalReactionCount = thumbsUp + thumbsDown + otherReactions;
+    if (totalReactionCount === 0) {
+      continue;
+    }
+
+    records.push({
+      findingId: meta.findingId,
+      ruleId: meta.ruleId,
+      category: meta.category,
+      confidence: meta.confidence,
+      thumbsUp,
+      thumbsDown,
+      otherReactions,
+    });
+  }
+
+  return {
+    totalComments,
+    withReactions: records.length,
+    thumbsUp: records.reduce((sum, record) => sum + record.thumbsUp, 0),
+    thumbsDown: records.reduce((sum, record) => sum + record.thumbsDown, 0),
+    records,
+  };
 }
 
 /**
@@ -1797,8 +1966,8 @@ export async function processAnalyzePullRequestJob(
   if (dependencies.deliveryMode === "github") {
     const listSummaryFn =
       dependencies.listPullRequestSummaryCommentsFn ?? listPullRequestSummaryComments;
-    const listInlineFn =
-      dependencies.listPullRequestInlineCommentsFn ?? listPullRequestInlineComments;
+    const listReviewThreadsFn =
+      dependencies.listPullRequestReviewThreadsFn ?? listPullRequestReviewThreads;
     const existingCommentState = await loadExistingDedupeKeys(
       {
         owner: githubAnalysisContext.owner,
@@ -1812,12 +1981,24 @@ export async function processAnalyzePullRequestJob(
       },
       {
         listPullRequestSummaryCommentsFn: listSummaryFn,
-        listPullRequestInlineCommentsFn: listInlineFn,
+        listPullRequestReviewThreadsFn: listReviewThreadsFn,
       },
     );
 
+    const feedbackSummary = collectCommentFeedback(existingCommentState.allComments);
+    for (const record of feedbackSummary.records) {
+      infoLogger(
+        `[worker] comment_feedback trace=${traceId} job=${job.job_id}` +
+          ` findingId=${record.findingId} ruleId=${record.ruleId}` +
+          ` category=${record.category} confidence=${record.confidence}` +
+          ` thumbsUp=${record.thumbsUp} thumbsDown=${record.thumbsDown}` +
+          ` reactions=${record.thumbsUp + record.thumbsDown + record.otherReactions}`,
+      );
+    }
+    logFeedbackSummary(feedbackSummary, traceId, job.job_id, infoLogger);
+
     const newDedupeKeys = new Set(delivery.comments.map((comment) => comment.dedupeKey));
-    const minimizeResult = await minimizeOutdatedComments(
+    const resolveResult = await resolveOutdatedComments(
       existingCommentState,
       newDedupeKeys,
       {
@@ -1826,13 +2007,13 @@ export async function processAnalyzePullRequestJob(
         githubFetchOptions,
       },
       {
-        minimizeCommentFn: dependencies.minimizeCommentFn,
+        resolveReviewThreadFn: dependencies.resolveReviewThreadFn,
         logInfo: infoLogger,
         logError: errorLogger,
       },
     );
 
-    for (const key of minimizeResult.minimizedOutdatedDedupeKeys) {
+    for (const key of resolveResult.resolvedOutdatedDedupeKeys) {
       existingCommentState.dedupeKeys.delete(key);
     }
 
