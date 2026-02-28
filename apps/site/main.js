@@ -72,6 +72,10 @@
       revealEls.forEach(function (el) {
         observer.observe(el);
       });
+    } else if (revealEls.length) {
+      revealEls.forEach(function (el) {
+        el.classList.add("revealed");
+      });
     }
   } else {
     var els = document.querySelectorAll("[data-reveal]");
