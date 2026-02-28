@@ -19,7 +19,7 @@ import {
   createPollingLoopController,
   fetchPullRequestFilesWithRetry,
   loadConfig,
-  minimizeOutdatedComments,
+  resolveOutdatedComments,
   parseRepositoryFullName,
   postPreparedFindingComments,
   prepareFindingDelivery,
@@ -1555,20 +1555,20 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.successfulRules).toBe(1);
   });
 
-  test("minimises outdated comments before posting new ones in github delivery mode", async () => {
+  test("resolves outdated review threads before posting new ones in github delivery mode", async () => {
     process.env.GITHUB_APP_ID = "123";
     process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
 
-    const minimizedNodeIds: string[] = [];
+    const resolvedThreadIds: string[] = [];
     const finding = createFinding("finding-new", 0.95, "clean");
 
     await processAnalyzePullRequestJob(
       {
-        job_id: "job-minimize",
+        job_id: "job-resolve",
         installation_id: 44,
         repo_full_name: "acme/widget",
         pr_number: 90,
-        head_sha: "min123",
+        head_sha: "res123",
         queued_at: "2025-01-01T00:00:00Z",
       },
       {
@@ -1602,18 +1602,18 @@ describe("processAnalyzePullRequestJob", () => {
           },
           failedRuleIds: [],
         }),
-        listPullRequestSummaryCommentsFn: async () => [
+        listPullRequestSummaryCommentsFn: async () => [],
+        listPullRequestReviewThreadsFn: async () => [
           {
-            id: 800,
-            node_id: "IC_kwDOold800",
-            html_url: "https://github.com/acme/widget/pull/90#issuecomment-800",
-            body: "<!-- mergewise-meta dedupeKey=acme/widget#90:old-finding findingId=old ruleId=rule-a category=clean confidence=0.90 -->",
+            id: "PRT_kwDOold800",
+            isResolved: false,
+            isOutdated: false,
+            firstCommentBody: "<!-- mergewise-meta dedupeKey=acme/widget#90:old-finding findingId=old ruleId=rule-a category=clean confidence=0.90 -->",
           },
         ],
-        listPullRequestInlineCommentsFn: async () => [],
-        minimizeCommentFn: async (opts) => {
-          minimizedNodeIds.push(opts.subjectId);
-          return { isMinimized: true };
+        resolveReviewThreadFn: async (opts) => {
+          resolvedThreadIds.push(opts.threadId);
+          return { isResolved: true };
         },
         createPullRequestReviewFn: async () => ({
           id: 1, html_url: "https://github.com/x", body: null, state: "commented",
@@ -1630,7 +1630,7 @@ describe("processAnalyzePullRequestJob", () => {
       },
     );
 
-    expect(minimizedNodeIds).toContain("IC_kwDOold800");
+    expect(resolvedThreadIds).toContain("PRT_kwDOold800");
   });
 
   test("transitions queued check run to failure when fetchPullRequest throws", async () => {
@@ -2278,7 +2278,7 @@ describe("finding delivery", () => {
       },
       {
         listPullRequestSummaryCommentsFn: async () => [],
-        listPullRequestInlineCommentsFn: async () => [],
+        listPullRequestReviewThreadsFn: async () => [],
         createPullRequestReviewFn: async (options) => {
           capturedReviewOptions.push(options);
           return { id: 1, html_url: "https://github.com/x", body: options.body ?? null, state: "commented" };
@@ -2344,7 +2344,7 @@ describe("finding delivery", () => {
       },
       {
         listPullRequestSummaryCommentsFn: async () => [],
-        listPullRequestInlineCommentsFn: async () => [],
+        listPullRequestReviewThreadsFn: async () => [],
         createPullRequestReviewFn: async () => {
           throw new Error("batch review failed");
         },
@@ -2416,7 +2416,7 @@ describe("finding delivery", () => {
               "findingId=one ruleId=rule/a category=clean confidence=0.9 -->",
           },
         ],
-        listPullRequestInlineCommentsFn: async () => [],
+        listPullRequestReviewThreadsFn: async () => [],
         createPullRequestReviewFn: async (options) => {
           for (const comment of options.comments) {
             capturedReviewComments.push({ body: comment.body });
@@ -2470,7 +2470,7 @@ describe("finding delivery", () => {
       },
       {
         listPullRequestSummaryCommentsFn: async () => [],
-        listPullRequestInlineCommentsFn: async () => [],
+        listPullRequestReviewThreadsFn: async () => [],
         createPullRequestReviewFn: async (options) => {
           for (const comment of options.comments) {
             capturedCommentBodies.push(comment.body);
@@ -2524,7 +2524,7 @@ describe("finding delivery", () => {
       },
       {
         listPullRequestSummaryCommentsFn: async () => [],
-        listPullRequestInlineCommentsFn: async () => [],
+        listPullRequestReviewThreadsFn: async () => [],
         createPullRequestReviewFn: async (options) => {
           for (const comment of options.comments) {
             capturedCommentBodies.push(comment.body);
@@ -2579,7 +2579,7 @@ describe("finding delivery", () => {
       },
       {
         listPullRequestSummaryCommentsFn: async () => [],
-        listPullRequestInlineCommentsFn: async () => [],
+        listPullRequestReviewThreadsFn: async () => [],
         createPullRequestReviewFn: async (options) => {
           for (const comment of options.comments) {
             capturedCommentBodies.push(comment.body);
@@ -2747,21 +2747,21 @@ describe("loadConfig", () => {
   });
 });
 
-describe("minimizeOutdatedComments", () => {
-  test("minimises comments whose dedupe keys are absent from the new set", async () => {
-    const minimizedNodeIds: string[] = [];
+describe("resolveOutdatedComments", () => {
+  test("resolves threads whose dedupe keys are absent from the new set", async () => {
+    const resolvedThreadIds: string[] = [];
     const existingState: ExistingCommentState = {
       dedupeKeys: new Set(["key-a", "key-b", "key-c"]),
-      dedupeKeyToNodeId: new Map([
-        ["key-a", "node-a"],
-        ["key-b", "node-b"],
-        ["key-c", "node-c"],
+      dedupeKeyToThreadId: new Map([
+        ["key-a", "thread-a"],
+        ["key-b", "thread-b"],
+        ["key-c", "thread-c"],
       ]),
       outdatedDedupeKeys: new Set(),
     };
     const newKeys = new Set(["key-b"]);
 
-    const result = await minimizeOutdatedComments(
+    const result = await resolveOutdatedComments(
       existingState,
       newKeys,
       {
@@ -2770,32 +2770,32 @@ describe("minimizeOutdatedComments", () => {
         githubFetchOptions: workerFetchOptions,
       },
       {
-        minimizeCommentFn: async (opts) => {
-          minimizedNodeIds.push(opts.subjectId);
-          return { isMinimized: true };
+        resolveReviewThreadFn: async (opts) => {
+          resolvedThreadIds.push(opts.threadId);
+          return { isResolved: true };
         },
         logInfo: () => {},
         logError: () => {},
       },
     );
 
-    expect(result.minimizedCount).toBe(2);
+    expect(result.resolvedCount).toBe(2);
     expect(result.failedCount).toBe(0);
-    expect(minimizedNodeIds).toContain("node-a");
-    expect(minimizedNodeIds).toContain("node-c");
-    expect(minimizedNodeIds).not.toContain("node-b");
+    expect(resolvedThreadIds).toContain("thread-a");
+    expect(resolvedThreadIds).toContain("thread-c");
+    expect(resolvedThreadIds).not.toContain("thread-b");
   });
 
-  test("skips comments whose dedupe keys are in the new set", async () => {
-    const minimizedNodeIds: string[] = [];
+  test("skips threads whose dedupe keys are in the new set", async () => {
+    const resolvedThreadIds: string[] = [];
     const existingState: ExistingCommentState = {
       dedupeKeys: new Set(["key-a"]),
-      dedupeKeyToNodeId: new Map([["key-a", "node-a"]]),
+      dedupeKeyToThreadId: new Map([["key-a", "thread-a"]]),
       outdatedDedupeKeys: new Set(),
     };
     const newKeys = new Set(["key-a"]);
 
-    const result = await minimizeOutdatedComments(
+    const result = await resolveOutdatedComments(
       existingState,
       newKeys,
       {
@@ -2804,33 +2804,33 @@ describe("minimizeOutdatedComments", () => {
         githubFetchOptions: workerFetchOptions,
       },
       {
-        minimizeCommentFn: async (opts) => {
-          minimizedNodeIds.push(opts.subjectId);
-          return { isMinimized: true };
+        resolveReviewThreadFn: async (opts) => {
+          resolvedThreadIds.push(opts.threadId);
+          return { isResolved: true };
         },
         logInfo: () => {},
         logError: () => {},
       },
     );
 
-    expect(result.minimizedCount).toBe(0);
+    expect(result.resolvedCount).toBe(0);
     expect(result.failedCount).toBe(0);
-    expect(minimizedNodeIds).toHaveLength(0);
+    expect(resolvedThreadIds).toHaveLength(0);
   });
 
-  test("counts per-comment failures and continues processing", async () => {
+  test("counts per-thread failures and continues processing", async () => {
     let callCount = 0;
     const existingState: ExistingCommentState = {
       dedupeKeys: new Set(["key-a", "key-b"]),
-      dedupeKeyToNodeId: new Map([
-        ["key-a", "node-a"],
-        ["key-b", "node-b"],
+      dedupeKeyToThreadId: new Map([
+        ["key-a", "thread-a"],
+        ["key-b", "thread-b"],
       ]),
       outdatedDedupeKeys: new Set(),
     };
     const newKeys = new Set<string>();
 
-    const result = await minimizeOutdatedComments(
+    const result = await resolveOutdatedComments(
       existingState,
       newKeys,
       {
@@ -2839,30 +2839,30 @@ describe("minimizeOutdatedComments", () => {
         githubFetchOptions: workerFetchOptions,
       },
       {
-        minimizeCommentFn: async () => {
+        resolveReviewThreadFn: async () => {
           callCount += 1;
           if (callCount === 1) {
             throw new Error("GraphQL failure");
           }
-          return { isMinimized: true };
+          return { isResolved: true };
         },
         logInfo: () => {},
         logError: () => {},
       },
     );
 
-    expect(result.minimizedCount).toBe(1);
+    expect(result.resolvedCount).toBe(1);
     expect(result.failedCount).toBe(1);
   });
 
-  test("returns zero counts when there are no existing comments", async () => {
+  test("returns zero counts when there are no existing threads", async () => {
     const existingState: ExistingCommentState = {
       dedupeKeys: new Set<string>(),
-      dedupeKeyToNodeId: new Map(),
+      dedupeKeyToThreadId: new Map(),
       outdatedDedupeKeys: new Set(),
     };
 
-    const result = await minimizeOutdatedComments(
+    const result = await resolveOutdatedComments(
       existingState,
       new Set(["key-x"]),
       {
@@ -2871,29 +2871,29 @@ describe("minimizeOutdatedComments", () => {
         githubFetchOptions: workerFetchOptions,
       },
       {
-        minimizeCommentFn: async () => ({ isMinimized: true }),
+        resolveReviewThreadFn: async () => ({ isResolved: true }),
         logInfo: () => {},
         logError: () => {},
       },
     );
 
-    expect(result.minimizedCount).toBe(0);
+    expect(result.resolvedCount).toBe(0);
     expect(result.failedCount).toBe(0);
   });
 
-  test("minimises GitHub-outdated comments even when dedupe key matches the new set", async () => {
-    const minimizedNodeIds: string[] = [];
+  test("resolves GitHub-outdated threads even when dedupe key matches the new set", async () => {
+    const resolvedThreadIds: string[] = [];
     const existingState: ExistingCommentState = {
       dedupeKeys: new Set(["key-a", "key-b"]),
-      dedupeKeyToNodeId: new Map([
-        ["key-a", "node-a"],
-        ["key-b", "node-b"],
+      dedupeKeyToThreadId: new Map([
+        ["key-a", "thread-a"],
+        ["key-b", "thread-b"],
       ]),
       outdatedDedupeKeys: new Set(["key-a"]),
     };
     const newKeys = new Set(["key-a", "key-b"]);
 
-    const result = await minimizeOutdatedComments(
+    const result = await resolveOutdatedComments(
       existingState,
       newKeys,
       {
@@ -2902,33 +2902,33 @@ describe("minimizeOutdatedComments", () => {
         githubFetchOptions: workerFetchOptions,
       },
       {
-        minimizeCommentFn: async (opts) => {
-          minimizedNodeIds.push(opts.subjectId);
-          return { isMinimized: true };
+        resolveReviewThreadFn: async (opts) => {
+          resolvedThreadIds.push(opts.threadId);
+          return { isResolved: true };
         },
         logInfo: () => {},
         logError: () => {},
       },
     );
 
-    expect(minimizedNodeIds).toContain("node-a");
-    expect(minimizedNodeIds).not.toContain("node-b");
-    expect(result.minimizedOutdatedDedupeKeys).toContain("key-a");
+    expect(resolvedThreadIds).toContain("thread-a");
+    expect(resolvedThreadIds).not.toContain("thread-b");
+    expect(result.resolvedOutdatedDedupeKeys).toContain("key-a");
   });
 
-  test("does not return non-outdated minimised keys in minimizedOutdatedDedupeKeys", async () => {
-    const minimizedNodeIds: string[] = [];
+  test("does not return non-outdated resolved keys in resolvedOutdatedDedupeKeys", async () => {
+    const resolvedThreadIds: string[] = [];
     const existingState: ExistingCommentState = {
       dedupeKeys: new Set(["key-gone", "key-outdated"]),
-      dedupeKeyToNodeId: new Map([
-        ["key-gone", "node-gone"],
-        ["key-outdated", "node-outdated"],
+      dedupeKeyToThreadId: new Map([
+        ["key-gone", "thread-gone"],
+        ["key-outdated", "thread-outdated"],
       ]),
       outdatedDedupeKeys: new Set(["key-outdated"]),
     };
     const newKeys = new Set(["key-outdated"]);
 
-    const result = await minimizeOutdatedComments(
+    const result = await resolveOutdatedComments(
       existingState,
       newKeys,
       {
@@ -2937,19 +2937,19 @@ describe("minimizeOutdatedComments", () => {
         githubFetchOptions: workerFetchOptions,
       },
       {
-        minimizeCommentFn: async (opts) => {
-          minimizedNodeIds.push(opts.subjectId);
-          return { isMinimized: true };
+        resolveReviewThreadFn: async (opts) => {
+          resolvedThreadIds.push(opts.threadId);
+          return { isResolved: true };
         },
         logInfo: () => {},
         logError: () => {},
       },
     );
 
-    expect(minimizedNodeIds).toContain("node-gone");
-    expect(minimizedNodeIds).toContain("node-outdated");
-    expect(result.minimizedOutdatedDedupeKeys).toContain("key-outdated");
-    expect(result.minimizedOutdatedDedupeKeys.has("key-gone")).toBe(false);
+    expect(resolvedThreadIds).toContain("thread-gone");
+    expect(resolvedThreadIds).toContain("thread-outdated");
+    expect(result.resolvedOutdatedDedupeKeys).toContain("key-outdated");
+    expect(result.resolvedOutdatedDedupeKeys.has("key-gone")).toBe(false);
   });
 });
 
