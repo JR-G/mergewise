@@ -1013,16 +1013,16 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.successfulRules).toBe(1);
   });
 
-  test("minimises outdated comments before posting new ones in github delivery mode", async () => {
+  test("resolves outdated threads before posting new ones in github delivery mode", async () => {
     process.env.GITHUB_APP_ID = "123";
     process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
 
-    const minimizedNodeIds: string[] = [];
+    const resolvedThreadIds: string[] = [];
     const finding = createFinding("finding-new", 0.95, "clean");
 
     await processAnalyzePullRequestJob(
       {
-        job_id: "job-minimize",
+        job_id: "job-resolve",
         installation_id: 44,
         repo_full_name: "acme/widget",
         pr_number: 90,
@@ -1068,10 +1068,17 @@ describe("processAnalyzePullRequestJob", () => {
             body: "<!-- mergewise-meta dedupeKey=acme/widget#90:old-finding findingId=old ruleId=rule-a category=clean confidence=0.90 -->",
           },
         ],
-        listPullRequestInlineCommentsFn: async () => [],
-        minimizeCommentFn: async (opts) => {
-          minimizedNodeIds.push(opts.subjectId);
-          return { isMinimized: true };
+        listPullRequestReviewThreadsFn: async () => [
+          {
+            id: "thread-old",
+            isResolved: false,
+            isOutdated: false,
+            firstCommentBody: "<!-- mergewise-meta dedupeKey=acme/widget#90:old-finding findingId=old ruleId=rule-a category=clean confidence=0.90 -->",
+          },
+        ],
+        resolveReviewThreadFn: async (opts) => {
+          resolvedThreadIds.push(opts.threadId);
+          return { isResolved: true };
         },
         createPullRequestReviewFn: async () => ({
           id: 1, html_url: "https://github.com/x", body: null, state: "commented",
@@ -1088,7 +1095,7 @@ describe("processAnalyzePullRequestJob", () => {
       },
     );
 
-    expect(minimizedNodeIds).toContain("IC_kwDOold800");
+    expect(resolvedThreadIds).toContain("thread-old");
   });
 
   test("transitions queued check run to failure when fetchPullRequest throws", async () => {
@@ -1206,7 +1213,7 @@ describe("processAnalyzePullRequestJob feedback logging", () => {
             reactions: { ...ZERO_REACTIONS, "+1": 2, "-1": 1 },
           },
         ],
-        listPullRequestInlineCommentsFn: async () => [],
+        listPullRequestReviewThreadsFn: async () => [],
         postPullRequestSummaryCommentFn: async (opts) => ({
           id: 200,
           node_id: "IC_200",

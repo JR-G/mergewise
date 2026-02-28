@@ -551,7 +551,7 @@ describe("finding delivery", () => {
       },
       {
         listPullRequestSummaryCommentsFn: async () => [],
-        listPullRequestInlineCommentsFn: async () => [],
+        listPullRequestReviewThreadsFn: async () => [],
         createPullRequestReviewFn: async (options) => {
           capturedReviewOptions.push(options);
           return { id: 1, html_url: "https://github.com/x", body: options.body ?? null, state: "commented" };
@@ -617,7 +617,7 @@ describe("finding delivery", () => {
       },
       {
         listPullRequestSummaryCommentsFn: async () => [],
-        listPullRequestInlineCommentsFn: async () => [],
+        listPullRequestReviewThreadsFn: async () => [],
         createPullRequestReviewFn: async () => {
           throw new Error("batch review failed");
         },
@@ -689,7 +689,7 @@ describe("finding delivery", () => {
               "findingId=one ruleId=rule/a category=clean confidence=0.9 -->",
           },
         ],
-        listPullRequestInlineCommentsFn: async () => [],
+        listPullRequestReviewThreadsFn: async () => [],
         createPullRequestReviewFn: async (options) => {
           for (const comment of options.comments) {
             capturedReviewComments.push({ body: comment.body });
@@ -743,7 +743,7 @@ describe("finding delivery", () => {
       },
       {
         listPullRequestSummaryCommentsFn: async () => [],
-        listPullRequestInlineCommentsFn: async () => [],
+        listPullRequestReviewThreadsFn: async () => [],
         createPullRequestReviewFn: async (options) => {
           for (const comment of options.comments) {
             capturedCommentBodies.push(comment.body);
@@ -797,7 +797,7 @@ describe("finding delivery", () => {
       },
       {
         listPullRequestSummaryCommentsFn: async () => [],
-        listPullRequestInlineCommentsFn: async () => [],
+        listPullRequestReviewThreadsFn: async () => [],
         createPullRequestReviewFn: async (options) => {
           for (const comment of options.comments) {
             capturedCommentBodies.push(comment.body);
@@ -852,7 +852,7 @@ describe("finding delivery", () => {
       },
       {
         listPullRequestSummaryCommentsFn: async () => [],
-        listPullRequestInlineCommentsFn: async () => [],
+        listPullRequestReviewThreadsFn: async () => [],
         createPullRequestReviewFn: async (options) => {
           for (const comment of options.comments) {
             capturedCommentBodies.push(comment.body);
