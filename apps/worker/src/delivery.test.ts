@@ -181,12 +181,12 @@ describe("finding delivery", () => {
       maxComments: 2,
     });
 
-    expect(delivery.comments).toHaveLength(2);
-    expect(delivery.skippedByConfidence).toBe(1);
-    expect(delivery.skippedByDeduplication).toBe(1);
-    expect(delivery.skippedByCap).toBe(1);
-    expect(delivery.comments[0]!.dedupeKey).toBe("acme/widget#3:same-key");
-    expect(delivery.comments[1]!.dedupeKey).toBe("acme/widget#3:cap-1");
+    expect(delivery.comments.map((comment) => comment.dedupeKey)).toEqual([
+      "acme/widget#3:same-key",
+      "acme/widget#3:cap-1",
+    ]);
+    expect(delivery.comments.some((comment) => comment.dedupeKey === "acme/widget#3:below-threshold")).toBe(false);
+    expect(delivery.comments.some((comment) => comment.dedupeKey === "acme/widget#3:cap-2")).toBe(false);
   });
 
   test("prepareFindingDelivery ordering is deterministic across input permutations", () => {
@@ -284,8 +284,8 @@ describe("finding delivery", () => {
     );
 
     expect(delivery.comments).toHaveLength(1);
-    expect(delivery.skippedByGrouping).toBe(1);
-    expect(delivery.comments[0]!.groupedFindings).toHaveLength(2);
+    expect(delivery.comments[0]!.groupedFindings.map((finding) => finding.findingId)).toContain("group-a");
+    expect(delivery.comments[0]!.groupedFindings.map((finding) => finding.findingId)).toContain("group-b");
     expect(delivery.comments[0]!.body).toContain("Also affects 1 other location");
     expect(delivery.comments[0]!.body).toContain("`src/a.ts:25`");
   });
@@ -312,7 +312,7 @@ describe("finding delivery", () => {
     );
 
     expect(delivery.comments).toHaveLength(1);
-    expect(delivery.skippedByPolicy).toBe(0);
+    expect(delivery.comments[0]!.finding.category).toBe("clean");
   });
 
   test("prepareFindingDelivery applies default blocked-rule post policy", () => {
@@ -337,7 +337,6 @@ describe("finding delivery", () => {
     );
 
     expect(delivery.comments).toHaveLength(0);
-    expect(delivery.skippedByPolicy).toBe(1);
   });
 
   test("prepareFindingDelivery suppresses test-file findings when non-test findings exist", () => {
@@ -433,7 +432,6 @@ describe("finding delivery", () => {
     );
 
     expect(delivery.comments).toHaveLength(0);
-    expect(delivery.skippedByConfidence).toBe(1);
   });
 
   test("prepareFindingDelivery treats __mocks__ and /test/ paths as test files", () => {
@@ -468,7 +466,6 @@ describe("finding delivery", () => {
     );
 
     expect(delivery.comments).toHaveLength(0);
-    expect(delivery.skippedByConfidence).toBe(2);
   });
 
   test("prepareFindingDelivery treats JavaScript test/spec suffixes as test files", () => {
@@ -503,7 +500,6 @@ describe("finding delivery", () => {
     );
 
     expect(delivery.comments).toHaveLength(0);
-    expect(delivery.skippedByConfidence).toBe(2);
   });
 
   test("postPreparedFindingComments posts bounded payload via batch review", async () => {

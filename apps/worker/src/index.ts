@@ -475,7 +475,8 @@ export interface ExistingCommentState {
    */
   readonly dedupeKeyToThreadId: ReadonlyMap<string, string>;
   /**
-   * All fetched comments (summary + inline) for downstream feedback extraction.
+   * All fetched comments (summary + inline review thread) for downstream feedback extraction.
+   * Reactions are only available on summary comments; review thread entries have no reactions.
    */
   readonly allComments: readonly { readonly body: string; readonly reactions?: GitHubReactionCounts }[];
   /**
@@ -1395,6 +1396,7 @@ async function loadExistingDedupeKeys(
       traceId: options.traceId,
     });
     for (const thread of reviewThreads) {
+      allComments.push({ body: thread.firstCommentBody });
       if (thread.isResolved) {
         continue;
       }

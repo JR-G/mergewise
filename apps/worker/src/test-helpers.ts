@@ -3,6 +3,7 @@ import type { Finding, FindingCategory, Rule } from "@mergewise/shared-types";
 
 import type { WorkerGitHubFetchOptions } from "./index";
 
+/** Minimal open PR state for dependency injection in worker tests. */
 export const openPullRequestState = {
   number: 50,
   state: "open" as const,
@@ -10,6 +11,7 @@ export const openPullRequestState = {
   title: "Test PR",
 };
 
+/** Fast-timeout GitHub fetch options suitable for unit tests. */
 export const workerFetchOptions: WorkerGitHubFetchOptions = {
   githubApiBaseUrl: "https://api.github.com",
   githubUserAgent: "mergewise-worker-test",
@@ -18,6 +20,7 @@ export const workerFetchOptions: WorkerGitHubFetchOptions = {
   githubRetryDelayMs: 1,
 };
 
+/** Creates a no-op stateless rule with the given ID, suitable for pipeline wiring tests. */
 export function createRule(ruleId: string): Rule {
   return {
     kind: "stateless",
@@ -32,6 +35,7 @@ export function createRule(ruleId: string): Rule {
   };
 }
 
+/** Creates a posted finding with sensible defaults; override fields via spread after calling. */
 export function createFinding(
   findingId: string,
   confidence: number,
@@ -54,6 +58,7 @@ export function createFinding(
   };
 }
 
+/** Wraps findings into a full execution result with auto-computed category counts. */
 export function createExecutionResultWithFindings(findings: readonly Finding[]) {
   const findingsByCategory = {
     clean: 0,
@@ -79,6 +84,7 @@ export function createExecutionResultWithFindings(findings: readonly Finding[]) 
   };
 }
 
+/** All-zero reaction counts, used as a base for spreading individual reaction overrides. */
 export const ZERO_REACTIONS: GitHubReactionCounts = {
   "+1": 0, "-1": 0, laugh: 0, confused: 0, heart: 0, hooray: 0, rocket: 0, eyes: 0,
 };
