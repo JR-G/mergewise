@@ -8,6 +8,29 @@ pre-commit:
           echo "Direct commits to $branch are not allowed. Create a feature branch."
           exit 1
         fi
+    no-conflict-markers:
+      run: |
+        staged=$(git diff --cached --diff-filter=ACM -U0 -- '*.ts' '*.tsx')
+        if echo "$staged" | grep -q '^+<<<<<<<'; then
+          echo "Unresolved merge conflict markers found in staged files."
+          exit 1
+        fi
+        if echo "$staged" | grep -q '^+======='; then
+          echo "Unresolved merge conflict markers found in staged files."
+          exit 1
+        fi
+        if echo "$staged" | grep -q '^+>>>>>>>'; then
+          echo "Unresolved merge conflict markers found in staged files."
+          exit 1
+        fi
+    no-console-log:
+      run: |
+        added=$(git diff --cached --diff-filter=ACM -U0 -- '*.ts' '*.tsx' | grep '^+' | grep -v '^+++')
+        if echo "$added" | grep -Eq 'console\.(log|debug|warn|info)'; then
+          echo "console.* found in staged changes. Use structured logging instead."
+          echo "$added" | grep -En 'console\.(log|debug|warn|info)'
+          exit 1
+        fi
     lint:
       run: bun run lint
     typecheck:
@@ -24,5 +47,27 @@ pre-push:
       run: bun run typecheck
     build:
       run: bun run build
-    test:
-      run: bun test --coverage
+    quality-gates:
+      run: bun run quality:gates
+    test-and-coverage:
+      run: |
+        output=$(bun test --coverage 2>&1)
+        echo "$output"
+        all_files_line=$(echo "$output" | grep '^All files')
+        if [ -z "$all_files_line" ]; then
+          echo "Could not parse coverage output."
+          exit 1
+        fi
+        header_line=$(echo "$output" | grep -E '^\s*(File|All files)\s*\|' | head -1)
+        lines_col=$(echo "$header_line" | awk -F'|' '{ for (i=1; i<=NF; i++) { gsub(/[[:space:]]/, "", $i); if ($i == "%Lines") print i } }')
+        if [ -z "$lines_col" ]; then
+          lines_col=3
+        fi
+        line_coverage=$(echo "$all_files_line" | awk -F'|' -v col="$lines_col" '{gsub(/[[:space:]%]/, "", $col); print $col}')
+        threshold=90
+        pass=$(awk "BEGIN {print ($line_coverage >= $threshold) ? 1 : 0}")
+        if [ "$pass" -eq 0 ]; then
+          echo "Line coverage ${line_coverage}% is below the ${threshold}% threshold."
+          exit 1
+        fi
+        echo "Coverage check passed: ${line_coverage}% (threshold: ${threshold}%)"
