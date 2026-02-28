@@ -165,12 +165,14 @@ function buildLlmPatchPreview(
  * @param raw - Raw JSON string from the LLM.
  * @param diff - File diff used to validate line numbers.
  * @param pullRequest - PR metadata for finding attribution.
+ * @param confidenceThreshold - Minimum confidence score for inclusion.
  * @returns Validated findings ready for the delivery pipeline.
  */
 export function parseLlmResponse(
   raw: string,
   diff: FileDiff,
   pullRequest: PullRequestMetadata,
+  confidenceThreshold?: number,
 ): Finding[] {
   let parsed: unknown;
   try {
@@ -189,6 +191,10 @@ export function parseLlmResponse(
 
   for (const rawFinding of parsed.findings) {
     if (!isValidRawFinding(rawFinding, addedLines)) {
+      continue;
+    }
+
+    if (confidenceThreshold !== undefined && rawFinding.confidence < confidenceThreshold) {
       continue;
     }
 

@@ -137,6 +137,38 @@ describe("selectFilesForReview", () => {
     const result = selectFilesForReview([bigFile], 10);
     expect(result).toHaveLength(1);
   });
+
+  test("user skip patterns exclude matching files", () => {
+    const diffs: FileDiff[] = [
+      makeDiff("src/generated/types.ts", [makeHunk("@@ -0,0 +1,2 @@", ["+a", "+b"])]),
+      makeDiff("src/app.ts", [makeHunk("@@ -0,0 +1,2 @@", ["+a", "+b"])]),
+    ];
+
+    const result = selectFilesForReview(diffs, 100_000, ["src/generated/**"]);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.filePath).toBe("src/app.ts");
+  });
+
+  test("built-in skip patterns still apply alongside user patterns", () => {
+    const diffs: FileDiff[] = [
+      makeDiff("src/app.test.ts", [makeHunk("@@ -0,0 +1,2 @@", ["+a", "+b"])]),
+      makeDiff("packages/legacy/util.ts", [makeHunk("@@ -0,0 +1,2 @@", ["+a", "+b"])]),
+      makeDiff("src/index.ts", [makeHunk("@@ -0,0 +1,2 @@", ["+a", "+b"])]),
+    ];
+
+    const result = selectFilesForReview(diffs, 100_000, ["packages/legacy/**"]);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.filePath).toBe("src/index.ts");
+  });
+
+  test("empty user skip patterns array has no effect", () => {
+    const diffs: FileDiff[] = [
+      makeDiff("src/app.ts", [makeHunk("@@ -0,0 +1,2 @@", ["+a", "+b"])]),
+    ];
+
+    const result = selectFilesForReview(diffs, 100_000, []);
+    expect(result).toHaveLength(1);
+  });
 });
 
 describe("extractAddedLineNumbers", () => {
@@ -457,6 +489,55 @@ describe("parseLlmResponse", () => {
       "}",
     ]);
     expect(result[0]!.patchPreview?.removedLines).toEqual(["added line 2"]);
+  });
+
+  test("filters findings below custom confidence threshold", () => {
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 2,
+          category: "clean",
+          confidence: 0.75,
+          evidence: "low confidence",
+          recommendation: "Maybe fix.",
+        },
+        {
+          line: 3,
+          category: "idiomatic",
+          confidence: 0.9,
+          evidence: "high confidence",
+          recommendation: "Definitely fix.",
+        },
+      ],
+    });
+
+    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA, 0.8);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.confidence).toBe(0.9);
+  });
+
+  test("retains all findings when no confidence threshold is provided", () => {
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 2,
+          category: "clean",
+          confidence: 0.1,
+          evidence: "very low",
+          recommendation: "Fix.",
+        },
+        {
+          line: 3,
+          category: "idiomatic",
+          confidence: 0.9,
+          evidence: "high",
+          recommendation: "Fix.",
+        },
+      ],
+    });
+
+    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
+    expect(result).toHaveLength(2);
   });
 });
 
@@ -987,7 +1068,7 @@ describe("reviewFile (via fake HTTP server)", () => {
         const codebaseContext = makeMockCodebaseContext({
           "src/app.ts": "const data = fetch()\nconst info = parse(data)\nexport default info",
         });
-        const findings = await reviewFile(diff, PULL_REQUEST_METADATA, codebaseContext, client);
+        const findings = await reviewFile({ fileDiff: diff, pullRequest: PULL_REQUEST_METADATA, codebaseContext, client });
         expect(findings).toHaveLength(1);
         expect(findings[0]!.line).toBe(1);
         expect(findings[0]!.category).toBe("idiomatic");
@@ -1017,7 +1098,7 @@ describe("reviewFile (via fake HTTP server)", () => {
           model: "test-model",
           maxRetries: 0,
         });
-        const findings = await reviewFile(diff, PULL_REQUEST_METADATA, makeMockCodebaseContext(), client);
+        const findings = await reviewFile({ fileDiff: diff, pullRequest: PULL_REQUEST_METADATA, codebaseContext: makeMockCodebaseContext(), client });
         expect(findings).toHaveLength(0);
       },
     );
@@ -1053,7 +1134,7 @@ describe("reviewFile (via fake HTTP server)", () => {
           model: "test-model",
           maxRetries: 0,
         });
-        const findings = await reviewFile(diff, PULL_REQUEST_METADATA, makeMockCodebaseContext(), client);
+        const findings = await reviewFile({ fileDiff: diff, pullRequest: PULL_REQUEST_METADATA, codebaseContext: makeMockCodebaseContext(), client });
         expect(findings).toHaveLength(0);
       },
     );
@@ -1077,7 +1158,7 @@ describe("reviewFile (via fake HTTP server)", () => {
           maxRetries: 0,
         });
         const emptyContext = makeMockCodebaseContext();
-        const findings = await reviewFile(diff, PULL_REQUEST_METADATA, emptyContext, client);
+        const findings = await reviewFile({ fileDiff: diff, pullRequest: PULL_REQUEST_METADATA, codebaseContext: emptyContext, client });
         expect(findings).toHaveLength(0);
       },
     );
