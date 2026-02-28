@@ -55,13 +55,12 @@ pre-push:
       run: bun run typecheck
     build:
       run: bun run build
-    test:
-      run: bun test --coverage
     quality-gates:
       run: bun run quality:gates
-    coverage-threshold:
+    test-and-coverage:
       run: |
         output=$(bun test --coverage 2>&1)
+        echo "$output"
         all_files_line=$(echo "$output" | grep '^All files')
         if [ -z "$all_files_line" ]; then
           echo "Could not parse coverage output."
@@ -69,7 +68,8 @@ pre-push:
         fi
         line_coverage=$(echo "$all_files_line" | awk -F'|' '{gsub(/[[:space:]]/, "", $3); print $3}')
         threshold=90
-        if [ "$(echo "$line_coverage < $threshold" | bc -l)" -eq 1 ]; then
+        pass=$(awk "BEGIN {print ($line_coverage >= $threshold) ? 1 : 0}")
+        if [ "$pass" -eq 0 ]; then
           echo "Line coverage ${line_coverage}% is below the ${threshold}% threshold."
           exit 1
         fi
