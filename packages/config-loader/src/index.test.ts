@@ -148,4 +148,42 @@ describe("config-loader", () => {
     expect(config.rules.include).toEqual(["ts-react/no-debugger"]);
     expect(config.rules.exclude).toEqual(["ts-react/no-array-index-key"]);
   });
+
+  test("parses valid review.skipPatterns", () => {
+    const filePath = join(tempDirectory, ".mergewise.yml");
+    writeFileSync(
+      filePath,
+      [
+        "review:",
+        "  skipPatterns:",
+        "    - 'src/generated/**'",
+        "    - '*.migration.ts'",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const config = loadMergewiseConfig({ workingDirectory: tempDirectory });
+    expect(config.review.skipPatterns).toEqual(["src/generated/**", "*.migration.ts"]);
+  });
+
+  test("throws when review.skipPatterns contains empty string", () => {
+    const filePath = join(tempDirectory, ".mergewise.yml");
+    writeFileSync(
+      filePath,
+      ["review:", "  skipPatterns:", "    - 'valid/**'", "    - ''"].join("\n"),
+      "utf8",
+    );
+
+    expect(() => loadMergewiseConfig({ workingDirectory: tempDirectory })).toThrow(
+      MergewiseConfigValidationError,
+    );
+  });
+
+  test("defaults review section when not present in config", () => {
+    const filePath = join(tempDirectory, ".mergewise.yml");
+    writeFileSync(filePath, "gating:\n  maxComments: 10", "utf8");
+
+    const config = loadMergewiseConfig({ workingDirectory: tempDirectory });
+    expect(config.review.skipPatterns).toEqual([]);
+  });
 });

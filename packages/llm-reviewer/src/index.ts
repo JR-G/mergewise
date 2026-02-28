@@ -31,6 +31,14 @@ function noop(): void {
 export interface LlmReviewerConfig {
   readonly clientConfig: ReviewClientConfig;
   readonly tokenBudget?: number;
+  /**
+   * Glob patterns for files to exclude from LLM review.
+   *
+   * @remarks
+   * Matched against file paths alongside built-in skip patterns.
+   * When omitted, only built-in patterns apply.
+   */
+  readonly userSkipPatterns?: readonly string[];
   readonly onFileReviewError?: (filePath: string, error: unknown) => void;
 }
 
@@ -52,6 +60,7 @@ export function createLlmReviewerRule(
 ): CodebaseAwareRule {
   const client = createReviewClient(config.clientConfig);
   const tokenBudget = config.tokenBudget ?? DEFAULT_TOKEN_BUDGET;
+  const userSkipPatterns = config.userSkipPatterns;
   const onFileReviewError = config.onFileReviewError ?? noop;
 
   return {
@@ -68,7 +77,7 @@ export function createLlmReviewerRule(
       context: AnalysisContext,
       codebaseContext: CodebaseContext,
     ): Promise<readonly Finding[]> => {
-      const selectedFiles = selectFilesForReview(context.diffs, tokenBudget);
+      const selectedFiles = selectFilesForReview(context.diffs, tokenBudget, userSkipPatterns);
 
       if (selectedFiles.length === 0) {
         return [];
@@ -78,12 +87,12 @@ export function createLlmReviewerRule(
 
       for (const fileDiff of selectedFiles) {
         try {
-          const findings = await reviewFile(
+          const findings = await reviewFile({
             fileDiff,
-            context.pullRequest,
+            pullRequest: context.pullRequest,
             codebaseContext,
             client,
-          );
+          });
           allFindings.push(...findings);
         } catch (error) {
           onFileReviewError(fileDiff.filePath, error);

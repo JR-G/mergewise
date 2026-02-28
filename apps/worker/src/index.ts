@@ -1726,7 +1726,9 @@ export async function processAnalyzePullRequestJob(
   const infoLogger = dependencies.logInfo ?? console.log;
   const errorLogger = dependencies.logError ?? console.error;
   const warnLogger = dependencies.logWarn ?? infoLogger;
-  const llmConfig = (dependencies.mergewiseConfig ?? DEFAULT_MERGEWISE_CONFIG).llm;
+  const mergewiseConfigResolved = dependencies.mergewiseConfig ?? DEFAULT_MERGEWISE_CONFIG;
+  const llmConfig = mergewiseConfigResolved.llm;
+  const reviewConfig = mergewiseConfigResolved.review;
   const llmApiKey = process.env.LLM_API_KEY;
   const llmEnabled = llmConfig.enabled && llmApiKey !== undefined && llmApiKey.length > 0;
 
@@ -1739,6 +1741,7 @@ export async function processAnalyzePullRequestJob(
             model: llmConfig.model,
           },
           tokenBudget: llmConfig.tokenBudget,
+          userSkipPatterns: reviewConfig.skipPatterns.length > 0 ? reviewConfig.skipPatterns : undefined,
           onFileReviewError: (filePath, error) => {
             warnLogger(
               `[worker] llm review failed trace=${traceId} file=${filePath} error=${error instanceof Error ? error.message : String(error)}`,
@@ -1749,13 +1752,12 @@ export async function processAnalyzePullRequestJob(
     : [];
 
   const rules = dependencies.rules ?? [...tsReactRules, ...baseLlmRules];
-  const mergewiseConfig = dependencies.mergewiseConfig ?? DEFAULT_MERGEWISE_CONFIG;
-  const selectedRules = selectRulesForExecution(rules, mergewiseConfig);
+  const selectedRules = selectRulesForExecution(rules, mergewiseConfigResolved);
   const executeRulesFn = dependencies.executeRulesFn ?? executeRules;
   const githubFetchOptions = dependencies.githubFetchOptions ?? resolveGitHubFetchOptions();
   const findingDeliveryOptions = dependencies.findingDeliveryOptions ?? {
-    confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
-    maxComments: mergewiseConfig.gating.maxComments,
+    confidenceThreshold: mergewiseConfigResolved.gating.confidenceThreshold,
+    maxComments: mergewiseConfigResolved.gating.maxComments,
     testFileConfidenceThreshold: DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD,
     allowedCategories: DEFAULT_ALLOWED_POST_CATEGORIES,
     blockedRuleIds: DEFAULT_BLOCKED_POST_RULE_IDS,
@@ -1957,7 +1959,7 @@ export async function processAnalyzePullRequestJob(
       );
     },
   });
-  const gatedExecutionResult = applyFindingGates(executionResult, mergewiseConfig);
+  const gatedExecutionResult = applyFindingGates(executionResult, mergewiseConfigResolved);
   const delivery = prepareFindingDelivery(executionResult.findings, findingDeliveryOptions);
 
   let postedCommentCount = 0;

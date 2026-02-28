@@ -1,3 +1,4 @@
+import picomatch from "picomatch";
 import type { FileDiff } from "@mergewise/shared-types";
 
 const SKIP_PATTERNS = [
@@ -38,6 +39,17 @@ const SKIP_PATTERNS = [
   /\.map$/,
 ];
 
+const matcherCache = new Map<string, picomatch.Matcher>();
+
+function getCachedMatcher(patterns: readonly string[]): picomatch.Matcher {
+  const cacheKey = patterns.join("\0");
+  const cached = matcherCache.get(cacheKey);
+  if (cached) return cached;
+  const matcher = picomatch(patterns as string[]);
+  matcherCache.set(cacheKey, matcher);
+  return matcher;
+}
+
 const TS_EXTENSIONS = /\.[tj]sx?$/;
 
 const TOKENS_PER_LINE = 4;
@@ -69,10 +81,21 @@ export function estimateTokens(diff: FileDiff): number {
 }
 
 /**
- * Returns true when a file path matches any skip pattern.
+ * Returns true when a file path matches any built-in or user-defined skip pattern.
+ *
+ * @param filePath - File path to check.
+ * @param userSkipPatterns - Optional glob patterns from user config.
  */
-export function shouldSkipFile(filePath: string): boolean {
-  return SKIP_PATTERNS.some((pattern) => pattern.test(filePath));
+export function shouldSkipFile(filePath: string, userSkipPatterns?: readonly string[]): boolean {
+  if (SKIP_PATTERNS.some((pattern) => pattern.test(filePath))) {
+    return true;
+  }
+
+  if (userSkipPatterns && userSkipPatterns.length > 0) {
+    return getCachedMatcher(userSkipPatterns)(filePath);
+  }
+
+  return false;
 }
 
 /**
@@ -93,14 +116,16 @@ export function isTypeScriptFile(filePath: string): boolean {
  *
  * @param diffs - File diffs from the pull request.
  * @param tokenBudget - Maximum estimated tokens across all selected files.
+ * @param userSkipPatterns - Optional glob patterns from user config.
  * @returns Selected file diffs in priority order.
  */
 export function selectFilesForReview(
   diffs: readonly FileDiff[],
   tokenBudget: number,
+  userSkipPatterns?: readonly string[],
 ): FileDiff[] {
   const candidates = diffs.filter(
-    (diff) => isTypeScriptFile(diff.filePath) && !shouldSkipFile(diff.filePath),
+    (diff) => isTypeScriptFile(diff.filePath) && !shouldSkipFile(diff.filePath, userSkipPatterns),
   );
 
   const sorted = [...candidates].sort((left, right) => {

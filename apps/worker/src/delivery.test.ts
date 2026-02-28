@@ -31,6 +31,7 @@ describe("applyFindingGates", () => {
         include: [],
         exclude: [],
       },
+      review: { skipPatterns: [] },
       llm: {
         enabled: false,
         model: "gpt-4o",
@@ -63,6 +64,7 @@ describe("applyFindingGates", () => {
         include: [],
         exclude: [],
       },
+      review: { skipPatterns: [] },
       llm: {
         enabled: false,
         model: "gpt-4o",
@@ -96,6 +98,7 @@ describe("applyFindingGates", () => {
         include: [],
         exclude: [],
       },
+      review: { skipPatterns: [] },
       llm: {
         enabled: false,
         model: "gpt-4o",
