@@ -33,15 +33,6 @@ export interface MergewiseReviewConfigV1 {
    * Merged with built-in skip patterns — cannot replace them.
    */
   skipPatterns: string[];
-  /**
-   * Minimum confidence score for LLM findings to be retained at parse time.
-   *
-   * @remarks
-   * When `undefined`, no additional confidence floor is applied during
-   * response parsing (the gating threshold still applies later).
-   * Must be between 0.7 and 1.0 when specified.
-   */
-  confidenceThreshold: number | undefined;
 }
 
 /**
@@ -242,7 +233,6 @@ export const DEFAULT_MERGEWISE_CONFIG: MergewiseConfig = {
   },
   review: {
     skipPatterns: [],
-    confidenceThreshold: undefined,
   },
   llm: {
     enabled: true,
@@ -263,7 +253,6 @@ interface RawMergewiseConfig {
   };
   review?: {
     skipPatterns?: unknown;
-    confidenceThreshold?: unknown;
   };
   llm?: {
     enabled?: unknown;
@@ -286,7 +275,6 @@ function cloneDefaults(): MergewiseConfig {
     },
     review: {
       skipPatterns: [...DEFAULT_MERGEWISE_CONFIG.review.skipPatterns],
-      confidenceThreshold: DEFAULT_MERGEWISE_CONFIG.review.confidenceThreshold,
     },
     llm: { ...DEFAULT_MERGEWISE_CONFIG.llm },
   };
@@ -407,24 +395,6 @@ function applyReview(
       }
     }
     normalizedConfig.review.skipPatterns = (patterns as string[]).map((entry) => entry.trim());
-  }
-
-  const confidenceThreshold = rawConfig.review.confidenceThreshold;
-  const hasConfidenceThreshold = confidenceThreshold !== undefined;
-  if (hasConfidenceThreshold && (typeof confidenceThreshold !== "number" || Number.isNaN(confidenceThreshold))) {
-    throw new MergewiseConfigValidationError(
-      filePath,
-      "review.confidenceThreshold must be a number",
-    );
-  }
-  if (hasConfidenceThreshold && (confidenceThreshold < 0.7 || confidenceThreshold > 1)) {
-    throw new MergewiseConfigValidationError(
-      filePath,
-      "review.confidenceThreshold must be between 0.7 and 1.0",
-    );
-  }
-  if (hasConfidenceThreshold) {
-    normalizedConfig.review.confidenceThreshold = confidenceThreshold;
   }
 }
 

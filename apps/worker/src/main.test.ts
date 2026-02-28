@@ -94,7 +94,7 @@ describe("startWorkerProcess", () => {
           include: [],
           exclude: [],
         },
-        review: { skipPatterns: [], confidenceThreshold: undefined },
+        review: { skipPatterns: [] },
         llm: {
           enabled: false,
           model: "gpt-4o",
@@ -173,7 +173,7 @@ describe("startWorkerProcess", () => {
           include: [],
           exclude: [],
         },
-        review: { skipPatterns: [], confidenceThreshold: undefined },
+        review: { skipPatterns: [] },
         llm: {
           enabled: false,
           model: "gpt-4o",
@@ -252,7 +252,7 @@ describe("startWorkerProcess", () => {
           include: [],
           exclude: [],
         },
-        review: { skipPatterns: [], confidenceThreshold: undefined },
+        review: { skipPatterns: [] },
         llm: {
           enabled: false,
           model: "gpt-4o",
@@ -332,7 +332,7 @@ describe("startWorkerProcess", () => {
           include: [],
           exclude: [],
         },
-        review: { skipPatterns: [], confidenceThreshold: undefined },
+        review: { skipPatterns: [] },
         llm: {
           enabled: false,
           model: "gpt-4o",
@@ -426,7 +426,7 @@ describe("startWorkerProcess", () => {
             include: [],
             exclude: [],
           },
-          review: { skipPatterns: [], confidenceThreshold: undefined },
+          review: { skipPatterns: [] },
           llm: {
             enabled: false,
             model: "gpt-4o",

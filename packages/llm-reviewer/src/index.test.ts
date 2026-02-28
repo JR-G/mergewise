@@ -491,54 +491,6 @@ describe("parseLlmResponse", () => {
     expect(result[0]!.patchPreview?.removedLines).toEqual(["added line 2"]);
   });
 
-  test("filters findings below custom confidence threshold", () => {
-    const raw = JSON.stringify({
-      findings: [
-        {
-          line: 2,
-          category: "clean",
-          confidence: 0.75,
-          evidence: "low confidence",
-          recommendation: "Maybe fix.",
-        },
-        {
-          line: 3,
-          category: "idiomatic",
-          confidence: 0.9,
-          evidence: "high confidence",
-          recommendation: "Definitely fix.",
-        },
-      ],
-    });
-
-    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA, 0.8);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.confidence).toBe(0.9);
-  });
-
-  test("retains all findings when no confidence threshold is provided", () => {
-    const raw = JSON.stringify({
-      findings: [
-        {
-          line: 2,
-          category: "clean",
-          confidence: 0.1,
-          evidence: "very low",
-          recommendation: "Fix.",
-        },
-        {
-          line: 3,
-          category: "idiomatic",
-          confidence: 0.9,
-          evidence: "high",
-          recommendation: "Fix.",
-        },
-      ],
-    });
-
-    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
-    expect(result).toHaveLength(2);
-  });
 });
 
 describe("isCommentLine", () => {

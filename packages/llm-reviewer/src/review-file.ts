@@ -17,7 +17,6 @@ export interface ReviewFileOptions {
   readonly pullRequest: PullRequestMetadata;
   readonly codebaseContext: CodebaseContext;
   readonly client: ReviewClient;
-  readonly confidenceThreshold?: number;
 }
 
 /**
@@ -27,7 +26,7 @@ export interface ReviewFileOptions {
  * @returns Findings from the LLM review, validated against the diff.
  */
 export async function reviewFile(options: ReviewFileOptions): Promise<Finding[]> {
-  const { fileDiff, pullRequest, codebaseContext, client, confidenceThreshold } = options;
+  const { fileDiff, pullRequest, codebaseContext, client } = options;
   const fullContent = await codebaseContext.readFile(fileDiff.filePath);
   const signals = extractStructuralSignals(fileDiff);
 
@@ -40,5 +39,5 @@ export async function reviewFile(options: ReviewFileOptions): Promise<Finding[]>
     MAX_RESPONSE_TOKENS,
   );
 
-  return parseLlmResponse(rawResponse, fileDiff, pullRequest, confidenceThreshold);
+  return parseLlmResponse(rawResponse, fileDiff, pullRequest);
 }
