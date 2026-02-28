@@ -132,12 +132,12 @@
               </p>
               <div class="feature-demo demo-ast">
                 <div class="demo-code">
-                  <span class="demo-line">const data = <span class="demo-kw">await</span> fetch(url);</span>
-                  <span class="demo-line">const parsed = data.json();</span>
-                  <span class="demo-line demo-line-flagged">const x: <span class="demo-err">any</span> = parsed.val;</span>
-                  <span class="demo-line">return transform(x);</span>
+                  <span class="demo-line"><span class="demo-kw">export</span> function processOrder(req) {</span>
+                  <span class="demo-line">  validate(req); send(req);</span>
+                  <span class="demo-line demo-line-flagged">  log(req); charge(req); save(req);</span>
+                  <span class="demo-line">}</span>
                 </div>
-                <span class="demo-badge demo-badge-red">anti-pattern detected</span>
+                <span class="demo-badge demo-badge-red">god function — 5 responsibilities</span>
               </div>
             </div>
             <div class="feature-card" data-reveal>
@@ -159,7 +159,7 @@
                 </div>
                 <div class="demo-llm-finding">
                   <span class="demo-llm-icon">&#x25B6;</span>
-                  <span class="demo-llm-text">implicit any in return type</span>
+                  <span class="demo-llm-text">class handles parsing, validation, and storage</span>
                 </div>
               </div>
             </div>
@@ -227,16 +227,16 @@
                 <div class="demo-diff">
                   <div class="demo-diff-line demo-diff-del">
                     <span class="demo-diff-sign">&minus;</span>
-                    <code>const x: <span class="demo-err">any</span> = getData();</code>
+                    <code><span class="demo-err">new</span> EmailService().send(user)</code>
                   </div>
                   <div class="demo-diff-line demo-diff-add">
                     <span class="demo-diff-sign">+</span>
-                    <code>const x: <span class="demo-ok">Widget</span> = getData();</code>
+                    <code>this.<span class="demo-ok">notifier</span>.send(user)</code>
                   </div>
                 </div>
                 <div class="demo-suggestion">
                   <span class="demo-suggestion-label">suggestion</span>
-                  Use a type guard instead of a cast
+                  Inject the dependency — don't instantiate inline
                 </div>
               </div>
             </div>
@@ -270,11 +270,39 @@
 
       <section class="demo" id="demo">
         <div class="container demo-grid">
-          <div class="demo-screenshot" data-reveal>
-            <img
-              src="./assets/demo-screenshot.png"
-              alt="Mergewise reviewing a pull request — flagging explicit any usage with a suggested fix to use unknown instead"
-            />
+          <div class="demo-mock" data-reveal>
+            <div class="mock-header">
+              <span class="mock-filename">src/handlers/checkout.ts</span>
+              <span class="mock-lines">L31–L42</span>
+            </div>
+            <div class="mock-code">
+              <span class="mock-code-line mock-nest mock-nest-1"><span class="mock-ln">31</span>if (cart.items.length > 0) {</span>
+              <span class="mock-code-line mock-nest mock-nest-2"><span class="mock-ln">32</span>  if (user.verified) {</span>
+              <span class="mock-code-line mock-nest mock-nest-3"><span class="mock-ln">33</span>    if (hasStock(cart)) {</span>
+              <span class="mock-code-line mock-nest mock-nest-4"><span class="mock-ln">34</span>      if (payment.valid) {</span>
+              <span class="mock-code-line"><span class="mock-ln">35</span>        processOrder(cart);</span>
+            </div>
+            <div class="mock-comment">
+              <div class="mock-comment-header">
+                <span class="shape-square shape-amber" style="width:12px;height:12px;display:inline-block"></span>
+                <span class="mock-bot-name">mergewise-review</span>
+                <span class="mock-badge">bot</span>
+              </div>
+              <p class="mock-comment-body">
+                <strong>clean-code:</strong> Nesting depth of 4 — this is hard to
+                follow and test. Invert conditions with early returns to flatten the
+                logic.
+              </p>
+              <div class="mock-suggestion">
+                <span class="mock-suggestion-label">Suggested change</span>
+                <div class="mock-suggestion-diff">
+                  <span class="mock-diff-del">&minus; if (cart.items.length > 0) {</span>
+                  <span class="mock-diff-del">&minus; &ensp;&ensp;if (user.verified) {</span>
+                  <span class="mock-diff-add">+ if (!cart.items.length) return;</span>
+                  <span class="mock-diff-add">+ if (!user.verified) throw ...;</span>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="demo-copy" data-reveal>
             <h2 class="section-heading">See It in Action</h2>
@@ -285,16 +313,16 @@
             </p>
             <ul class="demo-list">
               <li>
-                <span class="shape-square shape-ink shape-inline"></span>
-                Inline on the diff, not a wall of text
+                <span class="shape-triangle shape-red shape-inline"></span>
+                Catches what linters miss — structure, coupling, complexity
               </li>
               <li>
-                <span class="shape-triangle shape-ink shape-inline"></span>
-                Confidence score on every finding
+                <span class="shape-square shape-blue shape-inline"></span>
+                Confidence-scored — noise never reaches the PR
               </li>
               <li>
-                <span class="shape-circle shape-ink shape-inline"></span>
-                Copy-pasteable refactoring suggestions
+                <span class="shape-circle shape-amber shape-inline"></span>
+                One-click suggested fixes, ready to commit
               </li>
             </ul>
           </div>
@@ -317,7 +345,7 @@
                 <li>Bug detection and correctness checks</li>
                 <li>Security vulnerability scanning</li>
                 <li>Performance issue identification</li>
-                <li>Code style and formatting</li>
+                <li>Documentation and test coverage gaps</li>
               </ul>
             </div>
             <div class="comparison-divider" aria-hidden="true"></div>
@@ -344,7 +372,7 @@
               <div class="faq-answer">
                 <p>
                   TypeScript and React are supported today with deep structural
-                  analysis. Support for additional languages is on the roadmap.
+                  analysis. Support for additional languages is coming soon.
                 </p>
               </div>
             </details>
