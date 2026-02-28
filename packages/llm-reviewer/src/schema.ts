@@ -222,7 +222,7 @@ export function parseLlmResponse(
 
 const PROXIMITY_THRESHOLD = 5;
 const MAX_FINDINGS_PER_FILE = 8;
-export const CONFIDENCE_FLOOR = 0.7;
+
 
 /**
  * Collapses nearby findings of the same category into a single
@@ -316,7 +316,7 @@ function isValidRawFinding(
   }
   if (
     typeof candidate.confidence !== "number" ||
-    candidate.confidence < CONFIDENCE_FLOOR ||
+    candidate.confidence < 0 ||
     candidate.confidence > 1
   ) {
     return false;
