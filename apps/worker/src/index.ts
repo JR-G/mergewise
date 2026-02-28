@@ -1,12 +1,10 @@
 import {
   listPullRequestReviewThreads,
   listPullRequestSummaryComments,
-  createPullRequestReview,
   createGitHubAppJwt,
   exchangeInstallationAccessToken,
   fetchPullRequestFiles,
   GitHubApiError,
-  resolveReviewThread,
   postPullRequestSummaryComment,
   updateIssueComment,
   type FetchPullRequestFilesOptions,
@@ -19,7 +17,6 @@ import {
   type ResolveReviewThreadOptions,
   type ResolveReviewThreadResult,
   type ReviewThread,
-  type PullRequestReviewComment,
   type PostPullRequestSummaryCommentOptions,
   type UpdateIssueCommentOptions,
   fetchFileContent,
@@ -31,7 +28,6 @@ import {
   type CreateCheckRunOptions,
   type UpdateCheckRunOptions,
   type GitHubCheckRun,
-  type GitHubReactionCounts,
 } from "@mergewise/github-client";
 import {
   DEFAULT_MERGEWISE_CONFIG,
@@ -49,9 +45,6 @@ import type {
   FindingCategory,
   Rule,
 } from "@mergewise/shared-types";
-import {
-  MERGEWISE_META_REGEX,
-} from "./comment-formatter";
 import {
   DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD,
   DEFAULT_ALLOWED_POST_CATEGORIES,
@@ -76,10 +69,16 @@ import {
 } from "./job-utils";
 import {
   type WorkerFindingDeliveryOptions,
-  type PreparedFindingComment,
   prepareFindingDelivery,
   buildWorkerCheckOutput,
 } from "./delivery";
+import {
+  loadExistingDedupeKeys,
+  collectCommentFeedback,
+  logFeedbackSummary,
+  postPreparedFindingComments,
+  resolveOutdatedComments,
+} from "./pr-comments";
 
 export {
   DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD,
@@ -140,151 +139,36 @@ export {
 } from "./delivery";
 
 
-/**
- * Redacted request payload retained for posting telemetry.
- */
-export interface PostedCommentRequestOptions {
-  /** Repository owner. */
-  readonly owner: string;
-  /** Repository name. */
-  readonly repository: string;
-  /** Pull request number. */
-  readonly pullRequestNumber: number;
-  /** Redacted installation access token marker. */
-  readonly installationAccessToken: string;
-  /** Markdown body sent to GitHub. */
-  readonly body: string;
-  /** GitHub API base URL. */
-  readonly apiBaseUrl?: string;
-  /** GitHub API user agent. */
-  readonly userAgent?: string;
-  /** Request timeout in milliseconds. */
-  readonly requestTimeoutMs?: number;
-  /** Optional end-to-end trace identifier for observability. */
-  readonly traceId?: string;
-  /** Inline path for review comments when available. */
-  readonly path?: string;
-  /** Inline line for review comments when available. */
-  readonly line?: number;
-  /** Commit SHA used for inline anchors when available. */
-  readonly commitId?: string;
-  /** Posted mode for diagnostics. */
-  readonly mode?: "inline" | "summary";
-}
+export {
+  type ExistingCommentState,
+  type PostedCommentRequestOptions,
+  type PostedFindingCommentSuccess,
+  type PostedFindingCommentFailure,
+  type PostedFindingCommentSkipped,
+  type PostPreparedFindingCommentsResult,
+  type CommentFeedbackRecord,
+  type CommentFeedbackSummary,
+  postPreparedFindingComments,
+  resolveOutdatedComments,
+  loadExistingDedupeKeys,
+  extractDedupeKeyFromCommentBody,
+  collectCommentFeedback,
+  logFeedbackSummary,
+  extractMergewiseMeta,
+  sumReactions,
+} from "./pr-comments";
 
-/**
- * Metadata for one successfully posted finding comment.
- */
-export interface PostedFindingCommentSuccess {
-  /**
-   * Index of the prepared comment in the input list.
-   */
-  readonly index: number;
-  /**
-   * Prepared comment that was posted.
-   */
-  readonly preparedComment: PreparedFindingComment;
-  /**
-   * Request payload used to post this comment.
-   */
-  readonly requestOptions: PostedCommentRequestOptions;
-  /**
-   * Created GitHub issue comment response.
-   */
-  readonly createdComment: {
-    readonly id: number;
-    readonly html_url: string;
-    readonly body: string;
-    readonly path?: string;
-    readonly line?: number;
-  };
-}
-
-/**
- * Metadata for one failed finding comment post attempt.
- */
-export interface PostedFindingCommentFailure {
-  /**
-   * Index of the prepared comment in the input list.
-   */
-  readonly index: number;
-  /**
-   * Prepared comment that failed to post.
-   */
-  readonly preparedComment: PreparedFindingComment;
-  /**
-   * Request payload used for the failed post attempt.
-   */
-  readonly requestOptions: PostedCommentRequestOptions;
-  /**
-   * Error message for the failed post attempt.
-   */
-  readonly errorMessage: string;
-}
-
-/**
- * Metadata for one finding skipped due to an existing dedupe key on the PR.
- */
-export interface PostedFindingCommentSkipped {
-  /**
-   * Index of the prepared comment in the input list.
-   */
-  readonly index: number;
-  /**
-   * Prepared comment that was skipped.
-   */
-  readonly preparedComment: PreparedFindingComment;
-  /**
-   * Skip reason identifier.
-   */
-  readonly reason: "existing_dedupe_key";
-}
-
-/**
- * Result summary for prepared finding comment posting.
- */
-export interface PostPreparedFindingCommentsResult {
-  /**
-   * Number of successful comment posts.
-   */
-  readonly postedCount: number;
-  /**
-   * Successful post entries in call order.
-   */
-  readonly successes: readonly PostedFindingCommentSuccess[];
-  /**
-   * Failed post entries in call order.
-   */
-  readonly failures: readonly PostedFindingCommentFailure[];
-  /**
-   * Skipped comment entries in call order.
-   */
-  readonly skipped: readonly PostedFindingCommentSkipped[];
-}
-
-/**
- * Aggregated comment state from existing PR comments, used for deduplication and minimisation.
- */
-export interface ExistingCommentState {
-  /**
-   * Set of dedupe keys found in existing PR comments.
-   */
-  readonly dedupeKeys: Set<string>;
-  /**
-   * Mapping from dedupe key to the review thread's GraphQL node ID for resolution.
-   */
-  readonly dedupeKeyToThreadId: ReadonlyMap<string, string>;
-  /**
-   * All fetched comments (summary + inline review thread) for downstream feedback extraction.
-   * Reactions are only available on summary comments; review thread entries have no reactions.
-   */
-  readonly allComments: readonly { readonly body: string; readonly reactions?: GitHubReactionCounts }[];
-  /**
-   * Dedupe keys belonging to inline comments that GitHub has marked as outdated
-   * (the anchored code changed since the comment was posted).
-   */
-  readonly outdatedDedupeKeys: ReadonlySet<string>;
-}
+export {
+  runPollCycleWithInFlightGuard,
+  createPollingLoopController,
+  createProcessedKeyState,
+  trackProcessedKey,
+  type ProcessedKeyState,
+  type PollCycleState,
+  type WorkerPollingTimerHandle,
+  type PollingLoopDependencies,
+  type PollingLoopController,
+} from "./polling";
 
 /**
  * Dependency hooks for retryable pull request file fetch.
@@ -431,514 +315,6 @@ export interface WorkerProcessingDependencies {
   readonly updateIssueCommentFn?: (
     options: UpdateIssueCommentOptions,
   ) => Promise<GitHubIssueComment>;
-}
-
-export {
-  runPollCycleWithInFlightGuard,
-  createPollingLoopController,
-  createProcessedKeyState,
-  trackProcessedKey,
-  type ProcessedKeyState,
-  type PollCycleState,
-  type WorkerPollingTimerHandle,
-  type PollingLoopDependencies,
-  type PollingLoopController,
-} from "./polling";
-
-
-/**
- * Posts prepared finding comments and a summary as a single batch pull request review.
- *
- * @param options - Repository coordinates, token, prepared comments, and summary body.
- * @param dependencies - API posting dependency override.
- * @returns Structured summary of successful and failed post attempts.
- */
-export async function postPreparedFindingComments(
-  options: {
-    readonly owner: string;
-    readonly repository: string;
-    readonly pullRequestNumber: number;
-    readonly pullRequestHeadSha: string;
-    readonly installationAccessToken: string;
-    readonly traceId: string;
-    readonly githubFetchOptions: WorkerGitHubFetchOptions;
-    readonly comments: readonly PreparedFindingComment[];
-    readonly summaryBody: string;
-  },
-  dependencies: {
-    readonly logError?: (message: string) => void;
-    readonly listPullRequestSummaryCommentsFn?: (
-      options: ListPullRequestCommentsOptions,
-    ) => Promise<GitHubIssueComment[]>;
-    readonly listPullRequestReviewThreadsFn?: (
-      options: ListPullRequestReviewThreadsOptions,
-    ) => Promise<ReviewThread[]>;
-    readonly createPullRequestReviewFn?: (
-      options: CreatePullRequestReviewOptions,
-    ) => Promise<GitHubPullRequestReview>;
-    readonly existingDedupeKeys?: Set<string>;
-  } = {},
-): Promise<PostPreparedFindingCommentsResult> {
-  const errorLogger = dependencies.logError ?? console.error;
-  const createPullRequestReviewFn =
-    dependencies.createPullRequestReviewFn ?? createPullRequestReview;
-
-  let resolvedDedupeKeys: Set<string>;
-  if (dependencies.existingDedupeKeys) {
-    resolvedDedupeKeys = dependencies.existingDedupeKeys;
-  } else {
-    const listPullRequestSummaryCommentsFn =
-      dependencies.listPullRequestSummaryCommentsFn ?? listPullRequestSummaryComments;
-    const listPullRequestReviewThreadsFn =
-      dependencies.listPullRequestReviewThreadsFn ?? listPullRequestReviewThreads;
-    const commentState = await loadExistingDedupeKeys(
-      {
-        owner: options.owner,
-        repository: options.repository,
-        pullRequestNumber: options.pullRequestNumber,
-        installationAccessToken: options.installationAccessToken,
-        apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
-        userAgent: options.githubFetchOptions.githubUserAgent,
-        requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
-        traceId: options.traceId,
-      },
-      {
-        listPullRequestSummaryCommentsFn,
-        listPullRequestReviewThreadsFn,
-      },
-    );
-    resolvedDedupeKeys = commentState.dedupeKeys;
-  }
-
-  const skipped: PostedFindingCommentSkipped[] = [];
-  const filteredComments: { readonly index: number; readonly preparedComment: PreparedFindingComment }[] = [];
-  for (const [index, preparedComment] of options.comments.entries()) {
-    if (resolvedDedupeKeys.has(preparedComment.dedupeKey)) {
-      skipped.push({
-        index,
-        preparedComment,
-        reason: "existing_dedupe_key",
-      });
-      continue;
-    }
-    filteredComments.push({ index, preparedComment });
-  }
-
-  const reviewComments: PullRequestReviewComment[] = filteredComments.map(
-    ({ preparedComment }) => ({
-      path: preparedComment.finding.filePath,
-      line: preparedComment.finding.line,
-      body: preparedComment.body,
-    }),
-  );
-
-  try {
-    await createPullRequestReviewFn({
-      owner: options.owner,
-      repository: options.repository,
-      pullRequestNumber: options.pullRequestNumber,
-      installationAccessToken: options.installationAccessToken,
-      commitId: options.pullRequestHeadSha,
-      body: options.summaryBody,
-      event: "COMMENT",
-      comments: reviewComments,
-      apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
-      userAgent: options.githubFetchOptions.githubUserAgent,
-      requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
-      traceId: options.traceId,
-    });
-
-    const successes: PostedFindingCommentSuccess[] = filteredComments.map(
-      ({ index, preparedComment }) => ({
-        index,
-        preparedComment,
-        requestOptions: {
-          owner: options.owner,
-          repository: options.repository,
-          pullRequestNumber: options.pullRequestNumber,
-          installationAccessToken: "[REDACTED]",
-          body: preparedComment.body,
-          path: preparedComment.finding.filePath,
-          line: preparedComment.finding.line,
-          commitId: options.pullRequestHeadSha,
-          mode: "inline" as const,
-          apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
-          userAgent: options.githubFetchOptions.githubUserAgent,
-          requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
-          traceId: options.traceId,
-        },
-        createdComment: {
-          id: 0,
-          html_url: "",
-          body: preparedComment.body,
-          path: preparedComment.finding.filePath,
-          line: preparedComment.finding.line,
-        },
-      }),
-    );
-
-    return {
-      postedCount: successes.length,
-      successes,
-      failures: [],
-      skipped,
-    };
-  } catch (reviewError) {
-    const errorMessage = reviewError instanceof Error
-      ? reviewError.message
-      : String(reviewError);
-    const errorDetail = reviewError instanceof Error
-      ? reviewError.stack ?? reviewError.message
-      : String(reviewError);
-    errorLogger(
-      "[worker] batch review post failed" +
-        " pr=" + String(options.pullRequestNumber) +
-        " commentCount=" + String(filteredComments.length) +
-        " error=" + errorDetail,
-    );
-
-    const failures: PostedFindingCommentFailure[] = filteredComments.map(
-      ({ index, preparedComment }) => ({
-        index,
-        preparedComment,
-        requestOptions: {
-          owner: options.owner,
-          repository: options.repository,
-          pullRequestNumber: options.pullRequestNumber,
-          installationAccessToken: "[REDACTED]",
-          body: preparedComment.body,
-          path: preparedComment.finding.filePath,
-          line: preparedComment.finding.line,
-          commitId: options.pullRequestHeadSha,
-          mode: "inline" as const,
-          apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
-          userAgent: options.githubFetchOptions.githubUserAgent,
-          requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
-          traceId: options.traceId,
-        },
-        errorMessage,
-      }),
-    );
-
-    return {
-      postedCount: 0,
-      successes: [],
-      failures,
-      skipped,
-    };
-  }
-}
-
-/**
- * Resolves review threads whose dedupe keys are absent from the new set or
- * whose anchored code has been changed (GitHub-outdated).
- *
- * @param existingCommentState - Existing comment state with dedupe key → thread ID mapping.
- * @param newDedupeKeys - Dedupe keys from the current analysis run.
- * @param options - Authentication and API options.
- * @param dependencies - Test overrides.
- * @returns Count of resolved and failed threads.
- */
-export async function resolveOutdatedComments(
-  existingCommentState: ExistingCommentState,
-  newDedupeKeys: ReadonlySet<string>,
-  options: {
-    readonly installationAccessToken: string;
-    readonly traceId: string;
-    readonly githubFetchOptions: WorkerGitHubFetchOptions;
-  },
-  dependencies?: {
-    readonly resolveReviewThreadFn?: (
-      opts: ResolveReviewThreadOptions,
-    ) => Promise<ResolveReviewThreadResult>;
-    readonly logInfo?: (message: string) => void;
-    readonly logError?: (message: string) => void;
-  },
-): Promise<{ resolvedCount: number; failedCount: number; resolvedOutdatedDedupeKeys: Set<string> }> {
-  const resolveReviewThreadFn = dependencies?.resolveReviewThreadFn ?? resolveReviewThread;
-  const infoLogger = dependencies?.logInfo ?? console.log;
-  const errorLogger = dependencies?.logError ?? console.error;
-
-  let resolvedCount = 0;
-  let failedCount = 0;
-  const resolvedOutdatedDedupeKeys = new Set<string>();
-
-  for (const [dedupeKey, threadId] of existingCommentState.dedupeKeyToThreadId) {
-    const isGitHubOutdated = existingCommentState.outdatedDedupeKeys.has(dedupeKey);
-    if (newDedupeKeys.has(dedupeKey) && !isGitHubOutdated) {
-      continue;
-    }
-
-    try {
-      const result = await resolveReviewThreadFn({
-        threadId,
-        installationAccessToken: options.installationAccessToken,
-        apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
-        userAgent: options.githubFetchOptions.githubUserAgent,
-        requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
-        traceId: options.traceId,
-      });
-      if (result.isResolved) {
-        resolvedCount += 1;
-      }
-      if (result.isResolved && isGitHubOutdated && newDedupeKeys.has(dedupeKey)) {
-        resolvedOutdatedDedupeKeys.add(dedupeKey);
-      }
-    } catch (error) {
-      failedCount += 1;
-      const detail = error instanceof Error ? error.message : String(error);
-      errorLogger(
-        `[worker] failed to resolve outdated thread trace=${options.traceId} threadId=${threadId} dedupeKey=${dedupeKey}: ${detail}`,
-      );
-    }
-  }
-
-  if (resolvedCount > 0) {
-    infoLogger(
-      `[worker] resolved_outdated_threads trace=${options.traceId} resolved=${resolvedCount} failed=${failedCount}`,
-    );
-  }
-
-  return { resolvedCount, failedCount, resolvedOutdatedDedupeKeys };
-}
-
-async function loadExistingDedupeKeys(
-  options: ListPullRequestCommentsOptions,
-  dependencies: {
-    readonly listPullRequestSummaryCommentsFn: (
-      options: ListPullRequestCommentsOptions,
-    ) => Promise<GitHubIssueComment[]>;
-    readonly listPullRequestReviewThreadsFn: (
-      options: ListPullRequestReviewThreadsOptions,
-    ) => Promise<ReviewThread[]>;
-  },
-): Promise<ExistingCommentState> {
-  const dedupeKeys = new Set<string>();
-  const dedupeKeyToThreadId = new Map<string, string>();
-  const allComments: { body: string; reactions?: GitHubReactionCounts }[] = [];
-  const outdatedDedupeKeys = new Set<string>();
-
-  try {
-    const summaryComments = await dependencies.listPullRequestSummaryCommentsFn(options);
-    for (const comment of summaryComments) {
-      const dedupeKey = extractDedupeKeyFromCommentBody(comment.body);
-      if (dedupeKey) {
-        dedupeKeys.add(dedupeKey);
-      }
-      allComments.push({ body: comment.body, reactions: comment.reactions });
-    }
-  } catch (caughtError) {
-    const errorDetail = caughtError instanceof Error
-      ? caughtError.stack ?? caughtError.message
-      : String(caughtError);
-    console.error(
-      "[worker] failed to list summary comments for dedupe owner=" +
-        options.owner +
-        " repo=" +
-        options.repository +
-        " pr=" +
-        String(options.pullRequestNumber) +
-        " error=" +
-        errorDetail,
-    );
-  }
-
-  try {
-    const reviewThreads = await dependencies.listPullRequestReviewThreadsFn({
-      owner: options.owner,
-      repository: options.repository,
-      pullRequestNumber: options.pullRequestNumber,
-      installationAccessToken: options.installationAccessToken,
-      apiBaseUrl: options.apiBaseUrl,
-      userAgent: options.userAgent,
-      requestTimeoutMs: options.requestTimeoutMs,
-      traceId: options.traceId,
-    });
-    for (const thread of reviewThreads) {
-      allComments.push({ body: thread.firstCommentBody });
-      if (thread.isResolved) {
-        continue;
-      }
-      const dedupeKey = extractDedupeKeyFromCommentBody(thread.firstCommentBody);
-      if (!dedupeKey) {
-        continue;
-      }
-      dedupeKeys.add(dedupeKey);
-      dedupeKeyToThreadId.set(dedupeKey, thread.id);
-      if (thread.isOutdated) {
-        outdatedDedupeKeys.add(dedupeKey);
-      }
-    }
-  } catch (caughtError) {
-    const errorDetail = caughtError instanceof Error
-      ? caughtError.stack ?? caughtError.message
-      : String(caughtError);
-    console.error(
-      "[worker] failed to list review threads for dedupe owner=" +
-        options.owner +
-        " repo=" +
-        options.repository +
-        " pr=" +
-        String(options.pullRequestNumber) +
-        " error=" +
-        errorDetail,
-    );
-  }
-
-  return { dedupeKeys, dedupeKeyToThreadId, allComments, outdatedDedupeKeys };
-}
-
-function extractDedupeKeyFromCommentBody(commentBody: string | undefined): string | null {
-  if (!commentBody) {
-    return null;
-  }
-
-  const dedupeKeyMatch = /mergewise-meta[^>]*dedupeKey=([^\s>]+)/.exec(commentBody);
-  if (!dedupeKeyMatch) {
-    return null;
-  }
-
-  const dedupeKey = dedupeKeyMatch[1]?.trim() ?? "";
-  return dedupeKey || null;
-}
-
-function logFeedbackSummary(
-  feedbackSummary: CommentFeedbackSummary,
-  traceId: string,
-  jobId: string,
-  infoLogger: (msg: string) => void,
-): void {
-  if (feedbackSummary.totalComments === 0) {
-    return;
-  }
-  infoLogger(
-    `[worker] feedback_summary trace=${traceId} job=${jobId}` +
-      ` totalComments=${feedbackSummary.totalComments}` +
-      ` withReactions=${feedbackSummary.withReactions}` +
-      ` thumbsUp=${feedbackSummary.thumbsUp}` +
-      ` thumbsDown=${feedbackSummary.thumbsDown}`,
-  );
-}
-
-/**
- * Structured feedback record extracted from a single Mergewise comment's reactions.
- */
-export interface CommentFeedbackRecord {
-  readonly findingId: string;
-  readonly ruleId: string;
-  readonly category: string;
-  readonly confidence: string;
-  readonly thumbsUp: number;
-  readonly thumbsDown: number;
-  readonly otherReactions: number;
-}
-
-/**
- * Aggregate feedback summary across all Mergewise comments on a PR.
- */
-export interface CommentFeedbackSummary {
-  readonly totalComments: number;
-  readonly withReactions: number;
-  readonly thumbsUp: number;
-  readonly thumbsDown: number;
-  readonly records: readonly CommentFeedbackRecord[];
-}
-
-
-/**
- * Parses the `mergewise-meta` HTML comment from a PR comment body.
- *
- * @param body - Full comment body potentially containing a mergewise-meta marker.
- * @returns Parsed metadata fields, or `null` when the marker is absent or malformed.
- */
-function extractMergewiseMeta(
-  body: string,
-): { findingId: string; ruleId: string; category: string; confidence: string } | null {
-  const match = MERGEWISE_META_REGEX.exec(body);
-  const findingId = match?.[1];
-  const ruleId = match?.[2];
-  const category = match?.[3];
-  const confidence = match?.[4];
-  if (!findingId || !ruleId || !category || !confidence) {
-    return null;
-  }
-  return { findingId, ruleId, category, confidence };
-}
-
-/**
- * Splits {@link GitHubReactionCounts} into thumbs up, thumbs down, and everything else.
- *
- * `+1` maps to `thumbsUp`, `-1` maps to `thumbsDown`. The remaining six reaction types
- * (`laugh`, `confused`, `heart`, `hooray`, `rocket`, `eyes`) are summed into `otherReactions`.
- *
- * @param reactions - Reaction counts from a GitHub comment.
- * @returns Grouped reaction totals.
- */
-function sumReactions(reactions: GitHubReactionCounts): {
-  thumbsUp: number;
-  thumbsDown: number;
-  otherReactions: number;
-} {
-  const thumbsUp = reactions["+1"];
-  const thumbsDown = reactions["-1"];
-  const otherReactions =
-    reactions.laugh +
-    reactions.confused +
-    reactions.heart +
-    reactions.hooray +
-    reactions.rocket +
-    reactions.eyes;
-  return { thumbsUp, thumbsDown, otherReactions };
-}
-
-/**
- * Extracts feedback records from Mergewise comments that have reactions.
- *
- * @param comments - Issue or review comments with optional reaction counts.
- * @returns Feedback summary with per-comment records for reacted comments.
- */
-export function collectCommentFeedback(
-  comments: readonly { readonly body: string; readonly reactions?: GitHubReactionCounts }[],
-): CommentFeedbackSummary {
-  const records: CommentFeedbackRecord[] = [];
-  let totalComments = 0;
-
-  for (const comment of comments) {
-    const meta = extractMergewiseMeta(comment.body);
-    if (!meta) {
-      continue;
-    }
-
-    totalComments += 1;
-
-    if (!comment.reactions) {
-      continue;
-    }
-
-    const { thumbsUp, thumbsDown, otherReactions } = sumReactions(comment.reactions);
-    const totalReactionCount = thumbsUp + thumbsDown + otherReactions;
-    if (totalReactionCount === 0) {
-      continue;
-    }
-
-    records.push({
-      findingId: meta.findingId,
-      ruleId: meta.ruleId,
-      category: meta.category,
-      confidence: meta.confidence,
-      thumbsUp,
-      thumbsDown,
-      otherReactions,
-    });
-  }
-
-  return {
-    totalComments,
-    withReactions: records.length,
-    thumbsUp: records.reduce((sum, record) => sum + record.thumbsUp, 0),
-    thumbsDown: records.reduce((sum, record) => sum + record.thumbsDown, 0),
-    records,
-  };
 }
 
 /**
