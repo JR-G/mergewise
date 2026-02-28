@@ -39,6 +39,17 @@ const SKIP_PATTERNS = [
   /\.map$/,
 ];
 
+const matcherCache = new Map<string, picomatch.Matcher>();
+
+function getCachedMatcher(patterns: readonly string[]): picomatch.Matcher {
+  const cacheKey = patterns.join("\0");
+  const cached = matcherCache.get(cacheKey);
+  if (cached) return cached;
+  const matcher = picomatch(patterns as string[]);
+  matcherCache.set(cacheKey, matcher);
+  return matcher;
+}
+
 const TS_EXTENSIONS = /\.[tj]sx?$/;
 
 const TOKENS_PER_LINE = 4;
@@ -81,8 +92,7 @@ export function shouldSkipFile(filePath: string, userSkipPatterns?: readonly str
   }
 
   if (userSkipPatterns && userSkipPatterns.length > 0) {
-    const matcher = picomatch(userSkipPatterns as string[]);
-    return matcher(filePath);
+    return getCachedMatcher(userSkipPatterns)(filePath);
   }
 
   return false;

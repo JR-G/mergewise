@@ -1583,13 +1583,12 @@ export async function processAnalyzePullRequestJob(
     : [];
 
   const rules = dependencies.rules ?? [...tsReactRules, ...baseLlmRules];
-  const mergewiseConfig = mergewiseConfigResolved;
-  const selectedRules = selectRulesForExecution(rules, mergewiseConfig);
+  const selectedRules = selectRulesForExecution(rules, mergewiseConfigResolved);
   const executeRulesFn = dependencies.executeRulesFn ?? executeRules;
   const githubFetchOptions = dependencies.githubFetchOptions ?? resolveGitHubFetchOptions();
   const findingDeliveryOptions = dependencies.findingDeliveryOptions ?? {
-    confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
-    maxComments: mergewiseConfig.gating.maxComments,
+    confidenceThreshold: mergewiseConfigResolved.gating.confidenceThreshold,
+    maxComments: mergewiseConfigResolved.gating.maxComments,
     testFileConfidenceThreshold: DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD,
     allowedCategories: DEFAULT_ALLOWED_POST_CATEGORIES,
     blockedRuleIds: DEFAULT_BLOCKED_POST_RULE_IDS,
@@ -1791,7 +1790,7 @@ export async function processAnalyzePullRequestJob(
       );
     },
   });
-  const gatedExecutionResult = applyFindingGates(executionResult, mergewiseConfig);
+  const gatedExecutionResult = applyFindingGates(executionResult, mergewiseConfigResolved);
   const delivery = prepareFindingDelivery(executionResult.findings, findingDeliveryOptions);
 
   let postedCommentCount = 0;

@@ -31,6 +31,13 @@ function noop(): void {
 export interface LlmReviewerConfig {
   readonly clientConfig: ReviewClientConfig;
   readonly tokenBudget?: number;
+  /**
+   * Glob patterns for files to exclude from LLM review.
+   *
+   * @remarks
+   * Matched against file paths alongside built-in skip patterns.
+   * When omitted, only built-in patterns apply.
+   */
   readonly userSkipPatterns?: readonly string[];
   readonly onFileReviewError?: (filePath: string, error: unknown) => void;
 }
