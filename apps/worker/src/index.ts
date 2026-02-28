@@ -56,6 +56,23 @@ import {
   MERGEWISE_META_REGEX,
   buildStructuredFindingComment,
 } from "./comment-formatter";
+import {
+  DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD,
+  DEFAULT_ALLOWED_POST_CATEGORIES,
+  DEFAULT_BLOCKED_POST_RULE_IDS,
+  resolveGitHubFetchOptions,
+  type WorkerGitHubFetchOptions,
+} from "./config";
+
+export {
+  DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD,
+  DEFAULT_ALLOWED_POST_CATEGORIES,
+  DEFAULT_BLOCKED_POST_RULE_IDS,
+  loadConfig,
+  resolveGitHubFetchOptions,
+  type WorkerConfig,
+  type WorkerGitHubFetchOptions,
+} from "./config";
 
 export {
   MERGEWISE_META_REGEX,
@@ -70,88 +87,6 @@ export {
   buildDebugMetadataSection,
 } from "./comment-formatter";
 
-const DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD = 0.98;
-const DEFAULT_ALLOWED_POST_CATEGORIES: readonly FindingCategory[] = [
-  "safety",
-  "perf",
-  "idiomatic",
-  "clean",
-];
-const DEFAULT_BLOCKED_POST_RULE_IDS: readonly string[] = [
-  "ts-react/no-non-null-assertion",
-];
-
-/**
- * Runtime configuration for the worker process.
- */
-export interface WorkerConfig {
-  /**
-   * Poll interval in milliseconds for local queue file checks.
-   */
-  pollIntervalMs: number;
-  /**
-   * Maximum count of idempotency keys retained in memory.
-   */
-  maxProcessedKeys: number;
-  /**
-   * Base URL for GitHub API requests.
-   */
-  githubApiBaseUrl: string;
-  /**
-   * User-Agent header for GitHub API requests.
-   */
-  githubUserAgent: string;
-  /**
-   * Timeout for each GitHub API request in milliseconds.
-   */
-  githubRequestTimeoutMs: number;
-  /**
-   * Maximum retry count for pull request file fetch failures.
-   */
-  githubFetchRetries: number;
-  /**
-   * Delay between pull request file fetch retries in milliseconds.
-   */
-  githubRetryDelayMs: number;
-  /**
-   * Minimum confidence required for findings to be posted to GitHub.
-   */
-  confidenceThreshold: number;
-  /**
-   * Maximum number of findings posted per pull request.
-   */
-  maxComments: number;
-  /**
-   * Minimum confidence required for test-file findings to be eligible for posting.
-   */
-  testFileConfidenceThreshold: number;
-}
-
-/**
- * Runtime options for fetching pull request files in the worker.
- */
-export interface WorkerGitHubFetchOptions {
-  /**
-   * Base URL for GitHub API requests.
-   */
-  readonly githubApiBaseUrl: string;
-  /**
-   * User-Agent header for GitHub API requests.
-   */
-  readonly githubUserAgent: string;
-  /**
-   * Timeout for each GitHub API request in milliseconds.
-   */
-  readonly githubRequestTimeoutMs: number;
-  /**
-   * Maximum retry count for pull request file fetch failures.
-   */
-  readonly githubFetchRetries: number;
-  /**
-   * Delay between pull request file fetch retries in milliseconds.
-   */
-  readonly githubRetryDelayMs: number;
-}
 
 /**
  * Summary payload emitted after one job finishes rule execution.
@@ -718,99 +653,6 @@ export interface PollingLoopController {
   isRunning: () => boolean;
 }
 
-/**
- * Loads worker runtime configuration from environment variables.
- *
- * @returns Validated worker configuration.
- */
-export function loadConfig(): WorkerConfig {
-  const pollRaw = process.env.WORKER_POLL_INTERVAL_MS ?? "3000";
-  const pollIntervalMs = Number.parseInt(pollRaw, 10);
-  const maxKeysRaw = process.env.WORKER_MAX_PROCESSED_KEYS ?? "10000";
-  const maxProcessedKeys = Number.parseInt(maxKeysRaw, 10);
-  const githubApiBaseUrl = process.env.GITHUB_API_BASE_URL ?? "https://api.github.com";
-  const githubUserAgent = process.env.WORKER_GITHUB_USER_AGENT ?? "mergewise-worker";
-  const timeoutRaw = process.env.WORKER_GITHUB_REQUEST_TIMEOUT_MS ?? "10000";
-  const githubRequestTimeoutMs = Number.parseInt(timeoutRaw, 10);
-  const retriesRaw = process.env.WORKER_GITHUB_FETCH_RETRIES ?? "2";
-  const githubFetchRetries = Number.parseInt(retriesRaw, 10);
-  const retryDelayRaw = process.env.WORKER_GITHUB_RETRY_DELAY_MS ?? "250";
-  const githubRetryDelayMs = Number.parseInt(retryDelayRaw, 10);
-  const confidenceThresholdRaw =
-    process.env.WORKER_FINDING_CONFIDENCE_THRESHOLD ?? "0.78";
-  const confidenceThreshold = Number.parseFloat(confidenceThresholdRaw);
-  const maxCommentsRaw = process.env.WORKER_FINDING_MAX_COMMENTS ?? "20";
-  const maxComments = Number.parseInt(maxCommentsRaw, 10);
-  const testFileConfidenceThresholdRaw =
-    process.env.WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD ??
-    String(DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD);
-  const testFileConfidenceThreshold = Number.parseFloat(testFileConfidenceThresholdRaw);
-
-  if (Number.isNaN(pollIntervalMs) || pollIntervalMs < 250) {
-    throw new Error(`Invalid WORKER_POLL_INTERVAL_MS value: ${pollRaw}`);
-  }
-
-  if (Number.isNaN(maxProcessedKeys) || maxProcessedKeys < 100) {
-    throw new Error(`Invalid WORKER_MAX_PROCESSED_KEYS value: ${maxKeysRaw}`);
-  }
-
-  if (!githubApiBaseUrl.trim()) {
-    throw new Error("Invalid GITHUB_API_BASE_URL value: empty");
-  }
-
-  if (!githubUserAgent.trim()) {
-    throw new Error("Invalid WORKER_GITHUB_USER_AGENT value: empty");
-  }
-
-  if (Number.isNaN(githubRequestTimeoutMs) || githubRequestTimeoutMs < 100) {
-    throw new Error(`Invalid WORKER_GITHUB_REQUEST_TIMEOUT_MS value: ${timeoutRaw}`);
-  }
-
-  if (Number.isNaN(githubFetchRetries) || githubFetchRetries < 0) {
-    throw new Error(`Invalid WORKER_GITHUB_FETCH_RETRIES value: ${retriesRaw}`);
-  }
-
-  if (Number.isNaN(githubRetryDelayMs) || githubRetryDelayMs < 10) {
-    throw new Error(`Invalid WORKER_GITHUB_RETRY_DELAY_MS value: ${retryDelayRaw}`);
-  }
-
-  if (
-    Number.isNaN(confidenceThreshold) ||
-    confidenceThreshold < 0 ||
-    confidenceThreshold > 1
-  ) {
-    throw new Error(
-      `Invalid WORKER_FINDING_CONFIDENCE_THRESHOLD value: ${confidenceThresholdRaw}`,
-    );
-  }
-
-  if (Number.isNaN(maxComments) || maxComments < 1) {
-    throw new Error(`Invalid WORKER_FINDING_MAX_COMMENTS value: ${maxCommentsRaw}`);
-  }
-  if (
-    Number.isNaN(testFileConfidenceThreshold) ||
-    testFileConfidenceThreshold < 0 ||
-    testFileConfidenceThreshold > 1
-  ) {
-    throw new Error(
-      "Invalid WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD value: " +
-        testFileConfidenceThresholdRaw,
-    );
-  }
-
-  return {
-    pollIntervalMs,
-    maxProcessedKeys,
-    githubApiBaseUrl,
-    githubUserAgent,
-    githubRequestTimeoutMs,
-    githubFetchRetries,
-    githubRetryDelayMs,
-    confidenceThreshold,
-    maxComments,
-    testFileConfidenceThreshold,
-  };
-}
 
 /**
  * Builds a stable dedupe key for finding delivery.
@@ -2867,16 +2709,6 @@ export async function upsertPrSummaryComment(
   });
 }
 
-function resolveGitHubFetchOptions(): WorkerGitHubFetchOptions {
-  const config = loadConfig();
-  return {
-    githubApiBaseUrl: config.githubApiBaseUrl,
-    githubUserAgent: config.githubUserAgent,
-    githubRequestTimeoutMs: config.githubRequestTimeoutMs,
-    githubFetchRetries: config.githubFetchRetries,
-    githubRetryDelayMs: config.githubRetryDelayMs,
-  };
-}
 
 function mapGitHubPullRequestFilesToDiffs(
   githubFiles: readonly GitHubPullRequestFile[],
