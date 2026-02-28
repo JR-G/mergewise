@@ -1747,6 +1747,11 @@ export async function processAnalyzePullRequestJob(
               `[worker] llm review failed trace=${traceId} file=${filePath} error=${error instanceof Error ? error.message : String(error)}`,
             );
           },
+          onFileReviewComplete: (filePath, findingCount, promptTokens, completionTokens) => {
+            infoLogger(
+              `[worker] llm_usage trace=${traceId} file=${filePath} findings=${findingCount} prompt_tokens=${promptTokens} completion_tokens=${completionTokens} total_tokens=${promptTokens + completionTokens}`,
+            );
+          },
         }),
       ]
     : [];

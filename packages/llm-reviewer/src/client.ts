@@ -12,6 +12,23 @@ export interface ReviewClientConfig {
 }
 
 /**
+ * Token usage statistics from a single LLM completion.
+ */
+export interface CompletionUsage {
+  readonly promptTokens: number;
+  readonly completionTokens: number;
+  readonly totalTokens: number;
+}
+
+/**
+ * Result of a chat completion including content and token usage.
+ */
+export interface CompletionResult {
+  readonly content: string;
+  readonly usage: CompletionUsage | undefined;
+}
+
+/**
  * Thin wrapper over an OpenAI-compatible API client.
  *
  * @remarks
@@ -34,18 +51,18 @@ export class ReviewClient {
   }
 
   /**
-   * Sends a chat completion request and returns the raw response text.
+   * Sends a chat completion request and returns the response with token usage.
    *
    * @param systemPrompt - System message setting the reviewer persona.
    * @param userPrompt - User message with diff and file context.
    * @param maxTokens - Maximum tokens in the response.
-   * @returns Raw text from the model's first choice.
+   * @returns Content and token usage from the model response.
    */
   async complete(
     systemPrompt: string,
     userPrompt: string,
     maxTokens: number,
-  ): Promise<string> {
+  ): Promise<CompletionResult> {
     const response = await this.client.chat.completions.create({
       model: this.model,
       messages: [
@@ -62,7 +79,15 @@ export class ReviewClient {
       throw new Error("LLM returned empty response");
     }
 
-    return content;
+    const usage: CompletionUsage | undefined = response.usage
+      ? {
+          promptTokens: response.usage.prompt_tokens,
+          completionTokens: response.usage.completion_tokens,
+          totalTokens: response.usage.total_tokens,
+        }
+      : undefined;
+
+    return { content, usage };
   }
 }
 

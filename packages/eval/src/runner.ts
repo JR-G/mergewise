@@ -35,7 +35,8 @@ export async function runFixture(
   const start = performance.now();
   let rawResponse: string;
   try {
-    rawResponse = await client.complete(systemPrompt, userPrompt, 4096);
+    const completion = await client.complete(systemPrompt, userPrompt, 4096);
+    rawResponse = completion.content;
   } catch (error) {
     const durationMs = Math.round(performance.now() - start);
     throw new Error(
