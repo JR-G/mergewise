@@ -27,67 +27,50 @@
     typewriterEl.textContent = "";
     typewriterEl.style.visibility = "visible";
 
-    if (prefersReduced) {
-      typewriterEl.textContent = words[0];
-      function cycleWord() {
-        wordIndex = (wordIndex + 1) % words.length;
-        typewriterEl.textContent = words[wordIndex];
-        setTimeout(cycleWord, pauseAfterType);
+    function typeWord() {
+      var word = words[wordIndex];
+      if (charIndex < word.length) {
+        typewriterEl.textContent = word.substring(0, charIndex + 1);
+        charIndex++;
+        setTimeout(typeWord, typeSpeed);
+      } else {
+        setTimeout(deleteWord, pauseAfterType);
       }
-      setTimeout(cycleWord, pauseAfterType);
-    } else {
-      function typeWord() {
-        var word = words[wordIndex];
-        if (charIndex < word.length) {
-          typewriterEl.textContent = word.substring(0, charIndex + 1);
-          charIndex++;
-          setTimeout(typeWord, typeSpeed);
-        } else {
-          setTimeout(deleteWord, pauseAfterType);
-        }
-      }
-
-      function deleteWord() {
-        if (charIndex > 0) {
-          charIndex--;
-          typewriterEl.textContent = words[wordIndex].substring(0, charIndex);
-          setTimeout(deleteWord, deleteSpeed);
-        } else {
-          wordIndex = (wordIndex + 1) % words.length;
-          setTimeout(typeWord, pauseAfterDelete);
-        }
-      }
-
-      setTimeout(typeWord, 400);
     }
+
+    function deleteWord() {
+      if (charIndex > 0) {
+        charIndex--;
+        typewriterEl.textContent = words[wordIndex].substring(0, charIndex);
+        setTimeout(deleteWord, deleteSpeed);
+      } else {
+        wordIndex = (wordIndex + 1) % words.length;
+        setTimeout(typeWord, pauseAfterDelete);
+      }
+    }
+
+    setTimeout(typeWord, 400);
   }
 
   // --- Scroll-triggered reveals ---
-  if (!prefersReduced) {
-    var revealEls = document.querySelectorAll("[data-reveal]");
-    if (revealEls.length && "IntersectionObserver" in window) {
-      var observer = new IntersectionObserver(
-        function (entries) {
-          entries.forEach(function (entry) {
-            if (entry.isIntersecting) {
-              entry.target.classList.add("revealed");
-              observer.unobserve(entry.target);
-            }
-          });
-        },
-        { threshold: 0.1, rootMargin: "0px 0px -20px 0px" }
-      );
-      revealEls.forEach(function (el) {
-        observer.observe(el);
-      });
-    } else if (revealEls.length) {
-      revealEls.forEach(function (el) {
-        el.classList.add("revealed");
-      });
-    }
-  } else {
-    var els = document.querySelectorAll("[data-reveal]");
-    els.forEach(function (el) {
+  var revealEls = document.querySelectorAll("[data-reveal]");
+  if (revealEls.length && "IntersectionObserver" in window) {
+    var observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("revealed");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.1, rootMargin: "0px 0px -20px 0px" }
+    );
+    revealEls.forEach(function (el) {
+      observer.observe(el);
+    });
+  } else if (revealEls.length) {
+    revealEls.forEach(function (el) {
       el.classList.add("revealed");
     });
   }
