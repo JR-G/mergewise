@@ -477,6 +477,11 @@ export interface ExistingCommentState {
    * All fetched comments (summary + inline) for downstream feedback extraction.
    */
   readonly allComments: readonly { readonly body: string; readonly reactions?: GitHubReactionCounts }[];
+  /**
+   * Dedupe keys belonging to inline comments that GitHub has marked as outdated
+   * (the anchored code changed since the comment was posted).
+   */
+  readonly outdatedDedupeKeys: ReadonlySet<string>;
 }
 
 /**
@@ -1287,16 +1292,18 @@ export async function minimizeOutdatedComments(
     readonly logInfo?: (message: string) => void;
     readonly logError?: (message: string) => void;
   },
-): Promise<{ minimizedCount: number; failedCount: number }> {
+): Promise<{ minimizedCount: number; failedCount: number; minimizedOutdatedDedupeKeys: Set<string> }> {
   const minimizeCommentFn = dependencies?.minimizeCommentFn ?? minimizeComment;
   const infoLogger = dependencies?.logInfo ?? console.log;
   const errorLogger = dependencies?.logError ?? console.error;
 
   let minimizedCount = 0;
   let failedCount = 0;
+  const minimizedOutdatedDedupeKeys = new Set<string>();
 
   for (const [dedupeKey, nodeId] of existingCommentState.dedupeKeyToNodeId) {
-    if (newDedupeKeys.has(dedupeKey)) {
+    const isGitHubOutdated = existingCommentState.outdatedDedupeKeys.has(dedupeKey);
+    if (newDedupeKeys.has(dedupeKey) && !isGitHubOutdated) {
       continue;
     }
 
@@ -1313,6 +1320,9 @@ export async function minimizeOutdatedComments(
       if (result.isMinimized) {
         minimizedCount += 1;
       }
+      if (result.isMinimized && isGitHubOutdated && newDedupeKeys.has(dedupeKey)) {
+        minimizedOutdatedDedupeKeys.add(dedupeKey);
+      }
     } catch (error) {
       failedCount += 1;
       const detail = error instanceof Error ? error.message : String(error);
@@ -1328,7 +1338,7 @@ export async function minimizeOutdatedComments(
     );
   }
 
-  return { minimizedCount, failedCount };
+  return { minimizedCount, failedCount, minimizedOutdatedDedupeKeys };
 }
 
 async function loadExistingDedupeKeys(
@@ -1345,12 +1355,17 @@ async function loadExistingDedupeKeys(
   const dedupeKeys = new Set<string>();
   const dedupeKeyToNodeId = new Map<string, string>();
   const allComments: { body: string; reactions?: GitHubReactionCounts }[] = [];
+  const outdatedDedupeKeys = new Set<string>();
 
-  function indexComment(body: string | undefined, nodeId: string): void {
+  function indexComment(body: string | undefined, nodeId: string, isOutdated = false): void {
     const dedupeKey = extractDedupeKeyFromCommentBody(body);
-    if (dedupeKey) {
-      dedupeKeys.add(dedupeKey);
-      dedupeKeyToNodeId.set(dedupeKey, nodeId);
+    if (!dedupeKey) {
+      return;
+    }
+    dedupeKeys.add(dedupeKey);
+    dedupeKeyToNodeId.set(dedupeKey, nodeId);
+    if (isOutdated) {
+      outdatedDedupeKeys.add(dedupeKey);
     }
   }
 
@@ -1379,7 +1394,8 @@ async function loadExistingDedupeKeys(
   try {
     const inlineComments = await dependencies.listPullRequestInlineCommentsFn(options);
     for (const comment of inlineComments) {
-      indexComment(comment.body, comment.node_id);
+      const isOutdated = comment.position === null || comment.position === undefined;
+      indexComment(comment.body, comment.node_id, isOutdated);
       allComments.push({ body: comment.body, reactions: comment.reactions });
     }
   } catch (caughtError) {
@@ -1398,7 +1414,7 @@ async function loadExistingDedupeKeys(
     );
   }
 
-  return { dedupeKeys, dedupeKeyToNodeId, allComments };
+  return { dedupeKeys, dedupeKeyToNodeId, allComments, outdatedDedupeKeys };
 }
 
 function extractDedupeKeyFromCommentBody(commentBody: string | undefined): string | null {
@@ -1956,7 +1972,7 @@ export async function processAnalyzePullRequestJob(
     );
 
     const newDedupeKeys = new Set(delivery.comments.map((comment) => comment.dedupeKey));
-    await minimizeOutdatedComments(
+    const minimizeResult = await minimizeOutdatedComments(
       existingCommentState,
       newDedupeKeys,
       {
@@ -1971,35 +1987,18 @@ export async function processAnalyzePullRequestJob(
       },
     );
 
-    const fileCount = githubAnalysisContext.analysisContext.diffs.length;
-    const summaryBody =
-      `${fileCount} file${fileCount === 1 ? "" : "s"} reviewed, ` +
-      `${delivery.comments.length} comment${delivery.comments.length === 1 ? "" : "s"}`;
-    const postingResult = await postPreparedFindingComments(
-      {
-        owner: githubAnalysisContext.owner,
-        repository: githubAnalysisContext.repository,
-        pullRequestNumber: job.pr_number,
-        pullRequestHeadSha: job.head_sha,
-        installationAccessToken: githubAnalysisContext.installationAccessToken,
-        traceId,
-        githubFetchOptions,
-        comments: delivery.comments,
-        summaryBody,
-      },
-      {
-        createPullRequestReviewFn: dependencies.createPullRequestReviewFn,
-        existingDedupeKeys: existingCommentState.dedupeKeys,
-      },
-    );
-    postedCommentCount = postingResult.postedCount;
+    for (const key of minimizeResult.minimizedOutdatedDedupeKeys) {
+      existingCommentState.dedupeKeys.delete(key);
+    }
 
-    const prSummaryBody = buildPrSummaryComment(
-      githubAnalysisContext.analysisContext.diffs.length,
-      gatedExecutionResult.findings,
-      job.repo_full_name,
-      job.head_sha,
-    );
+    const prSummaryBody = buildPrSummaryComment({
+      filePaths: githubAnalysisContext.analysisContext.diffs.map((diff) => diff.filePath),
+      findings: gatedExecutionResult.findings,
+      repositoryFullName: job.repo_full_name,
+      headSha: job.head_sha,
+      rulesRan: gatedExecutionResult.summary.totalRules,
+      rulesPassed: gatedExecutionResult.summary.successfulRules,
+    });
     try {
       await upsertPrSummaryComment(
         {
@@ -2025,6 +2024,29 @@ export async function processAnalyzePullRequestJob(
         `[worker] summary_comment_failed trace=${traceId} job=${job.job_id}: ${detail}`,
       );
     }
+
+    const fileCount = githubAnalysisContext.analysisContext.diffs.length;
+    const summaryBody =
+      `${fileCount} file${fileCount === 1 ? "" : "s"} reviewed, ` +
+      `${delivery.comments.length} comment${delivery.comments.length === 1 ? "" : "s"}`;
+    const postingResult = await postPreparedFindingComments(
+      {
+        owner: githubAnalysisContext.owner,
+        repository: githubAnalysisContext.repository,
+        pullRequestNumber: job.pr_number,
+        pullRequestHeadSha: job.head_sha,
+        installationAccessToken: githubAnalysisContext.installationAccessToken,
+        traceId,
+        githubFetchOptions,
+        comments: delivery.comments,
+        summaryBody,
+      },
+      {
+        createPullRequestReviewFn: dependencies.createPullRequestReviewFn,
+        existingDedupeKeys: existingCommentState.dedupeKeys,
+      },
+    );
+    postedCommentCount = postingResult.postedCount;
   }
 
   const checkOutput = buildWorkerCheckOutput(gatedExecutionResult, delivery, postedCommentCount, {
@@ -2687,56 +2709,72 @@ function buildDebugMetadataSection(finding: Finding, dedupeKey: string): string 
 const PR_SUMMARY_COMMENT_MARKER = "<!-- mergewise-summary -->";
 
 /**
- * Builds the Markdown body for the PR summary comment.
- *
- * @param filesReviewed - Number of files reviewed.
- * @param findings - All findings from the analysis.
- * @param repositoryFullName - Repository in `owner/name` format.
- * @param headSha - PR head commit SHA for blob links.
- * @returns Markdown string for the PR summary comment.
+ * Input for {@link buildPrSummaryComment}.
  */
-export function buildPrSummaryComment(
-  filesReviewed: number,
-  findings: readonly Finding[],
-  repositoryFullName: string,
-  headSha: string,
-): string {
+export interface PrSummaryInput {
+  /** Relative paths of all files included in the review. */
+  readonly filePaths: readonly string[];
+  /** Gated findings produced by the analysis pipeline. */
+  readonly findings: readonly Finding[];
+  /** Repository in `owner/name` format for blob links. */
+  readonly repositoryFullName: string;
+  /** PR head commit SHA used to construct permalink URLs. */
+  readonly headSha: string;
+  /** Total number of rules that were executed. */
+  readonly rulesRan: number;
+  /** Number of rules that completed without errors. */
+  readonly rulesPassed: number;
+}
+
+const CATEGORY_EMOJI: Readonly<Record<FindingCategory, string>> = {
+  safety: "🔴",
+  perf: "🟡",
+  clean: "🔵",
+  idiomatic: "🟢",
+};
+
+const CATEGORY_SEVERITY_ORDER: readonly FindingCategory[] = [
+  "safety",
+  "perf",
+  "clean",
+  "idiomatic",
+];
+
+function escapeTableCell(text: string): string {
+  return text.replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+
+/**
+ * Builds the Markdown body for the PR summary comment.
+ */
+export function buildPrSummaryComment(input: PrSummaryInput): string {
+  const { filePaths, findings, repositoryFullName, headSha, rulesRan, rulesPassed } = input;
+  const fileCount = filePaths.length;
   const lines: string[] = [PR_SUMMARY_COMMENT_MARKER, "## Mergewise Review Summary", ""];
 
-  lines.push(
-    `**${filesReviewed}** file${filesReviewed === 1 ? "" : "s"} reviewed, ` +
-    `**${findings.length}** finding${findings.length === 1 ? "" : "s"}`,
-    "",
-  );
-
-  const categoryOrder: readonly FindingCategory[] = ["safety", "perf", "clean", "idiomatic"];
-  const countsByCategory: Record<string, number> = {};
-  for (const finding of findings) {
-    countsByCategory[finding.category] = (countsByCategory[finding.category] ?? 0) + 1;
-  }
-
-  lines.push("| Category | Count |", "| --- | --- |");
-  for (const category of categoryOrder) {
-    const count = countsByCategory[category] ?? 0;
-    if (count > 0) {
-      lines.push(`| ${category} | ${count} |`);
-    }
-  }
-  lines.push("");
+  const fileStat = `**${fileCount}** file${fileCount === 1 ? "" : "s"} reviewed`;
+  const ruleStat = `**${rulesPassed}**/${rulesRan} rules passed`;
 
   if (findings.length > 0) {
-    lines.push(
-      "<details>",
-      "<summary>Findings</summary>",
-      "",
-    );
+    const findingStat =
+      `**${findings.length}** finding${findings.length === 1 ? "" : "s"}`;
+    lines.push(`${fileStat} · ${findingStat} · ${ruleStat}`, "");
+  } else {
+    lines.push(`${fileStat} · ✅ No issues found · ${ruleStat}`, "");
+  }
 
+  if (findings.length > 0) {
     const sortedFindings = [...findings].sort((left, right) => {
+      const severityDiff =
+        CATEGORY_SEVERITY_ORDER.indexOf(left.category) -
+        CATEGORY_SEVERITY_ORDER.indexOf(right.category);
+      if (severityDiff !== 0) return severityDiff;
       const fileCompare = left.filePath.localeCompare(right.filePath);
       if (fileCompare !== 0) return fileCompare;
       return left.line - right.line;
     });
 
+    lines.push("| Severity | File | Recommendation |", "| --- | --- | --- |");
     for (const finding of sortedFindings) {
       const encodedFilePath = finding.filePath
         .split("/")
@@ -2746,10 +2784,27 @@ export function buildPrSummaryComment(
       const blobUrl =
         `https://github.com/${repositoryFullName}` +
         `/blob/${encodeURIComponent(headSha)}/${encodedFilePath}#L${String(normalizedLine)}`;
-      const locationLink = `[${finding.filePath}:${String(finding.line)}](${blobUrl})`;
-      lines.push(`- **${finding.category}** ${locationLink}: ${finding.recommendation}`);
+      const emoji = CATEGORY_EMOJI[finding.category];
+      const locationLink =
+        `[\`${finding.filePath}:${String(finding.line)}\`](${blobUrl})`;
+      const safeRecommendation = escapeTableCell(finding.recommendation);
+      lines.push(
+        `| ${emoji} ${finding.category} | ${locationLink} | ${safeRecommendation} |`,
+      );
     }
+    lines.push("");
+  }
 
+  if (fileCount > 0) {
+    lines.push(
+      "<details>",
+      `<summary>Files reviewed (${fileCount})</summary>`,
+      "",
+    );
+    const sortedPaths = [...filePaths].sort((left, right) => left.localeCompare(right));
+    for (const filePath of sortedPaths) {
+      lines.push(`- \`${filePath}\``);
+    }
     lines.push("", "</details>");
   }
 

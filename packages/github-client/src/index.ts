@@ -308,6 +308,11 @@ export interface GitHubPullRequestReviewComment {
    * Reaction counts on the comment, when returned by GitHub.
    */
   reactions?: GitHubReactionCounts;
+  /**
+   * Diff position of the comment. Null when the comment is outdated
+   * (the anchored code has changed since the comment was posted).
+   */
+  position?: number | null;
 }
 
 /**
