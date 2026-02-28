@@ -1,23 +1,24 @@
 import {
-  listPullRequestInlineComments,
+  listPullRequestReviewThreads,
   listPullRequestSummaryComments,
   createPullRequestReview,
   createGitHubAppJwt,
   exchangeInstallationAccessToken,
   fetchPullRequestFiles,
   GitHubApiError,
-  minimizeComment,
+  resolveReviewThread,
   postPullRequestSummaryComment,
   updateIssueComment,
   type FetchPullRequestFilesOptions,
   type GitHubIssueComment,
-  type GitHubPullRequestReviewComment,
   type GitHubPullRequestReview,
   type GitHubPullRequestFile,
   type ListPullRequestCommentsOptions,
+  type ListPullRequestReviewThreadsOptions,
   type CreatePullRequestReviewOptions,
-  type MinimizeCommentOptions,
-  type MinimizeCommentResult,
+  type ResolveReviewThreadOptions,
+  type ResolveReviewThreadResult,
+  type ReviewThread,
   type PullRequestReviewComment,
   type PostPullRequestSummaryCommentOptions,
   type UpdateIssueCommentOptions,
@@ -469,9 +470,9 @@ export interface ExistingCommentState {
    */
   readonly dedupeKeys: Set<string>;
   /**
-   * Mapping from dedupe key to the comment's GraphQL node ID for minimisation.
+   * Mapping from dedupe key to the review thread's GraphQL node ID for resolution.
    */
-  readonly dedupeKeyToNodeId: ReadonlyMap<string, string>;
+  readonly dedupeKeyToThreadId: ReadonlyMap<string, string>;
   /**
    * Dedupe keys belonging to inline comments that GitHub has marked as outdated
    * (the anchored code changed since the comment was posted).
@@ -585,11 +586,11 @@ export interface WorkerProcessingDependencies {
     options: UpdateCheckRunOptions,
   ) => Promise<GitHubCheckRun>;
   /**
-   * Comment minimisation function override for testing.
+   * Review thread resolution function override for testing.
    */
-  readonly minimizeCommentFn?: (
-    options: MinimizeCommentOptions,
-  ) => Promise<MinimizeCommentResult>;
+  readonly resolveReviewThreadFn?: (
+    options: ResolveReviewThreadOptions,
+  ) => Promise<ResolveReviewThreadResult>;
   /**
    * Summary comment listing function override for testing.
    */
@@ -597,11 +598,11 @@ export interface WorkerProcessingDependencies {
     options: ListPullRequestCommentsOptions,
   ) => Promise<GitHubIssueComment[]>;
   /**
-   * Inline comment listing function override for testing.
+   * Review thread listing function override for testing.
    */
-  readonly listPullRequestInlineCommentsFn?: (
-    options: ListPullRequestCommentsOptions,
-  ) => Promise<GitHubPullRequestReviewComment[]>;
+  readonly listPullRequestReviewThreadsFn?: (
+    options: ListPullRequestReviewThreadsOptions,
+  ) => Promise<ReviewThread[]>;
   /**
    * Pull request state fetch function override.
    */
@@ -1104,9 +1105,9 @@ export async function postPreparedFindingComments(
     readonly listPullRequestSummaryCommentsFn?: (
       options: ListPullRequestCommentsOptions,
     ) => Promise<GitHubIssueComment[]>;
-    readonly listPullRequestInlineCommentsFn?: (
-      options: ListPullRequestCommentsOptions,
-    ) => Promise<GitHubPullRequestReviewComment[]>;
+    readonly listPullRequestReviewThreadsFn?: (
+      options: ListPullRequestReviewThreadsOptions,
+    ) => Promise<ReviewThread[]>;
     readonly createPullRequestReviewFn?: (
       options: CreatePullRequestReviewOptions,
     ) => Promise<GitHubPullRequestReview>;
@@ -1123,8 +1124,8 @@ export async function postPreparedFindingComments(
   } else {
     const listPullRequestSummaryCommentsFn =
       dependencies.listPullRequestSummaryCommentsFn ?? listPullRequestSummaryComments;
-    const listPullRequestInlineCommentsFn =
-      dependencies.listPullRequestInlineCommentsFn ?? listPullRequestInlineComments;
+    const listPullRequestReviewThreadsFn =
+      dependencies.listPullRequestReviewThreadsFn ?? listPullRequestReviewThreads;
     const commentState = await loadExistingDedupeKeys(
       {
         owner: options.owner,
@@ -1138,7 +1139,7 @@ export async function postPreparedFindingComments(
       },
       {
         listPullRequestSummaryCommentsFn,
-        listPullRequestInlineCommentsFn,
+        listPullRequestReviewThreadsFn,
       },
     );
     resolvedDedupeKeys = commentState.dedupeKeys;
@@ -1264,15 +1265,16 @@ export async function postPreparedFindingComments(
 }
 
 /**
- * Minimises PR comments whose dedupe keys are absent from the new set.
+ * Resolves review threads whose dedupe keys are absent from the new set or
+ * whose anchored code has been changed (GitHub-outdated).
  *
- * @param existingCommentState - Existing comment state with dedupe key → node ID mapping.
+ * @param existingCommentState - Existing comment state with dedupe key → thread ID mapping.
  * @param newDedupeKeys - Dedupe keys from the current analysis run.
  * @param options - Authentication and API options.
  * @param dependencies - Test overrides.
- * @returns Count of minimised and failed comments.
+ * @returns Count of resolved and failed threads.
  */
-export async function minimizeOutdatedComments(
+export async function resolveOutdatedComments(
   existingCommentState: ExistingCommentState,
   newDedupeKeys: ReadonlySet<string>,
   options: {
@@ -1281,59 +1283,58 @@ export async function minimizeOutdatedComments(
     readonly githubFetchOptions: WorkerGitHubFetchOptions;
   },
   dependencies?: {
-    readonly minimizeCommentFn?: (
-      opts: MinimizeCommentOptions,
-    ) => Promise<MinimizeCommentResult>;
+    readonly resolveReviewThreadFn?: (
+      opts: ResolveReviewThreadOptions,
+    ) => Promise<ResolveReviewThreadResult>;
     readonly logInfo?: (message: string) => void;
     readonly logError?: (message: string) => void;
   },
-): Promise<{ minimizedCount: number; failedCount: number; minimizedOutdatedDedupeKeys: Set<string> }> {
-  const minimizeCommentFn = dependencies?.minimizeCommentFn ?? minimizeComment;
+): Promise<{ resolvedCount: number; failedCount: number; resolvedOutdatedDedupeKeys: Set<string> }> {
+  const resolveReviewThreadFn = dependencies?.resolveReviewThreadFn ?? resolveReviewThread;
   const infoLogger = dependencies?.logInfo ?? console.log;
   const errorLogger = dependencies?.logError ?? console.error;
 
-  let minimizedCount = 0;
+  let resolvedCount = 0;
   let failedCount = 0;
-  const minimizedOutdatedDedupeKeys = new Set<string>();
+  const resolvedOutdatedDedupeKeys = new Set<string>();
 
-  for (const [dedupeKey, nodeId] of existingCommentState.dedupeKeyToNodeId) {
+  for (const [dedupeKey, threadId] of existingCommentState.dedupeKeyToThreadId) {
     const isGitHubOutdated = existingCommentState.outdatedDedupeKeys.has(dedupeKey);
     if (newDedupeKeys.has(dedupeKey) && !isGitHubOutdated) {
       continue;
     }
 
     try {
-      const result = await minimizeCommentFn({
-        subjectId: nodeId,
-        classifier: "OUTDATED",
+      const result = await resolveReviewThreadFn({
+        threadId,
         installationAccessToken: options.installationAccessToken,
         apiBaseUrl: options.githubFetchOptions.githubApiBaseUrl,
         userAgent: options.githubFetchOptions.githubUserAgent,
         requestTimeoutMs: options.githubFetchOptions.githubRequestTimeoutMs,
         traceId: options.traceId,
       });
-      if (result.isMinimized) {
-        minimizedCount += 1;
+      if (result.isResolved) {
+        resolvedCount += 1;
       }
-      if (result.isMinimized && isGitHubOutdated && newDedupeKeys.has(dedupeKey)) {
-        minimizedOutdatedDedupeKeys.add(dedupeKey);
+      if (result.isResolved && isGitHubOutdated && newDedupeKeys.has(dedupeKey)) {
+        resolvedOutdatedDedupeKeys.add(dedupeKey);
       }
     } catch (error) {
       failedCount += 1;
       const detail = error instanceof Error ? error.message : String(error);
       errorLogger(
-        `[worker] failed to minimise outdated comment trace=${options.traceId} nodeId=${nodeId} dedupeKey=${dedupeKey}: ${detail}`,
+        `[worker] failed to resolve outdated thread trace=${options.traceId} threadId=${threadId} dedupeKey=${dedupeKey}: ${detail}`,
       );
     }
   }
 
-  if (minimizedCount > 0) {
+  if (resolvedCount > 0) {
     infoLogger(
-      `[worker] minimised_outdated_comments trace=${options.traceId} minimized=${minimizedCount} failed=${failedCount}`,
+      `[worker] resolved_outdated_threads trace=${options.traceId} resolved=${resolvedCount} failed=${failedCount}`,
     );
   }
 
-  return { minimizedCount, failedCount, minimizedOutdatedDedupeKeys };
+  return { resolvedCount, failedCount, resolvedOutdatedDedupeKeys };
 }
 
 async function loadExistingDedupeKeys(
@@ -1342,31 +1343,22 @@ async function loadExistingDedupeKeys(
     readonly listPullRequestSummaryCommentsFn: (
       options: ListPullRequestCommentsOptions,
     ) => Promise<GitHubIssueComment[]>;
-    readonly listPullRequestInlineCommentsFn: (
-      options: ListPullRequestCommentsOptions,
-    ) => Promise<GitHubPullRequestReviewComment[]>;
+    readonly listPullRequestReviewThreadsFn: (
+      options: ListPullRequestReviewThreadsOptions,
+    ) => Promise<ReviewThread[]>;
   },
 ): Promise<ExistingCommentState> {
   const dedupeKeys = new Set<string>();
-  const dedupeKeyToNodeId = new Map<string, string>();
+  const dedupeKeyToThreadId = new Map<string, string>();
   const outdatedDedupeKeys = new Set<string>();
-
-  function indexComment(body: string | undefined, nodeId: string, isOutdated = false): void {
-    const dedupeKey = extractDedupeKeyFromCommentBody(body);
-    if (!dedupeKey) {
-      return;
-    }
-    dedupeKeys.add(dedupeKey);
-    dedupeKeyToNodeId.set(dedupeKey, nodeId);
-    if (isOutdated) {
-      outdatedDedupeKeys.add(dedupeKey);
-    }
-  }
 
   try {
     const summaryComments = await dependencies.listPullRequestSummaryCommentsFn(options);
     for (const comment of summaryComments) {
-      indexComment(comment.body, comment.node_id);
+      const dedupeKey = extractDedupeKeyFromCommentBody(comment.body);
+      if (dedupeKey) {
+        dedupeKeys.add(dedupeKey);
+      }
     }
   } catch (caughtError) {
     const errorDetail = caughtError instanceof Error
@@ -1385,17 +1377,36 @@ async function loadExistingDedupeKeys(
   }
 
   try {
-    const inlineComments = await dependencies.listPullRequestInlineCommentsFn(options);
-    for (const comment of inlineComments) {
-      const isOutdated = comment.position === null || comment.position === undefined;
-      indexComment(comment.body, comment.node_id, isOutdated);
+    const reviewThreads = await dependencies.listPullRequestReviewThreadsFn({
+      owner: options.owner,
+      repository: options.repository,
+      pullRequestNumber: options.pullRequestNumber,
+      installationAccessToken: options.installationAccessToken,
+      apiBaseUrl: options.apiBaseUrl,
+      userAgent: options.userAgent,
+      requestTimeoutMs: options.requestTimeoutMs,
+      traceId: options.traceId,
+    });
+    for (const thread of reviewThreads) {
+      if (thread.isResolved) {
+        continue;
+      }
+      const dedupeKey = extractDedupeKeyFromCommentBody(thread.firstCommentBody);
+      if (!dedupeKey) {
+        continue;
+      }
+      dedupeKeys.add(dedupeKey);
+      dedupeKeyToThreadId.set(dedupeKey, thread.id);
+      if (thread.isOutdated) {
+        outdatedDedupeKeys.add(dedupeKey);
+      }
     }
   } catch (caughtError) {
     const errorDetail = caughtError instanceof Error
       ? caughtError.stack ?? caughtError.message
       : String(caughtError);
     console.error(
-      "[worker] failed to list inline comments for dedupe owner=" +
+      "[worker] failed to list review threads for dedupe owner=" +
         options.owner +
         " repo=" +
         options.repository +
@@ -1406,7 +1417,7 @@ async function loadExistingDedupeKeys(
     );
   }
 
-  return { dedupeKeys, dedupeKeyToNodeId, outdatedDedupeKeys };
+  return { dedupeKeys, dedupeKeyToThreadId, outdatedDedupeKeys };
 }
 
 function extractDedupeKeyFromCommentBody(commentBody: string | undefined): string | null {
@@ -1795,8 +1806,8 @@ export async function processAnalyzePullRequestJob(
   if (dependencies.deliveryMode === "github") {
     const listSummaryFn =
       dependencies.listPullRequestSummaryCommentsFn ?? listPullRequestSummaryComments;
-    const listInlineFn =
-      dependencies.listPullRequestInlineCommentsFn ?? listPullRequestInlineComments;
+    const listReviewThreadsFn =
+      dependencies.listPullRequestReviewThreadsFn ?? listPullRequestReviewThreads;
     const existingCommentState = await loadExistingDedupeKeys(
       {
         owner: githubAnalysisContext.owner,
@@ -1810,12 +1821,12 @@ export async function processAnalyzePullRequestJob(
       },
       {
         listPullRequestSummaryCommentsFn: listSummaryFn,
-        listPullRequestInlineCommentsFn: listInlineFn,
+        listPullRequestReviewThreadsFn: listReviewThreadsFn,
       },
     );
 
     const newDedupeKeys = new Set(delivery.comments.map((comment) => comment.dedupeKey));
-    const minimizeResult = await minimizeOutdatedComments(
+    const resolveResult = await resolveOutdatedComments(
       existingCommentState,
       newDedupeKeys,
       {
@@ -1824,13 +1835,13 @@ export async function processAnalyzePullRequestJob(
         githubFetchOptions,
       },
       {
-        minimizeCommentFn: dependencies.minimizeCommentFn,
+        resolveReviewThreadFn: dependencies.resolveReviewThreadFn,
         logInfo: infoLogger,
         logError: errorLogger,
       },
     );
 
-    for (const key of minimizeResult.minimizedOutdatedDedupeKeys) {
+    for (const key of resolveResult.resolvedOutdatedDedupeKeys) {
       existingCommentState.dedupeKeys.delete(key);
     }
 
