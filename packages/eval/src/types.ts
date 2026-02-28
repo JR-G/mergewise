@@ -55,6 +55,8 @@ export interface EvalVariant {
   readonly clientConfig: ReviewClientConfig;
   /** Anti-pattern catalogue override. Undefined uses the default catalogue. */
   readonly antiPatterns?: readonly AntiPattern[];
+  /** Confidence threshold override for prompt guidance. Undefined uses the default. */
+  readonly confidenceThreshold?: number;
 }
 
 /**

@@ -69,9 +69,11 @@ Aim for **breadth across different anti-pattern categories** rather than depth o
  * (formatting, type errors, unused vars).
  *
  * @param patterns - Anti-patterns to inject as a reference table. Defaults to {@link ANTI_PATTERNS}.
+ * @param confidenceThreshold - Minimum confidence for inclusion. Defaults to 0.7.
  */
 export function buildSystemPrompt(
   patterns: readonly AntiPattern[] = ANTI_PATTERNS,
+  confidenceThreshold = 0.7,
 ): string {
   const antiPatternSection = buildAntiPatternReferenceTable(patterns);
   const qualityBarSection = buildQualityBarSection();
@@ -125,11 +127,11 @@ ${antiPatternSection}## What NOT to flag
 Respond with a JSON object containing a single key "findings" mapped to an array. Each finding must have:
 - "line": the 1-indexed line number from the NEW file (the line the comment should appear on — must be a line prefixed with "+" in the diff)
 - "category": one of "clean", "perf", "safety", "idiomatic"
-- "confidence": a number between 0.7 and 1.0 reflecting how certain you are this is a genuine, actionable issue worth changing. Err on the side of higher confidence — a wrong high-confidence finding is worse than a missed low-confidence one.
+- "confidence": a number between ${confidenceThreshold} and 1.0 reflecting how certain you are this is a genuine, actionable issue worth changing. Err on the side of higher confidence — a wrong high-confidence finding is worse than a missed low-confidence one.
   - 0.9–1.0: Clear anti-pattern from the reference table that a staff engineer would flag immediately, or an unambiguous violation of a named principle (SRP, DRY, etc.) with a concrete fix
   - 0.8–0.89: Strong refactoring suggestion backed by engineering judgement — you are confident it improves the code and can name a specific change
-  - 0.7–0.79: Only for findings where the benefit is real but modest. If you are unsure whether it is worth flagging, do not include it. Never pad with 0.7 findings to avoid returning an empty result.
-  - Below 0.7: Do not include
+  - ${confidenceThreshold}–0.79: Only for findings where the benefit is real but modest. If you are unsure whether it is worth flagging, do not include it. Never pad with ${confidenceThreshold} findings to avoid returning an empty result.
+  - Below ${confidenceThreshold}: Do not include
 - "evidence": a short quote of the problematic code (max 120 chars)
 - "recommendation": a concise, actionable refactoring suggestion written as a direct instruction (not a question). Max 500 chars. Name the principle or pattern when applicable. Do not use filler words. Do not praise the code. Do not hedge. Wrap code identifiers (function names, variable names, type names) in backticks.
 - "suggestedRewrite" (optional): replacement code for the line referenced by "line". Only provide when a concrete, compilable, drop-in fix exists for a localised change (a renamed variable, an idiomatic API swap, a simplified expression). Never provide suggestedRewrite for structural suggestions like "extract this function" or "split this component" — use the recommendation field for those. Omit when no rewrite is feasible. Multi-line rewrites: join with "\\n". Include leading whitespace to preserve indentation.

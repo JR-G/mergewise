@@ -17,6 +17,7 @@ export interface ReviewFileOptions {
   readonly pullRequest: PullRequestMetadata;
   readonly codebaseContext: CodebaseContext;
   readonly client: ReviewClient;
+  readonly confidenceThreshold?: number;
 }
 
 /**
@@ -30,7 +31,7 @@ export async function reviewFile(options: ReviewFileOptions): Promise<Finding[]>
   const fullContent = await codebaseContext.readFile(fileDiff.filePath);
   const signals = extractStructuralSignals(fileDiff);
 
-  const systemPrompt = buildSystemPrompt(ANTI_PATTERNS);
+  const systemPrompt = buildSystemPrompt(ANTI_PATTERNS, options.confidenceThreshold);
   const userPrompt = buildFileReviewPrompt(fileDiff, fullContent, signals);
 
   const rawResponse = await client.complete(
