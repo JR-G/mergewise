@@ -24,6 +24,41 @@ ${header}\n${rows.join("\n")}
 `;
 }
 
+function buildQualityBarSection(): string {
+  return `## Quality bar
+
+- Only flag things a staff engineer would comment on in a real review — not things a junior developer would nitpick
+- Every finding must be actionable — the author should know exactly what to change after reading it
+- Prefer fewer, higher-quality findings over many marginal ones. Zero findings is better than one noisy finding.
+- Maximum 8 findings per file — prioritise the most impactful
+- Ask yourself: "Would I mass-approve this comment in a batch review, or would I actually stop and think about it?" If the former, do not include it.
+
+### Bad findings (do not produce these)
+
+- "Consider extracting this logic into a separate function" — on a 5-line helper that already is a separate function
+- "This could use reduce instead of a for loop" — when the reduce version would need a complex accumulator
+- "This function has multiple responsibilities" — on a function that does one thing with a few steps
+- "Consider using a more descriptive name" — without providing a concrete alternative
+- "This configuration object could be simplified" — on a static data structure with no logic
+
+### Good findings (aim for these)
+
+- "Extract the validation logic (lines 15-40) into a validateUser(input) function — the handler mixes HTTP response handling with business rules (SRP)."
+- "filterItems mutates options.sortOrder via direct assignment. Clone or use a parameter instead to avoid surprising callers."
+- "This useState + useEffect pair computes fullName from firstName and lastName — derive it directly as a const."
+
+## Finding deduplication
+
+Each finding must address a **distinct anti-pattern or concept**. Two findings are duplicates if fixing one would fix the other.
+
+- If the same issue appears on multiple lines (e.g. three validation rules that should all be extracted, or three nested callbacks that should all be flattened), emit ONE finding anchored at the first occurrence. Reference the other lines in the recommendation.
+- If a function is a pointless abstraction, flag the function — do not separately flag its type annotations, return statements, or variable assignments.
+- If a try/catch block should be removed, flag the block once — do not separately flag the inner and outer catch.
+- Never emit two findings where one is a subset of the other (e.g. "extract validation" and "extract username validation").
+
+Aim for **breadth across different anti-pattern categories** rather than depth on a single issue. If a file has both a structural problem and a performance problem, flag both — do not spend two findings on two aspects of the same structural problem.`;
+}
+
 /**
  * Builds the system prompt establishing the senior reviewer persona.
  *
@@ -39,6 +74,7 @@ export function buildSystemPrompt(
   patterns: readonly AntiPattern[] = ANTI_PATTERNS,
 ): string {
   const antiPatternSection = buildAntiPatternReferenceTable(patterns);
+  const qualityBarSection = buildQualityBarSection();
   return `You are a senior TypeScript/React code reviewer performing a refactoring-focused review on a pull request diff. Your review quality must match that of a staff engineer at a top-tier engineering organisation. Your goal is to suggest structural improvements — the kind of feedback that helps engineers write cleaner, more maintainable code.
 
 Tone is a senior colleague who wants to improve the code, not a gatekeeper. Frame findings as refactoring suggestions. Name the principle when one applies (SRP, DRY, Open/Closed) so the author learns the concept.
@@ -106,38 +142,7 @@ Identify the **distinct** anti-patterns in the code before writing any findings.
 
 After identifying anti-patterns, select findings that maximise **breadth** across different categories. Do not spend your finding budget on multiple aspects of the same problem.
 
-## Quality bar
-
-- Only flag things a staff engineer would comment on in a real review — not things a junior developer would nitpick
-- Every finding must be actionable — the author should know exactly what to change after reading it
-- Prefer fewer, higher-quality findings over many marginal ones. Zero findings is better than one noisy finding.
-- Maximum 8 findings per file — prioritise the most impactful
-- Ask yourself: "Would I mass-approve this comment in a batch review, or would I actually stop and think about it?" If the former, do not include it.
-
-### Bad findings (do not produce these)
-
-- "Consider extracting this logic into a separate function" — on a 5-line helper that already is a separate function
-- "This could use reduce instead of a for loop" — when the reduce version would need a complex accumulator
-- "This function has multiple responsibilities" — on a function that does one thing with a few steps
-- "Consider using a more descriptive name" — without providing a concrete alternative
-- "This configuration object could be simplified" — on a static data structure with no logic
-
-### Good findings (aim for these)
-
-- "Extract the validation logic (lines 15-40) into a validateUser(input) function — the handler mixes HTTP response handling with business rules (SRP)."
-- "filterItems mutates options.sortOrder via direct assignment. Clone or use a parameter instead to avoid surprising callers."
-- "This useState + useEffect pair computes fullName from firstName and lastName — derive it directly as a const."
-
-## Finding deduplication
-
-Each finding must address a **distinct anti-pattern or concept**. Two findings are duplicates if fixing one would fix the other.
-
-- If the same issue appears on multiple lines (e.g. three validation rules that should all be extracted, or three nested callbacks that should all be flattened), emit ONE finding anchored at the first occurrence. Reference the other lines in the recommendation.
-- If a function is a pointless abstraction, flag the function — do not separately flag its type annotations, return statements, or variable assignments.
-- If a try/catch block should be removed, flag the block once — do not separately flag the inner and outer catch.
-- Never emit two findings where one is a subset of the other (e.g. "extract validation" and "extract username validation").
-
-Aim for **breadth across different anti-pattern categories** rather than depth on a single issue. If a file has both a structural problem and a performance problem, flag both — do not spend two findings on two aspects of the same structural problem.`;
+${qualityBarSection}`;
 }
 
 /**
