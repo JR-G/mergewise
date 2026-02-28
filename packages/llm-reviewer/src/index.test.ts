@@ -936,7 +936,7 @@ describe("ReviewClient (via fake HTTP server)", () => {
           model: "test-model",
         });
         const result = await client.complete("sys", "usr", 512);
-        const parsed = JSON.parse(result) as { findings: { line: number }[] };
+        const parsed = JSON.parse(result.content) as { findings: { line: number }[] };
         expect(parsed.findings).toHaveLength(1);
         expect(parsed.findings[0]!.line).toBe(1);
       },
@@ -1020,15 +1020,15 @@ describe("reviewFile (via fake HTTP server)", () => {
         const codebaseContext = makeMockCodebaseContext({
           "src/app.ts": "const data = fetch()\nconst info = parse(data)\nexport default info",
         });
-        const findings = await reviewFile({ fileDiff: diff, pullRequest: PULL_REQUEST_METADATA, codebaseContext, client });
-        expect(findings).toHaveLength(1);
-        expect(findings[0]!.line).toBe(1);
-        expect(findings[0]!.category).toBe("idiomatic");
-        expect(findings[0]!.confidence).toBe(0.85);
-        expect(findings[0]!.ruleId).toBe("llm/reviewer");
-        expect(findings[0]!.filePath).toBe("src/app.ts");
-        expect(findings[0]!.patchSuggestionPolicy).toBeUndefined();
-        expect(findings[0]!.status).toBe("posted");
+        const result = await reviewFile({ fileDiff: diff, pullRequest: PULL_REQUEST_METADATA, codebaseContext, client });
+        expect(result.findings).toHaveLength(1);
+        expect(result.findings[0]!.line).toBe(1);
+        expect(result.findings[0]!.category).toBe("idiomatic");
+        expect(result.findings[0]!.confidence).toBe(0.85);
+        expect(result.findings[0]!.ruleId).toBe("llm/reviewer");
+        expect(result.findings[0]!.filePath).toBe("src/app.ts");
+        expect(result.findings[0]!.patchSuggestionPolicy).toBeUndefined();
+        expect(result.findings[0]!.status).toBe("posted");
       },
     );
   });
@@ -1050,8 +1050,8 @@ describe("reviewFile (via fake HTTP server)", () => {
           model: "test-model",
           maxRetries: 0,
         });
-        const findings = await reviewFile({ fileDiff: diff, pullRequest: PULL_REQUEST_METADATA, codebaseContext: makeMockCodebaseContext(), client });
-        expect(findings).toHaveLength(0);
+        const result = await reviewFile({ fileDiff: diff, pullRequest: PULL_REQUEST_METADATA, codebaseContext: makeMockCodebaseContext(), client });
+        expect(result.findings).toHaveLength(0);
       },
     );
   });
@@ -1086,8 +1086,8 @@ describe("reviewFile (via fake HTTP server)", () => {
           model: "test-model",
           maxRetries: 0,
         });
-        const findings = await reviewFile({ fileDiff: diff, pullRequest: PULL_REQUEST_METADATA, codebaseContext: makeMockCodebaseContext(), client });
-        expect(findings).toHaveLength(0);
+        const result = await reviewFile({ fileDiff: diff, pullRequest: PULL_REQUEST_METADATA, codebaseContext: makeMockCodebaseContext(), client });
+        expect(result.findings).toHaveLength(0);
       },
     );
   });
@@ -1110,8 +1110,8 @@ describe("reviewFile (via fake HTTP server)", () => {
           maxRetries: 0,
         });
         const emptyContext = makeMockCodebaseContext();
-        const findings = await reviewFile({ fileDiff: diff, pullRequest: PULL_REQUEST_METADATA, codebaseContext: emptyContext, client });
-        expect(findings).toHaveLength(0);
+        const result = await reviewFile({ fileDiff: diff, pullRequest: PULL_REQUEST_METADATA, codebaseContext: emptyContext, client });
+        expect(result.findings).toHaveLength(0);
       },
     );
   });

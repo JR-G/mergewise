@@ -10,7 +10,8 @@ import { reviewFile } from "./review-file";
 
 export type { AntiPattern } from "./anti-patterns";
 export { ANTI_PATTERNS } from "./anti-patterns";
-export type { ReviewClientConfig } from "./client";
+export type { ReviewClientConfig, CompletionUsage, CompletionResult } from "./client";
+export type { FileReviewResult } from "./review-file";
 export { selectFilesForReview } from "./file-selection";
 export { buildSystemPrompt, buildFileReviewPrompt } from "./prompt";
 export { parseLlmResponse, extractAddedLineNumbers, extractAddedLineMap, deduplicateByProximity, isCommentLine } from "./schema";
@@ -40,6 +41,7 @@ export interface LlmReviewerConfig {
    */
   readonly userSkipPatterns?: readonly string[];
   readonly onFileReviewError?: (filePath: string, error: unknown) => void;
+  readonly onFileReviewComplete?: (filePath: string, findingCount: number, promptTokens: number, completionTokens: number) => void;
 }
 
 /**
@@ -87,13 +89,19 @@ export function createLlmReviewerRule(
 
       for (const fileDiff of selectedFiles) {
         try {
-          const findings = await reviewFile({
+          const result = await reviewFile({
             fileDiff,
             pullRequest: context.pullRequest,
             codebaseContext,
             client,
           });
-          allFindings.push(...findings);
+          allFindings.push(...result.findings);
+          config.onFileReviewComplete?.(
+            fileDiff.filePath,
+            result.findings.length,
+            result.usage?.promptTokens ?? 0,
+            result.usage?.completionTokens ?? 0,
+          );
         } catch (error) {
           onFileReviewError(fileDiff.filePath, error);
           continue;
