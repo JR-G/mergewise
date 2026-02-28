@@ -2744,8 +2744,119 @@ function escapeTableCell(text: string): string {
   return text.replace(/\|/g, "\\|").replace(/\n/g, " ");
 }
 
+interface FindingGroup {
+  readonly category: FindingCategory;
+  readonly recommendation: string;
+  readonly locations: readonly { readonly filePath: string; readonly line: number }[];
+}
+
+function buildBlobUrl(
+  repositoryFullName: string,
+  headSha: string,
+  filePath: string,
+  line: number,
+): string {
+  const encodedFilePath = filePath
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  const normalizedLine = Math.max(1, line);
+  return (
+    `https://github.com/${repositoryFullName}` +
+    `/blob/${encodeURIComponent(headSha)}/${encodedFilePath}#L${String(normalizedLine)}`
+  );
+}
+
+function buildLocationLink(
+  repositoryFullName: string,
+  headSha: string,
+  filePath: string,
+  line: number,
+): string {
+  const blobUrl = buildBlobUrl(repositoryFullName, headSha, filePath, line);
+  return `[\`${filePath}:${String(line)}\`](${blobUrl})`;
+}
+
+const INLINE_LOCATION_THRESHOLD = 4;
+
+function groupFindings(findings: readonly Finding[]): FindingGroup[] {
+  const groupMap = new Map<string, FindingGroup & { locations: { filePath: string; line: number }[] }>();
+
+  for (const finding of findings) {
+    const key = `${finding.ruleId}\0${finding.recommendation}`;
+    const existing = groupMap.get(key);
+    if (existing) {
+      existing.locations.push({ filePath: finding.filePath, line: finding.line });
+    } else {
+      groupMap.set(key, {
+        category: finding.category,
+        recommendation: finding.recommendation,
+        locations: [{ filePath: finding.filePath, line: finding.line }],
+      });
+    }
+  }
+
+  const groups = [...groupMap.values()];
+
+  for (const group of groups) {
+    group.locations.sort((left, right) => {
+      const fileCompare = left.filePath.localeCompare(right.filePath);
+      if (fileCompare !== 0) return fileCompare;
+      return left.line - right.line;
+    });
+  }
+
+  groups.sort((left, right) => {
+    const severityDiff =
+      CATEGORY_SEVERITY_ORDER.indexOf(left.category) -
+      CATEGORY_SEVERITY_ORDER.indexOf(right.category);
+    if (severityDiff !== 0) return severityDiff;
+    const leftFile = left.locations[0]?.filePath ?? "";
+    const rightFile = right.locations[0]?.filePath ?? "";
+    return leftFile.localeCompare(rightFile);
+  });
+
+  return groups;
+}
+
+function buildCollapsibleDetail(
+  group: FindingGroup,
+  repositoryFullName: string,
+  headSha: string,
+): string[] {
+  const emoji = CATEGORY_EMOJI[group.category];
+  const uniqueFiles = [...new Set(group.locations.map((loc) => loc.filePath))].sort();
+  const truncatedRecommendation =
+    group.recommendation.length > 60
+      ? group.recommendation.slice(0, 57) + "..."
+      : group.recommendation;
+
+  const lines: string[] = [
+    "<details>",
+    `<summary>${emoji} ${String(group.locations.length)} × ${escapeTableCell(truncatedRecommendation)} (${String(uniqueFiles.length)} file${uniqueFiles.length === 1 ? "" : "s"})</summary>`,
+    "",
+  ];
+
+  for (const file of uniqueFiles) {
+    const fileLines = group.locations
+      .filter((loc) => loc.filePath === file)
+      .map((loc) => {
+        const blobUrl = buildBlobUrl(repositoryFullName, headSha, file, loc.line);
+        return `[${String(loc.line)}](${blobUrl})`;
+      });
+    lines.push(`- \`${file}\` — lines ${fileLines.join(", ")}`);
+  }
+
+  lines.push("", "</details>");
+  return lines;
+}
+
 /**
  * Builds the Markdown body for the PR summary comment.
+ *
+ * Findings with the same rule and recommendation are grouped into a single
+ * table row. Groups with four or more locations render a collapsible detail
+ * section listing every affected file and line.
  */
 export function buildPrSummaryComment(input: PrSummaryInput): string {
   const { filePaths, findings, repositoryFullName, headSha, rulesRan, rulesPassed } = input;
@@ -2753,7 +2864,7 @@ export function buildPrSummaryComment(input: PrSummaryInput): string {
   const lines: string[] = [PR_SUMMARY_COMMENT_MARKER, "## Mergewise Review Summary", ""];
 
   const fileStat = `**${fileCount}** file${fileCount === 1 ? "" : "s"} reviewed`;
-  const ruleStat = `**${rulesPassed}**/${rulesRan} rules passed`;
+  const ruleStat = `**${rulesPassed}/${rulesRan}** rules passed`;
 
   if (findings.length > 0) {
     const findingStat =
@@ -2764,35 +2875,38 @@ export function buildPrSummaryComment(input: PrSummaryInput): string {
   }
 
   if (findings.length > 0) {
-    const sortedFindings = [...findings].sort((left, right) => {
-      const severityDiff =
-        CATEGORY_SEVERITY_ORDER.indexOf(left.category) -
-        CATEGORY_SEVERITY_ORDER.indexOf(right.category);
-      if (severityDiff !== 0) return severityDiff;
-      const fileCompare = left.filePath.localeCompare(right.filePath);
-      if (fileCompare !== 0) return fileCompare;
-      return left.line - right.line;
-    });
+    const groups = groupFindings(findings);
+    const collapsibleSections: string[][] = [];
 
-    lines.push("| Severity | File | Recommendation |", "| --- | --- | --- |");
-    for (const finding of sortedFindings) {
-      const encodedFilePath = finding.filePath
-        .split("/")
-        .map((segment) => encodeURIComponent(segment))
-        .join("/");
-      const normalizedLine = Math.max(1, finding.line);
-      const blobUrl =
-        `https://github.com/${repositoryFullName}` +
-        `/blob/${encodeURIComponent(headSha)}/${encodedFilePath}#L${String(normalizedLine)}`;
-      const emoji = CATEGORY_EMOJI[finding.category];
-      const locationLink =
-        `[\`${finding.filePath}:${String(finding.line)}\`](${blobUrl})`;
-      const safeRecommendation = escapeTableCell(finding.recommendation);
+    lines.push("| Severity | Recommendation | Locations |", "| --- | --- | --- |");
+    for (const group of groups) {
+      const emoji = CATEGORY_EMOJI[group.category];
+      const safeRecommendation = escapeTableCell(group.recommendation);
+      let locationCell: string;
+
+      if (group.locations.length < INLINE_LOCATION_THRESHOLD) {
+        locationCell = group.locations
+          .map((loc) => buildLocationLink(repositoryFullName, headSha, loc.filePath, loc.line))
+          .join(", ");
+      } else {
+        const uniqueFiles = new Set(group.locations.map((loc) => loc.filePath));
+        locationCell =
+          `${String(group.locations.length)} locations across ` +
+          `${String(uniqueFiles.size)} file${uniqueFiles.size === 1 ? "" : "s"}`;
+        collapsibleSections.push(
+          buildCollapsibleDetail(group, repositoryFullName, headSha),
+        );
+      }
+
       lines.push(
-        `| ${emoji} ${finding.category} | ${locationLink} | ${safeRecommendation} |`,
+        `| ${emoji} ${group.category} | ${safeRecommendation} | ${locationCell} |`,
       );
     }
     lines.push("");
+
+    for (const section of collapsibleSections) {
+      lines.push(...section, "");
+    }
   }
 
   if (fileCount > 0) {

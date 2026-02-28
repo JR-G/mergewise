@@ -3,6 +3,8 @@ import type { FileDiff } from "@mergewise/shared-types";
 const SKIP_PATTERNS = [
   /\.test\.[tj]sx?$/,
   /\.spec\.[tj]sx?$/,
+  /test-helpers?\.[tj]sx?$/,
+  /test-utils?\.[tj]sx?$/,
   /__tests__\//,
   /\/fixtures\//,
   /\/fixture\//,
