@@ -237,6 +237,20 @@ export interface ListPullRequestCommentsOptions extends GitHubApiOptions {
 }
 
 /**
+ * Reaction counts returned by GitHub on comments.
+ */
+export interface GitHubReactionCounts {
+  "+1": number;
+  "-1": number;
+  laugh: number;
+  confused: number;
+  heart: number;
+  hooray: number;
+  rocket: number;
+  eyes: number;
+}
+
+/**
  * Response shape for created GitHub issue comments.
  */
 export interface GitHubIssueComment {
@@ -256,6 +270,10 @@ export interface GitHubIssueComment {
    * Stored markdown body.
    */
   body: string;
+  /**
+   * Reaction counts on the comment, when returned by GitHub.
+   */
+  reactions?: GitHubReactionCounts;
 }
 
 /**
@@ -286,6 +304,10 @@ export interface GitHubPullRequestReviewComment {
    * 1-based line number associated with this inline comment.
    */
   line?: number;
+  /**
+   * Reaction counts on the comment, when returned by GitHub.
+   */
+  reactions?: GitHubReactionCounts;
   /**
    * Diff position of the comment. Null when the comment is outdated
    * (the anchored code has changed since the comment was posted).
