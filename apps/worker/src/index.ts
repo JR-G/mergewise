@@ -33,7 +33,6 @@ import {
   type GitHubCheckRun,
   type GitHubReactionCounts,
 } from "@mergewise/github-client";
-import { readFileSync } from "node:fs";
 import {
   DEFAULT_MERGEWISE_CONFIG,
   type MergewiseConfig,
@@ -65,6 +64,7 @@ import {
   buildAnalysisContext,
   mapGitHubPullRequestFilesToDiffs,
 } from "./diff-parser";
+import { loadGitHubAppCredentials } from "./github-auth";
 
 export {
   DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD,
@@ -94,6 +94,8 @@ export {
   mapGitHubPullRequestFilesToDiffs,
   parsePatchToDiffHunks,
 } from "./diff-parser";
+
+export { loadGitHubAppCredentials } from "./github-auth";
 
 
 /**
@@ -2517,56 +2519,3 @@ function isRetryablePullRequestFileFetchError(error: unknown): boolean {
   return false;
 }
 
-function loadGitHubAppCredentials(): Readonly<{ appId: number; privateKeyPem: string }> {
-  const appIdRaw = process.env.GITHUB_APP_ID;
-  if (!appIdRaw?.trim()) {
-    throw new Error("[worker] missing GITHUB_APP_ID");
-  }
-
-  const appId = Number.parseInt(appIdRaw, 10);
-  if (Number.isNaN(appId) || appId <= 0) {
-    throw new Error(`[worker] invalid GITHUB_APP_ID value: ${appIdRaw}`);
-  }
-
-  const preferredPrivateKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY;
-  const privateKeyPathRaw = process.env.GITHUB_APP_PRIVATE_KEY_PATH;
-  const privateKeyPath = privateKeyPathRaw?.trim();
-  const legacyPrivateKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY_PEM;
-  let privateKeyRaw = preferredPrivateKeyRaw ?? legacyPrivateKeyRaw;
-  let privateKeyLoadedFromPath = false;
-
-  if (privateKeyRaw === undefined && privateKeyPath) {
-    try {
-      privateKeyRaw = readFileSync(privateKeyPath, "utf8");
-      privateKeyLoadedFromPath = true;
-    } catch (caughtError) {
-      const details =
-        caughtError instanceof Error ? caughtError.message : String(caughtError);
-      console.error(
-        `[worker] failed to read key from GITHUB_APP_PRIVATE_KEY_PATH (${privateKeyPath}): ${details}`,
-      );
-      throw new Error(
-        `[worker] failed to read GITHUB_APP_PRIVATE_KEY_PATH (${privateKeyPath}): ${details}`,
-        { cause: caughtError },
-      );
-    }
-  }
-
-  if (privateKeyRaw === undefined) {
-    throw new Error(
-      "[worker] missing GITHUB_APP_PRIVATE_KEY (or GITHUB_APP_PRIVATE_KEY_PATH or legacy GITHUB_APP_PRIVATE_KEY_PEM)",
-    );
-  }
-
-  const privateKeyPem = privateKeyRaw.replace(/\\n/g, "\n").trim();
-  if (!privateKeyPem) {
-    const invalidKeyVariableName = preferredPrivateKeyRaw !== undefined
-      ? "GITHUB_APP_PRIVATE_KEY"
-      : privateKeyLoadedFromPath
-      ? "GITHUB_APP_PRIVATE_KEY_PATH"
-      : "GITHUB_APP_PRIVATE_KEY_PEM";
-    throw new Error(`[worker] invalid ${invalidKeyVariableName} value: empty`);
-  }
-
-  return { appId, privateKeyPem };
-}
