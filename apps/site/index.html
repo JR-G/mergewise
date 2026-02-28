@@ -150,22 +150,16 @@
                 analysis. The model sees code structure, not just text.
               </p>
               <div class="feature-demo demo-llm">
-                <div class="demo-llm-grid">
-                  <div class="demo-llm-block demo-llm-code">
-                    <span class="demo-llm-label">code</span>
-                    <span class="demo-line-mini"></span>
-                    <span class="demo-line-mini short"></span>
-                    <span class="demo-line-mini"></span>
-                  </div>
-                  <div class="demo-llm-connector">
-                    <span class="demo-arrow">&rarr;</span>
-                  </div>
-                  <div class="demo-llm-block demo-llm-structure">
-                    <span class="demo-llm-label">structure</span>
-                    <span class="shape-square shape-blue" style="width:10px;height:10px;display:inline-block"></span>
-                    <span class="shape-triangle shape-amber" style="border-left-width:6px;border-right-width:6px;border-bottom-width:10px;display:inline-block"></span>
-                    <span class="shape-circle shape-red" style="width:10px;height:10px;display:inline-block"></span>
-                  </div>
+                <div class="demo-llm-scan">
+                  <div class="demo-scan-line scan-1"></div>
+                  <div class="demo-scan-line scan-2"></div>
+                  <div class="demo-scan-line scan-3"></div>
+                  <div class="demo-scan-line scan-4"></div>
+                  <div class="demo-scan-beam"></div>
+                </div>
+                <div class="demo-llm-finding">
+                  <span class="demo-llm-icon">&#x25B6;</span>
+                  <span class="demo-llm-text">implicit any in return type</span>
                 </div>
               </div>
             </div>
@@ -230,16 +224,19 @@
                 to apply, a principle to follow, or an idiom to adopt.
               </p>
               <div class="feature-demo demo-refactor">
-                <div class="demo-refactor-grid">
-                  <div class="demo-refactor-block demo-refactor-before">
-                    <span class="demo-refactor-label">before</span>
-                    <code>obj as any</code>
+                <div class="demo-diff">
+                  <div class="demo-diff-line demo-diff-del">
+                    <span class="demo-diff-sign">&minus;</span>
+                    <code>const x: <span class="demo-err">any</span> = getData();</code>
                   </div>
-                  <span class="demo-refactor-arrow">&rarr;</span>
-                  <div class="demo-refactor-block demo-refactor-after">
-                    <span class="demo-refactor-label">after</span>
-                    <code>isWidget(obj)</code>
+                  <div class="demo-diff-line demo-diff-add">
+                    <span class="demo-diff-sign">+</span>
+                    <code>const x: <span class="demo-ok">Widget</span> = getData();</code>
                   </div>
+                </div>
+                <div class="demo-suggestion">
+                  <span class="demo-suggestion-label">suggestion</span>
+                  Use a type guard instead of a cast
                 </div>
               </div>
             </div>
