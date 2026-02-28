@@ -1443,6 +1443,24 @@ function extractDedupeKeyFromCommentBody(commentBody: string | undefined): strin
   return dedupeKey || null;
 }
 
+function logFeedbackSummary(
+  feedbackSummary: CommentFeedbackSummary,
+  traceId: string,
+  jobId: string,
+  infoLogger: (msg: string) => void,
+): void {
+  if (feedbackSummary.totalComments === 0) {
+    return;
+  }
+  infoLogger(
+    `[worker] feedback_summary trace=${traceId} job=${jobId}` +
+      ` totalComments=${feedbackSummary.totalComments}` +
+      ` withReactions=${feedbackSummary.withReactions}` +
+      ` thumbsUp=${feedbackSummary.thumbsUp}` +
+      ` thumbsDown=${feedbackSummary.thumbsDown}`,
+  );
+}
+
 /**
  * Structured feedback record extracted from a single Mergewise comment's reactions.
  */
@@ -1975,13 +1993,7 @@ export async function processAnalyzePullRequestJob(
           ` reactions=${record.thumbsUp + record.thumbsDown + record.otherReactions}`,
       );
     }
-    infoLogger(
-      `[worker] feedback_summary trace=${traceId} job=${job.job_id}` +
-        ` totalComments=${feedbackSummary.totalComments}` +
-        ` withReactions=${feedbackSummary.withReactions}` +
-        ` thumbsUp=${feedbackSummary.thumbsUp}` +
-        ` thumbsDown=${feedbackSummary.thumbsDown}`,
-    );
+    logFeedbackSummary(feedbackSummary, traceId, job.job_id, infoLogger);
 
     const newDedupeKeys = new Set(delivery.comments.map((comment) => comment.dedupeKey));
     const resolveResult = await resolveOutdatedComments(

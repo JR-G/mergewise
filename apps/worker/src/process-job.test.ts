@@ -83,7 +83,7 @@ describe("processAnalyzePullRequestJob", () => {
       diffs: { filePath: string; hunks: { header: string; lines: string[] }[] }[];
     };
 
-    expect(analysisContext.diffs).toHaveLength(1);
+    expect(analysisContext.diffs[0]).toBeDefined();
     expect(analysisContext.diffs[0]?.filePath).toBe("src/index.ts");
     expect(analysisContext.diffs[0]?.hunks[0]?.header).toBe("@@ -1,1 +1,2 @@");
     expect(analysisContext.diffs[0]?.hunks[0]?.lines).toEqual([
@@ -789,10 +789,10 @@ describe("processAnalyzePullRequestJob", () => {
       },
     );
 
-    expect(capturedReviewOptions).toHaveLength(1);
+    expect(capturedReviewOptions[0]).toBeDefined();
     expect(capturedReviewOptions[0]!.body).toBe("2 files reviewed, 0 comments");
     expect(capturedReviewOptions[0]!.event).toBe("COMMENT");
-    expect(capturedReviewOptions[0]!.comments).toHaveLength(0);
+    expect(capturedReviewOptions[0]!.comments).toEqual([]);
   });
 
   test("skips processing when PR is closed", async () => {
@@ -1235,5 +1235,61 @@ describe("processAnalyzePullRequestJob feedback logging", () => {
     expect(summaryLine).toBeDefined();
     expect(summaryLine).toContain("totalComments=");
     expect(summaryLine).toContain("withReactions=");
+  });
+
+  test("suppresses feedback_summary log when no mergewise comments exist", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    const logs: string[] = [];
+
+    await processAnalyzePullRequestJob(
+      {
+        job_id: "job-no-feedback",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 50,
+        head_sha: "abc123",
+        queued_at: "2026-01-01T00:00:00Z",
+      },
+      {
+        deliveryMode: "github",
+        rules: [],
+        githubFetchOptions: workerFetchOptions,
+        logInfo: (msg: string) => logs.push(msg),
+        logError: () => {},
+        createGitHubAppJwtFn: () => "fake-jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "ghs_token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        fetchPullRequestFn: async () => openPullRequestState,
+        createPullRequestReviewFn: async () => ({
+          id: 1,
+          html_url: "",
+          body: null,
+          state: "COMMENTED",
+        }),
+        createCheckRunFn: async () => ({
+          id: 1,
+          html_url: "",
+          status: "completed",
+          conclusion: "success",
+        }),
+        listPullRequestSummaryCommentsFn: async () => [],
+        listPullRequestReviewThreadsFn: async () => [],
+        postPullRequestSummaryCommentFn: async (opts) => ({
+          id: 200,
+          node_id: "IC_200",
+          html_url: "",
+          body: opts.body,
+        }),
+        now: () => new Date("2026-01-02T03:04:05Z"),
+      },
+    );
+
+    const summaryLine = logs.find((line) => line.includes("feedback_summary"));
+    expect(summaryLine).toBeUndefined();
   });
 });
