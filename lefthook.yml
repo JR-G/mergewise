@@ -8,6 +8,37 @@ pre-commit:
           echo "Direct commits to $branch are not allowed. Create a feature branch."
           exit 1
         fi
+    no-conflict-markers:
+      run: |
+        staged=$(git diff --cached --diff-filter=ACM -U0 -- '*.ts' '*.tsx')
+        if echo "$staged" | grep -q '^+<<<<<<<'; then
+          echo "Unresolved merge conflict markers found in staged files."
+          exit 1
+        fi
+        if echo "$staged" | grep -q '^+>>>>>>>'; then
+          echo "Unresolved merge conflict markers found in staged files."
+          exit 1
+        fi
+    no-console-log:
+      run: |
+        added=$(git diff --cached --diff-filter=ACM -U0 -- '*.ts' '*.tsx' | grep '^+' | grep -v '^+++')
+        if echo "$added" | grep -q 'console.log'; then
+          echo "console.log found in staged changes. Use structured logging instead."
+          echo "$added" | grep 'console.log'
+          exit 1
+        fi
+        if echo "$added" | grep -q 'console.debug'; then
+          echo "console.debug found in staged changes. Use structured logging instead."
+          exit 1
+        fi
+        if echo "$added" | grep -q 'console.warn'; then
+          echo "console.warn found in staged changes. Use structured logging instead."
+          exit 1
+        fi
+        if echo "$added" | grep -q 'console.info'; then
+          echo "console.info found in staged changes. Use structured logging instead."
+          exit 1
+        fi
     lint:
       run: bun run lint
     typecheck:
@@ -26,3 +57,20 @@ pre-push:
       run: bun run build
     test:
       run: bun test --coverage
+    quality-gates:
+      run: bun run quality:gates
+    coverage-threshold:
+      run: |
+        output=$(bun test --coverage 2>&1)
+        all_files_line=$(echo "$output" | grep '^All files')
+        if [ -z "$all_files_line" ]; then
+          echo "Could not parse coverage output."
+          exit 1
+        fi
+        line_coverage=$(echo "$all_files_line" | awk -F'|' '{gsub(/[[:space:]]/, "", $3); print $3}')
+        threshold=90
+        if [ "$(echo "$line_coverage < $threshold" | bc -l)" -eq 1 ]; then
+          echo "Line coverage ${line_coverage}% is below the ${threshold}% threshold."
+          exit 1
+        fi
+        echo "Coverage check passed: ${line_coverage}% (threshold: ${threshold}%)"
