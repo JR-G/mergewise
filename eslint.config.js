@@ -78,6 +78,15 @@ export default [
         "error",
         { allowNumber: true, allowBoolean: true },
       ],
+      "max-lines-per-function": [
+        "error",
+        { max: 75, skipBlankLines: true, skipComments: true },
+      ],
+      "max-lines": [
+        "error",
+        { max: 500, skipBlankLines: true, skipComments: true },
+      ],
+      "max-params": ["error", { max: 4 }],
     },
   },
   {
@@ -88,6 +97,27 @@ export default [
       "@typescript-eslint/no-empty-function": "off",
       "@typescript-eslint/no-confusing-void-expression": "off",
       "@typescript-eslint/unbound-method": "off",
+      "max-lines-per-function": "off",
+      "max-lines": "off",
+    },
+  },
+  {
+    files: [
+      "apps/worker/src/index.ts",
+      "apps/worker/src/main.ts",
+      "apps/webhook-api/src/index.ts",
+      "apps/webhook-api/src/main.ts",
+      "packages/github-client/src/index.ts",
+      "packages/rule-ts-react/src/index.ts",
+      "packages/llm-reviewer/src/anti-patterns.ts",
+      "packages/llm-reviewer/src/signals.ts",
+      "packages/config-loader/src/index.ts",
+      "scripts/ops/core.ts",
+    ],
+    rules: {
+      "max-lines": "off",
+      "max-lines-per-function": "off",
+      "max-params": "off",
     },
   },
 ];

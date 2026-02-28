@@ -23,6 +23,19 @@ export interface MergewiseGatingConfigV1 {
 }
 
 /**
+ * Review behaviour settings for file selection and finding filtering.
+ */
+export interface MergewiseReviewConfigV1 {
+  /**
+   * User-defined glob patterns for files to exclude from LLM review.
+   *
+   * @remarks
+   * Merged with built-in skip patterns — cannot replace them.
+   */
+  skipPatterns: string[];
+}
+
+/**
  * LLM reviewer settings for AI-powered code review.
  */
 export interface MergewiseLlmConfigV1 {
@@ -86,6 +99,10 @@ export interface MergewiseConfigV1 {
    */
   rules: MergewiseRulesConfigV1;
   /**
+   * Review behaviour settings.
+   */
+  review: MergewiseReviewConfigV1;
+  /**
    * LLM reviewer settings.
    */
   llm: MergewiseLlmConfigV1;
@@ -114,6 +131,11 @@ export type MergewiseGatingConfig = MergewiseGatingConfigV1;
  * Backward-compatible alias for the v1 rule selection config shape.
  */
 export type MergewiseRulesConfig = MergewiseRulesConfigV1;
+
+/**
+ * Backward-compatible alias for the v1 review config shape.
+ */
+export type MergewiseReviewConfig = MergewiseReviewConfigV1;
 
 /**
  * Backward-compatible alias for the v1 LLM config shape.
@@ -209,6 +231,9 @@ export const DEFAULT_MERGEWISE_CONFIG: MergewiseConfig = {
     include: [],
     exclude: [],
   },
+  review: {
+    skipPatterns: [],
+  },
   llm: {
     enabled: true,
     model: "gpt-4o",
@@ -225,6 +250,9 @@ interface RawMergewiseConfig {
   rules?: {
     include?: unknown;
     exclude?: unknown;
+  };
+  review?: {
+    skipPatterns?: unknown;
   };
   llm?: {
     enabled?: unknown;
@@ -244,6 +272,9 @@ function cloneDefaults(): MergewiseConfig {
     rules: {
       include: [...DEFAULT_MERGEWISE_CONFIG.rules.include],
       exclude: [...DEFAULT_MERGEWISE_CONFIG.rules.exclude],
+    },
+    review: {
+      skipPatterns: [...DEFAULT_MERGEWISE_CONFIG.review.skipPatterns],
     },
     llm: { ...DEFAULT_MERGEWISE_CONFIG.llm },
   };
@@ -334,6 +365,39 @@ function applyRules(
   }
 }
 
+function applyReview(
+  rawConfig: RawMergewiseConfig,
+  normalizedConfig: MergewiseConfig,
+  filePath: string,
+): void {
+  if (rawConfig.review === undefined) {
+    return;
+  }
+
+  if (!isPlainObject(rawConfig.review)) {
+    throw new MergewiseConfigValidationError(filePath, "review must be an object");
+  }
+
+  const skipPatterns = rawConfig.review.skipPatterns;
+  const hasSkipPatterns = skipPatterns !== undefined;
+  if (hasSkipPatterns && !Array.isArray(skipPatterns)) {
+    throw new MergewiseConfigValidationError(filePath, "review.skipPatterns must be an array of strings");
+  }
+  if (hasSkipPatterns) {
+    const patterns = skipPatterns as unknown[];
+    for (let index = 0; index < patterns.length; index++) {
+      const entry = patterns[index];
+      if (typeof entry !== "string" || !entry.trim()) {
+        throw new MergewiseConfigValidationError(
+          filePath,
+          `review.skipPatterns[${index}] must be a non-empty string`,
+        );
+      }
+    }
+    normalizedConfig.review.skipPatterns = (patterns as string[]).map((entry) => entry.trim());
+  }
+}
+
 function applyLlm(
   rawConfig: RawMergewiseConfig,
   normalizedConfig: MergewiseConfig,
@@ -420,6 +484,7 @@ function normalizeConfig(rawValue: unknown, filePath: string): MergewiseConfig {
 
   applyGating(rawConfig, normalizedConfig, filePath);
   applyRules(rawConfig, normalizedConfig, filePath);
+  applyReview(rawConfig, normalizedConfig, filePath);
   applyLlm(rawConfig, normalizedConfig, filePath);
 
   return normalizedConfig;
