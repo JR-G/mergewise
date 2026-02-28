@@ -46,8 +46,6 @@ import type {
   AnalysisContext,
   AnalyzePullRequestJob,
   CodebaseContext,
-  DiffHunk,
-  FileDiff,
   Finding,
   FindingCategory,
   Rule,
@@ -63,6 +61,10 @@ import {
   resolveGitHubFetchOptions,
   type WorkerGitHubFetchOptions,
 } from "./config";
+import {
+  buildAnalysisContext,
+  mapGitHubPullRequestFilesToDiffs,
+} from "./diff-parser";
 
 export {
   DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD,
@@ -86,6 +88,12 @@ export {
   getLongestBacktickRun,
   buildDebugMetadataSection,
 } from "./comment-formatter";
+
+export {
+  buildAnalysisContext,
+  mapGitHubPullRequestFilesToDiffs,
+  parsePatchToDiffHunks,
+} from "./diff-parser";
 
 
 /**
@@ -1482,28 +1490,6 @@ export async function fetchPullRequestFilesWithRetry(
 }
 
 /**
- * Builds rule-engine analysis context from fetched GitHub file metadata.
- *
- * @param job - Job payload.
- * @param fileDiffs - Parsed file diffs for the pull request.
- * @returns Rule-engine analysis context.
- */
-export function buildAnalysisContext(
-  job: AnalyzePullRequestJob,
-  fileDiffs: readonly FileDiff[],
-): AnalysisContext {
-  return {
-    diffs: fileDiffs,
-    pullRequest: {
-      repo: job.repo_full_name,
-      prNumber: job.pr_number,
-      headSha: job.head_sha,
-      installationId: job.installation_id,
-    },
-  };
-}
-
-/**
  * Processes a queued analysis job through GitHub fetch, rule execution, and summary generation.
  *
  * @param job - Job payload to process.
@@ -2505,50 +2491,6 @@ export async function upsertPrSummaryComment(
   });
 }
 
-
-function mapGitHubPullRequestFilesToDiffs(
-  githubFiles: readonly GitHubPullRequestFile[],
-): readonly FileDiff[] {
-  return githubFiles.map((githubFile) => ({
-    filePath: githubFile.filename,
-    previousPath: null,
-    hunks: parsePatchToDiffHunks(githubFile.patch),
-  }));
-}
-
-function parsePatchToDiffHunks(patch: string | undefined): readonly DiffHunk[] {
-  if (!patch) {
-    return [];
-  }
-
-  const lines = patch.split("\n");
-  const hunks: DiffHunk[] = [];
-  let currentHeader: string | null = null;
-  let currentLines: string[] = [];
-
-  for (const line of lines) {
-    const isHunkHeader = line.startsWith("@@");
-    const shouldAppendCurrentLine = !isHunkHeader && currentHeader !== null;
-    if (shouldAppendCurrentLine) {
-      currentLines.push(line);
-    }
-    if (!isHunkHeader) {
-      continue;
-    }
-
-    if (currentHeader !== null) {
-      hunks.push({ header: currentHeader, lines: currentLines });
-    }
-    currentHeader = line;
-    currentLines = [];
-  }
-
-  if (currentHeader !== null) {
-    hunks.push({ header: currentHeader, lines: currentLines });
-  }
-
-  return hunks;
-}
 
 function defaultSleep(delayMs: number): Promise<void> {
   return new Promise((resolve) => {
