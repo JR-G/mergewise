@@ -130,6 +130,15 @@
                 anti-patterns and code smells structurally, not with regex
                 guesswork.
               </p>
+              <div class="feature-demo demo-ast">
+                <div class="demo-code">
+                  <span class="demo-line">const data = <span class="demo-kw">await</span> fetch(url);</span>
+                  <span class="demo-line">const parsed = data.json();</span>
+                  <span class="demo-line demo-line-flagged">const x: <span class="demo-err">any</span> = parsed.val;</span>
+                  <span class="demo-line">return transform(x);</span>
+                </div>
+                <span class="demo-badge demo-badge-red">anti-pattern detected</span>
+              </div>
             </div>
             <div class="feature-card" data-reveal>
               <div class="feature-icon">
@@ -140,6 +149,25 @@
                 Uses structural signals from the AST as context for LLM
                 analysis. The model sees code structure, not just text.
               </p>
+              <div class="feature-demo demo-llm">
+                <div class="demo-llm-grid">
+                  <div class="demo-llm-block demo-llm-code">
+                    <span class="demo-llm-label">code</span>
+                    <span class="demo-line-mini"></span>
+                    <span class="demo-line-mini short"></span>
+                    <span class="demo-line-mini"></span>
+                  </div>
+                  <div class="demo-llm-connector">
+                    <span class="demo-arrow">&rarr;</span>
+                  </div>
+                  <div class="demo-llm-block demo-llm-structure">
+                    <span class="demo-llm-label">structure</span>
+                    <span class="shape-square shape-blue" style="width:10px;height:10px;display:inline-block"></span>
+                    <span class="shape-triangle shape-amber" style="border-left-width:6px;border-right-width:6px;border-bottom-width:10px;display:inline-block"></span>
+                    <span class="shape-circle shape-red" style="width:10px;height:10px;display:inline-block"></span>
+                  </div>
+                </div>
+              </div>
             </div>
             <div class="feature-card" data-reveal>
               <div class="feature-icon">
@@ -150,6 +178,23 @@
                 Every finding carries a confidence score. Low-confidence noise
                 never reaches your PR. You only see what matters.
               </p>
+              <div class="feature-demo demo-confidence">
+                <div class="demo-bar-row">
+                  <span class="demo-bar-label">92%</span>
+                  <div class="demo-bar-track"><div class="demo-bar-fill fill-high"></div></div>
+                  <span class="demo-bar-tag tag-pass">pass</span>
+                </div>
+                <div class="demo-bar-row">
+                  <span class="demo-bar-label">61%</span>
+                  <div class="demo-bar-track"><div class="demo-bar-fill fill-mid"></div></div>
+                  <span class="demo-bar-tag tag-skip">skip</span>
+                </div>
+                <div class="demo-bar-row">
+                  <span class="demo-bar-label">34%</span>
+                  <div class="demo-bar-track"><div class="demo-bar-fill fill-low"></div></div>
+                  <span class="demo-bar-tag tag-skip">skip</span>
+                </div>
+              </div>
             </div>
             <div class="feature-card" data-reveal>
               <div class="feature-icon">
@@ -160,6 +205,20 @@
                 A growing catalogue of rules targeting real-world anti-patterns
                 and code smells. Each rule is tested against known fixtures.
               </p>
+              <div class="feature-demo demo-rules">
+                <div class="demo-check-item">
+                  <span class="demo-check-mark">&#x2713;</span>
+                  <span class="demo-check-text">no-explicit-any</span>
+                </div>
+                <div class="demo-check-item">
+                  <span class="demo-check-mark">&#x2713;</span>
+                  <span class="demo-check-text">prefer-readonly</span>
+                </div>
+                <div class="demo-check-item">
+                  <span class="demo-check-mark">&#x2713;</span>
+                  <span class="demo-check-text">no-barrel-imports</span>
+                </div>
+              </div>
             </div>
             <div class="feature-card" data-reveal>
               <div class="feature-icon">
@@ -170,6 +229,19 @@
                 Every finding includes a concrete suggestion — a design pattern
                 to apply, a principle to follow, or an idiom to adopt.
               </p>
+              <div class="feature-demo demo-refactor">
+                <div class="demo-refactor-grid">
+                  <div class="demo-refactor-block demo-refactor-before">
+                    <span class="demo-refactor-label">before</span>
+                    <code>obj as any</code>
+                  </div>
+                  <span class="demo-refactor-arrow">&rarr;</span>
+                  <div class="demo-refactor-block demo-refactor-after">
+                    <span class="demo-refactor-label">after</span>
+                    <code>isWidget(obj)</code>
+                  </div>
+                </div>
+              </div>
             </div>
             <div class="feature-card" data-reveal>
               <div class="feature-icon">
@@ -181,6 +253,19 @@
                 patterns, and language idioms. Keeps your codebase readable
                 and maintainable as it grows.
               </p>
+              <div class="feature-demo demo-quality">
+                <div class="demo-meter">
+                  <div class="demo-meter-fill"></div>
+                  <div class="demo-meter-ticks">
+                    <span></span><span></span><span></span><span></span><span></span>
+                  </div>
+                </div>
+                <div class="demo-meter-labels">
+                  <span>0</span>
+                  <span>quality score</span>
+                  <span>100</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
