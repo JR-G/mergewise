@@ -903,6 +903,7 @@ describe("processAnalyzePullRequestJob", () => {
             include: ["rule-a", "rule-c"],
             exclude: ["rule-c"],
           },
+          review: { skipPatterns: [], confidenceThreshold: undefined },
           llm: {
             enabled: false,
             model: "gpt-4o",
@@ -966,6 +967,7 @@ describe("processAnalyzePullRequestJob", () => {
             include: [],
             exclude: [],
           },
+          review: { skipPatterns: [], confidenceThreshold: undefined },
           llm: {
             enabled: false,
             model: "gpt-4o",
@@ -1758,6 +1760,7 @@ describe("applyFindingGates", () => {
         include: [],
         exclude: [],
       },
+      review: { skipPatterns: [], confidenceThreshold: undefined },
       llm: {
         enabled: false,
         model: "gpt-4o",
@@ -1790,6 +1793,7 @@ describe("applyFindingGates", () => {
         include: [],
         exclude: [],
       },
+      review: { skipPatterns: [], confidenceThreshold: undefined },
       llm: {
         enabled: false,
         model: "gpt-4o",
@@ -1823,6 +1827,7 @@ describe("applyFindingGates", () => {
         include: [],
         exclude: [],
       },
+      review: { skipPatterns: [], confidenceThreshold: undefined },
       llm: {
         enabled: false,
         model: "gpt-4o",
