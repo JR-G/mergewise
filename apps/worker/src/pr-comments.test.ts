@@ -354,6 +354,7 @@ describe("buildPrSummaryComment", () => {
         skippedByDeduplication: 1,
         skippedByPolicy: 0,
         skippedByGrouping: 2,
+        skippedBySimilarity: 0,
         skippedByCap: 0,
       },
     });
@@ -393,6 +394,68 @@ describe("buildPrSummaryComment", () => {
     const findings: Finding[] = [createFinding("f1", 0.9, "safety")];
     const body = buildPrSummaryComment({ ...defaultInput, findings });
     expect(body).not.toMatch(/^##+ /m);
+  });
+
+  test("truncates findings section when output exceeds character limit", () => {
+    const findings: Finding[] = Array.from({ length: 50 }, (_, index) => ({
+      ...createFinding(`f${String(index)}`, 0.9 - index * 0.001, "safety"),
+      ruleId: "r-safety",
+      filePath: `src/components/very-long-directory-name/deeply-nested-file-${String(index)}.ts`,
+      line: (index + 1) * 10,
+      recommendation: "This is a long recommendation that describes the issue in great detail and adds to the total character count of the summary comment body",
+    }));
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body.length).toBeLessThanOrEqual(4000);
+    expect(body).toContain("**Mergewise**");
+    expect(body).toContain("50 suggestions");
+    expect(body).toContain("Review details");
+    expect(body).toContain("more");
+  });
+
+  test("preserves header and review details when truncating", () => {
+    const findings: Finding[] = Array.from({ length: 40 }, (_, index) => ({
+      ...createFinding(`f${String(index)}`, 0.9, "safety"),
+      ruleId: "r-safety",
+      filePath: `src/components/deep-nested-directory/module-${String(index)}.ts`,
+      line: (index + 1) * 10,
+      recommendation: "Refactor this function to reduce cyclomatic complexity and improve maintainability of the codebase",
+    }));
+    const body = buildPrSummaryComment({
+      ...defaultInput,
+      filePaths: ["src/a.ts", "src/b.ts"],
+      findings,
+      rulesRan: 10,
+      rulesPassed: 8,
+    });
+    expect(body).toContain("<!-- mergewise-summary -->");
+    expect(body).toContain("40 suggestions");
+    expect(body).toContain("8/10 passed");
+  });
+
+  test("does not truncate when output is within character limit", () => {
+    const findings: Finding[] = [
+      { ...createFinding("f1", 0.9, "safety"), recommendation: "Fix null" },
+    ];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body.length).toBeLessThan(4000);
+    expect(body).toContain("Fix null");
+    expect(body).not.toContain("truncated");
+  });
+
+  test("renders skipped by similarity counter in delivery details", () => {
+    const body = buildPrSummaryComment({
+      ...defaultInput,
+      findings: [createFinding("f1", 0.9, "safety")],
+      deliveryCounters: {
+        skippedByConfidence: 0,
+        skippedByDeduplication: 0,
+        skippedByPolicy: 0,
+        skippedByGrouping: 0,
+        skippedBySimilarity: 3,
+        skippedByCap: 0,
+      },
+    });
+    expect(body).toContain("Skipped by similarity: 3");
   });
 });
 

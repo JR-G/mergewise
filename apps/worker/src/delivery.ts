@@ -9,6 +9,7 @@ import {
 } from "./config";
 
 const SIMILARITY_THRESHOLD = 0.7;
+const SAME_FILE_SIMILARITY_THRESHOLD = 0.5;
 
 /**
  * Extracts a normalised set of lowercase words from text.
@@ -88,6 +89,66 @@ function deduplicateBySimilarity(
   let skippedBySimilarity = 0;
 
   for (const groups of categoryGroups.values()) {
+    for (const group of groups) {
+      const best = group.reduce((top, current) =>
+        current.confidence > top.confidence ? current : top,
+      );
+      deduplicated.push(best);
+      skippedBySimilarity += group.length - 1;
+    }
+  }
+
+  deduplicated.sort((left, right) => {
+    if (right.confidence !== left.confidence) {
+      return right.confidence - left.confidence;
+    }
+    return buildFindingDedupeKey(left).localeCompare(buildFindingDedupeKey(right));
+  });
+
+  return { deduplicated, skippedBySimilarity };
+}
+
+/**
+ * Groups findings targeting the same file by recommendation similarity.
+ *
+ * Uses a lower similarity threshold than the category-level pass to catch
+ * near-duplicate findings on different lines of the same function.
+ *
+ * @param findings - Findings sorted by confidence descending.
+ * @returns Deduplicated findings and count of those removed.
+ */
+function deduplicateBySameFileSimilarity(
+  findings: readonly Finding[],
+): { deduplicated: readonly Finding[]; skippedBySimilarity: number } {
+  const fileGroups = new Map<string, Finding[][]>();
+
+  for (const finding of findings) {
+    const groups = fileGroups.get(finding.filePath) ?? [];
+    let matchedGroup: Finding[] | undefined;
+
+    for (const group of groups) {
+      const representative = group[0];
+      if (
+        representative &&
+        computeTextSimilarity(representative.recommendation, finding.recommendation) >= SAME_FILE_SIMILARITY_THRESHOLD
+      ) {
+        matchedGroup = group;
+        break;
+      }
+    }
+
+    if (matchedGroup) {
+      matchedGroup.push(finding);
+    } else {
+      groups.push([finding]);
+      fileGroups.set(finding.filePath, groups);
+    }
+  }
+
+  const deduplicated: Finding[] = [];
+  let skippedBySimilarity = 0;
+
+  for (const groups of fileGroups.values()) {
     for (const group of groups) {
       const best = group.reduce((top, current) =>
         current.confidence > top.confidence ? current : top,
@@ -310,12 +371,17 @@ function deduplicateAndGroupFindings(
     deduplicatedFindings.push(finding);
   }
 
-  const { deduplicated: similarityDeduplicated, skippedBySimilarity } =
+  const { deduplicated: similarityDeduplicated, skippedBySimilarity: skippedByCategorySimilarity } =
     deduplicateBySimilarity(deduplicatedFindings);
+
+  const { deduplicated: fileSimilarityDeduplicated, skippedBySimilarity: skippedByFileSimilarity } =
+    deduplicateBySameFileSimilarity(similarityDeduplicated);
+
+  const skippedBySimilarity = skippedByCategorySimilarity + skippedByFileSimilarity;
 
   const groupedByFileRule = new Map<string, Finding[]>();
   let skippedByGrouping = 0;
-  for (const finding of similarityDeduplicated) {
+  for (const finding of fileSimilarityDeduplicated) {
     const groupKey = `${finding.filePath}:${finding.ruleId}`;
     const groupEntries = groupedByFileRule.get(groupKey);
     if (!groupEntries) {
@@ -329,7 +395,9 @@ function deduplicateAndGroupFindings(
 
   const allGroups = [...groupedByFileRule.values()];
   const selectedGroups = allGroups.slice(0, maxComments);
-  const skippedByCap = Math.max(allGroups.length - selectedGroups.length, 0);
+  const skippedByCap = allGroups
+    .slice(maxComments)
+    .reduce((total, group) => total + group.length, 0);
 
   return { groups: selectedGroups, skippedByDeduplication, skippedByGrouping, skippedByCap, skippedBySimilarity };
 }

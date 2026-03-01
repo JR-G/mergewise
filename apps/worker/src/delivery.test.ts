@@ -267,7 +267,7 @@ describe("finding delivery", () => {
           filePath: "src/a.ts",
           line: 10,
           evidence: "alpha",
-          recommendation: "Refactor alpha.",
+          recommendation: "Wrap database queries in a transaction to prevent partial writes during insert operations.",
           confidence: 0.92,
         },
         {
@@ -277,7 +277,7 @@ describe("finding delivery", () => {
           filePath: "src/a.ts",
           line: 25,
           evidence: "beta",
-          recommendation: "Refactor beta.",
+          recommendation: "Validate user authentication tokens before performing privileged GraphQL mutations.",
           confidence: 0.9,
         },
       ],
@@ -1127,5 +1127,151 @@ describe("similarity deduplication", () => {
 
     expect(delivery.comments).toHaveLength(2);
     expect(delivery.skippedBySimilarity).toBe(0);
+  });
+});
+
+describe("same-file similarity deduplication", () => {
+  const baseFinding = {
+    installationId: 1,
+    repo: "acme/widget",
+    prNumber: 3,
+    language: "typescript",
+    category: "clean" as const,
+    status: "posted" as const,
+  };
+
+  test("deduplicates near-identical findings in the same file", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "srp-line-10",
+          ruleId: "llm/srp",
+          filePath: "src/handler.ts",
+          line: 10,
+          evidence: "function handleSubmit() { validate(); save(); notify(); }",
+          recommendation: "Extract validate logic for SRP",
+          confidence: 0.92,
+        },
+        {
+          ...baseFinding,
+          findingId: "srp-line-30",
+          ruleId: "llm/srp",
+          filePath: "src/handler.ts",
+          line: 30,
+          evidence: "function handleSubmit() { validate(); save(); notify(); }",
+          recommendation: "Extract save logic for SRP",
+          confidence: 0.85,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 10,
+      },
+    );
+
+    expect(delivery.comments.some((comment) => comment.finding.findingId === "srp-line-10")).toBe(true);
+    expect(delivery.comments.some((comment) => comment.finding.findingId === "srp-line-30")).toBe(false);
+    expect(delivery.skippedBySimilarity).toBeGreaterThanOrEqual(1);
+  });
+
+  test("keeps findings in the same file with genuinely different recommendations", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "srp-finding",
+          ruleId: "llm/srp",
+          filePath: "src/handler.ts",
+          line: 10,
+          evidence: "class A { ... }",
+          recommendation: "Extract this logic into a separate function for Single Responsibility Principle",
+          confidence: 0.92,
+        },
+        {
+          ...baseFinding,
+          findingId: "memo-finding",
+          ruleId: "llm/memo",
+          category: "perf",
+          filePath: "src/handler.ts",
+          line: 50,
+          evidence: "function compute() { ... }",
+          recommendation: "Use React.memo or useMemo to avoid expensive re-renders on every parent update",
+          confidence: 0.88,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 10,
+      },
+    );
+
+    expect(delivery.comments.some((comment) => comment.finding.findingId === "srp-finding")).toBe(true);
+    expect(delivery.comments.some((comment) => comment.finding.findingId === "memo-finding")).toBe(true);
+    expect(delivery.skippedBySimilarity).toBe(0);
+  });
+
+  test("same-file dedup keeps highest-confidence finding from similar pair", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "low-conf-same-file",
+          ruleId: "llm/srp",
+          filePath: "src/handler.ts",
+          line: 15,
+          evidence: "function process() { ... }",
+          recommendation: "Extract notify logic for SRP",
+          confidence: 0.84,
+        },
+        {
+          ...baseFinding,
+          findingId: "high-conf-same-file",
+          ruleId: "llm/srp",
+          filePath: "src/handler.ts",
+          line: 40,
+          evidence: "function process() { ... }",
+          recommendation: "Extract notify code for SRP",
+          confidence: 0.95,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 10,
+      },
+    );
+
+    expect(delivery.comments.some((comment) => comment.finding.findingId === "high-conf-same-file")).toBe(true);
+    expect(delivery.comments.some((comment) => comment.finding.findingId === "low-conf-same-file")).toBe(false);
+  });
+
+  test("skipped_by_cap counts individual findings not groups", () => {
+    const distinctRecommendations = [
+      "Wrap database queries in a transaction to prevent partial writes during insert operations",
+      "Validate user authentication tokens before performing privileged GraphQL mutations",
+      "Memoize expensive render calculations using useMemo to avoid unnecessary component re-paints",
+      "Replace synchronous file reads with streaming parsers to reduce peak memory consumption",
+      "Add rate limiting middleware to public webhook endpoints before deploying to production",
+      "Sanitize HTML output with DOMPurify before injecting user-generated content into templates",
+      "Use structuredClone instead of JSON parse roundtrip for deep-copying configuration objects",
+      "Extract shared validation schemas into a dedicated package to eliminate cross-boundary imports",
+    ];
+    const findings = distinctRecommendations.map((recommendation, index) => ({
+      ...baseFinding,
+      findingId: `finding-${String(index)}`,
+      ruleId: `rule/${String(index)}`,
+      filePath: `src/file-${String(index)}.ts`,
+      line: 10,
+      evidence: "const value = source;",
+      recommendation,
+      confidence: 0.95 - index * 0.01,
+    }));
+
+    const delivery = prepareFindingDelivery(findings, {
+      confidenceThreshold: 0.8,
+      maxComments: 3,
+    });
+
+    expect(delivery.skippedByCap).toBe(5);
   });
 });
