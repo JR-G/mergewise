@@ -3,16 +3,23 @@ import type { ReviewClientConfig } from "@mergewise/llm-reviewer";
 import type { EvalResult, EvalVariant } from "./types";
 import { discoverFixtures, loadFixture } from "./loader";
 import { runFixture } from "./runner";
-import { printReport, appendRunRecord } from "./reporter";
+import { printReport, printMultiRunReport, appendRunRecord } from "./reporter";
 
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
   options: {
     fixture: { type: "string" },
     variant: { type: "string" },
+    runs: { type: "string" },
   },
   strict: true,
 });
+
+const runCount = values.runs ? parseInt(values.runs, 10) : 1;
+if (!Number.isFinite(runCount) || runCount < 1) {
+  console.error("--runs must be a positive integer");
+  process.exit(1);
+}
 
 const apiKey = process.env.LLM_EVAL_API_KEY;
 if (!apiKey) {
@@ -53,35 +60,51 @@ const fixtureNames = fixtureFilter
   ? [fixtureFilter]
   : await discoverFixtures();
 
-const results: EvalResult[] = [];
+const allResults: EvalResult[][] = [];
 
-for (const fixtureName of fixtureNames) {
-  let fixture;
-  try {
-    fixture = await loadFixture(fixtureName);
-  } catch (error) {
-    console.error(`Failed to load fixture "${fixtureName}":`, error);
-    continue;
+for (let run = 0; run < runCount; run++) {
+  if (runCount > 1) {
+    console.log(`\n--- Run ${run + 1} of ${runCount} ---\n`);
   }
 
-  for (const variant of variants) {
-    console.log(`Running ${fixtureName} / ${variant.label}...`);
+  const results: EvalResult[] = [];
+
+  for (const fixtureName of fixtureNames) {
+    let fixture;
     try {
-      const result = await runFixture(fixture, variant);
-      results.push(result);
+      fixture = await loadFixture(fixtureName);
     } catch (error) {
-      console.error(
-        `Failed to run fixture "${fixtureName}" variant "${variant.label}":`,
-        error,
-      );
+      console.error(`Failed to load fixture "${fixtureName}":`, error);
+      continue;
+    }
+
+    for (const variant of variants) {
+      console.log(`Running ${fixtureName} / ${variant.label}...`);
+      try {
+        const result = await runFixture(fixture, variant);
+        results.push(result);
+      } catch (error) {
+        console.error(
+          `Failed to run fixture "${fixtureName}" variant "${variant.label}":`,
+          error,
+        );
+      }
     }
   }
+
+  allResults.push(results);
 }
 
-printReport(results);
+if (runCount > 1) {
+  printMultiRunReport(allResults);
+} else if (allResults[0]) {
+  printReport(allResults[0]);
+}
 
 try {
-  await appendRunRecord(results);
+  for (const results of allResults) {
+    await appendRunRecord(results);
+  }
   console.log("Results appended to packages/eval/results/runs.ndjson");
 } catch (error) {
   console.error("Failed to write run record:", error);
