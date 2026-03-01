@@ -38,5 +38,3 @@ packages/eval/results/
 docs/internal/
 .mergewise-runtime/
 .claude/
-ops/tasks/*.md
-!ops/tasks/TEMPLATE.md
