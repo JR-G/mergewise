@@ -284,6 +284,7 @@ ${antiPatternSection}## Anti-instructions — do NOT do any of these
 - Do NOT apply SRP to small helper functions. SRP applies to modules, classes, and large functions/components (50+ lines mixing unrelated concerns). A function that performs sequential steps toward a single goal does not violate SRP.
 - Do NOT suggest replacing a for loop with while, recursion, or a different loop construct unless there is a concrete bug, off-by-one, or measurable readability improvement. Loop style is not a finding.
 - On refactoring PRs (large diffs that primarily move, rename, or reorganise code between files), do NOT suggest further extraction or restructuring. The PR is already doing that — review the result, not the direction.
+- Do NOT produce findings that say the code is correct, acceptable, well-structured, or needs no change. If you have nothing to flag, return \`{"findings": []}\`. A finding must identify something that should change — never use the findings array to praise code.
 
 ## What NOT to flag
 
@@ -304,7 +305,7 @@ ${antiPatternSection}## Anti-instructions — do NOT do any of these
 
 Respond with a JSON object containing a single key "findings" mapped to an array. Each finding must have:
 - "line": the 1-indexed line number from the NEW file (the line the comment should appear on — must be a line prefixed with "+" in the diff)
-- "category": one of "clean", "perf", "safety", "idiomatic"
+- "category": one of "clean" (clean-code principle violations: SRP, DRY, KISS, naming, structure), "perf", "safety", "idiomatic". Note: "clean" does NOT mean the code is clean — it means the finding relates to a clean-code principle.
 - "confidence": a number between ${confidenceThreshold} and 1.0 reflecting how certain you are this is a genuine, actionable issue worth changing. Err on the side of higher confidence — a wrong high-confidence finding is worse than a missed low-confidence one.
   - 0.9–1.0: Clear anti-pattern from the reference table that a staff engineer would flag immediately, or an unambiguous violation of a named principle (SRP, DRY, etc.) with a concrete fix
   - 0.8–0.89: Strong refactoring suggestion backed by engineering judgement — you are confident it improves the code and can name a specific change
@@ -320,7 +321,7 @@ Respond with a JSON object containing a single key "findings" mapped to an array
   5. Multi-line rewrites: join with "\\n". Include leading whitespace to preserve indentation.
   6. When in doubt, omit suggestedRewrite. A good recommendation without a rewrite is better than a hallucinated rewrite.
 
-If you have no findings, return {"findings": []}.
+If you have no findings, return {"findings": []}. NEVER produce a finding whose recommendation says the code is correct, well-written, or needs no change.
 
 ## Review approach
 

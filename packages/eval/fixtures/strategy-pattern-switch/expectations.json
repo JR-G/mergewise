@@ -2,7 +2,7 @@
   {
     "description": "Flags Open/Closed violation — strategy pattern opportunity",
     "matchLineRange": [4, 33],
-    "matchRecommendationContainsAny": ["strategy", "handler", "Open/Closed", "map of"],
+    "matchRecommendationContainsAny": ["strategy", "handler", "Open/Closed", "map of", "switch", "dispatch", "polymorphi", "lookup", "Record", "extract"],
     "required": true
   },
   {

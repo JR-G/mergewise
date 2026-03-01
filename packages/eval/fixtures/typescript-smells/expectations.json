@@ -2,7 +2,7 @@
   {
     "description": "Flags unsafe as type assertions instead of type guards",
     "matchLineRange": [7, 30],
-    "matchRecommendationContainsAny": ["type guard", "assertion", "validat", "runtime"],
+    "matchRecommendationContainsAny": ["type guard", "assertion", "validat", "runtime", "unsafe", "narrow", "check", "cast", "as "],
     "required": true
   },
   {

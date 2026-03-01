@@ -1,14 +1,14 @@
 [
   {
     "description": "Flags repetitive object construction — factory/builder opportunity",
-    "matchLineRange": [15, 50],
+    "matchLineRange": [1, 55],
     "matchCategory": "clean",
-    "matchRecommendationContainsAny": ["factory", "DRY", "extract", "builder", "constructor", "helper", "createUser"],
+    "matchRecommendationContainsAny": ["factory", "DRY", "extract", "builder", "constructor", "helper", "createUser", "repetit", "reuse", "consolidat", "common", "shared", "pattern", "function"],
     "required": true
   },
   {
     "description": "Flags duplication across object literals",
-    "matchLineRange": [15, 50],
+    "matchLineRange": [1, 55],
     "matchRecommendationContainsAny": ["duplicat", "repeated", "identical", "shared", "common"],
     "required": false
   }

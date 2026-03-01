@@ -8,8 +8,8 @@
   },
   {
     "description": "Should not flag clean profile merge function for extraction or SRP",
-    "matchLineRange": [24, 34],
-    "matchRecommendationContainsAny": ["extract", "split", "SRP", "responsibility", "separate"],
+    "matchLineRange": [1, 35],
+    "matchRecommendationContainsAny": ["extract", "split", "SRP", "responsibility", "separate", "straightforward", "no change", "appropriate", "clear"],
     "required": false,
     "forbidden": true
   }
