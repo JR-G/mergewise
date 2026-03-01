@@ -187,6 +187,61 @@ export function isPlausibleRewrite(
   return overlapRatio >= 0.15;
 }
 
+const MAX_REWRITE_LINES = 20;
+const DECLARATION_PATTERN = /^\s*(?:export\s+)?(?:function|class|interface|enum|type|const\s+\w+\s*=\s*(?:\(|async\s*\())\s/;
+
+/**
+ * Strips invalid `suggestedRewrite` values from a raw finding.
+ *
+ * @remarks
+ * Returns a copy of the finding without `suggestedRewrite` when the rewrite
+ * fails validation: the referenced line is not in the diff, the rewrite
+ * exceeds 20 lines, or the rewrite contains function/class declarations
+ * not present at the original line. The finding itself is preserved —
+ * only the rewrite is removed.
+ *
+ * @param finding - Raw finding from the LLM.
+ * @param addedLines - Set of added line numbers from the diff.
+ * @param addedLineMap - Map of added line numbers to their content.
+ * @returns The finding, potentially with `suggestedRewrite` removed.
+ */
+export function sanitiseSuggestedRewrite(
+  finding: RawLlmFinding,
+  addedLines: Set<number>,
+  addedLineMap: Map<number, AddedLineInfo>,
+): RawLlmFinding {
+  if (typeof finding.suggestedRewrite !== "string" || finding.suggestedRewrite.length === 0) {
+    return finding;
+  }
+
+  const rewrite = finding.suggestedRewrite;
+
+  if (!addedLines.has(finding.line)) {
+    const { suggestedRewrite: _, ...rest } = finding;
+    return rest;
+  }
+
+  const rewriteLineCount = rewrite.split("\n").length;
+  if (rewriteLineCount > MAX_REWRITE_LINES) {
+    const { suggestedRewrite: _, ...rest } = finding;
+    return rest;
+  }
+
+  const lineInfo = addedLineMap.get(finding.line);
+  const originalLine = lineInfo?.content ?? "";
+  const originalHasDeclaration = DECLARATION_PATTERN.test(originalLine);
+  const rewriteLines = rewrite.split("\n");
+  const hasHallucinatedDeclaration = !originalHasDeclaration &&
+    rewriteLines.some((rewriteLine) => DECLARATION_PATTERN.test(rewriteLine));
+
+  if (hasHallucinatedDeclaration) {
+    const { suggestedRewrite: _, ...rest } = finding;
+    return rest;
+  }
+
+  return finding;
+}
+
 function buildLlmPatchPreview(
   suggestedRewrite: string | undefined,
   lineInfo: AddedLineInfo | undefined,
@@ -241,10 +296,11 @@ export function parseLlmResponse(
       continue;
     }
 
-    const lineInfo = addedLineMap.get(rawFinding.line);
+    const sanitised = sanitiseSuggestedRewrite(rawFinding, addedLines, addedLineMap);
+    const lineInfo = addedLineMap.get(sanitised.line);
 
     const patchPreview = buildLlmPatchPreview(
-      rawFinding.suggestedRewrite,
+      sanitised.suggestedRewrite,
       lineInfo,
     );
 

@@ -14,8 +14,8 @@ export type { ReviewClientConfig, CompletionUsage, CompletionResult } from "./cl
 export type { FileReviewResult } from "./review-file";
 export { selectFilesForReview } from "./file-selection";
 export { buildSystemPrompt, buildFileReviewPrompt } from "./prompt";
-export { parseLlmResponse, extractAddedLineNumbers, extractAddedLineMap, deduplicateByProximity, isCommentLine, isPlausibleRewrite } from "./schema";
-export type { AddedLineInfo } from "./schema";
+export { parseLlmResponse, extractAddedLineNumbers, extractAddedLineMap, deduplicateByProximity, isCommentLine, isPlausibleRewrite, sanitiseSuggestedRewrite } from "./schema";
+export type { AddedLineInfo, RawLlmFinding } from "./schema";
 export { extractStructuralSignals, type StructuralSignals } from "./signals";
 export { reviewFile } from "./review-file";
 export { createReviewClient, ReviewClient } from "./client";
