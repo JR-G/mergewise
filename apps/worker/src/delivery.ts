@@ -409,13 +409,17 @@ export function buildWorkerCheckOutput(
     reviewerSummaryOptions,
   );
   const deliveryCounterMarkdown = [
-    "### Delivery Counters",
+    "<details>",
+    "<summary>Delivery counters</summary>",
+    "",
     `- skipped_by_confidence=${delivery.skippedByConfidence}`,
     `- skipped_by_deduplication=${delivery.skippedByDeduplication}`,
     `- skipped_by_policy=${delivery.skippedByPolicy}`,
     `- skipped_by_similarity=${delivery.skippedBySimilarity}`,
     `- skipped_by_grouping=${delivery.skippedByGrouping}`,
     `- skipped_by_cap=${delivery.skippedByCap}`,
+    "",
+    "</details>",
   ].join("\n");
 
   const title = postedCount > 0
@@ -436,7 +440,7 @@ export function buildReviewerSummaryMarkdown(
   options?: WorkerReviewerSummaryOptions,
 ): string {
   if (comments.length === 0) {
-    return "### Reviewer Summary\nNo findings selected for reviewer output.";
+    return "**Reviewer Summary**\nNo findings selected for reviewer output.";
   }
 
   const groupedByCategory = new Map<FindingCategory, Map<string, Finding[]>>();
@@ -460,7 +464,7 @@ export function buildReviewerSummaryMarkdown(
     return leftCategory.localeCompare(rightCategory);
   });
 
-  const summaryLines: string[] = ["### Reviewer Summary"];
+  const summaryLines: string[] = ["**Reviewer Summary**"];
   for (const [category, groupedByRule] of orderedCategories) {
     const sortedRuleEntries = [...groupedByRule.entries()].sort(([leftRuleId], [rightRuleId]) =>
       leftRuleId.localeCompare(rightRuleId),

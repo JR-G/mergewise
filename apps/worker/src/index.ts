@@ -78,18 +78,19 @@ export {
 
 export {
   type PrSummaryInput,
+  type DeliveryCounters,
   PR_SUMMARY_COMMENT_MARKER,
   CATEGORY_EMOJI,
   CATEGORY_SEVERITY_ORDER,
   buildPrSummaryComment,
   upsertPrSummaryComment,
   escapeTableCell,
-  type FindingGroup,
   buildBlobUrl,
   buildLocationLink,
-  INLINE_LOCATION_THRESHOLD,
-  groupFindings,
-  buildCollapsibleDetail,
+  INLINE_FINDING_LIMIT,
+  MAX_FILES_DISPLAY,
+  truncateRecommendation,
+  buildCategoryBadges,
 } from "./pr-summary";
 
 export {

@@ -16,6 +16,17 @@ import type { WorkerGitHubFetchOptions } from "./config";
 export const PR_SUMMARY_COMMENT_MARKER = "<!-- mergewise-summary -->";
 
 /**
+ * Delivery skip counters for inclusion in the collapsed review details section.
+ */
+export interface DeliveryCounters {
+  readonly skippedByConfidence: number;
+  readonly skippedByDeduplication: number;
+  readonly skippedByPolicy: number;
+  readonly skippedByGrouping: number;
+  readonly skippedByCap: number;
+}
+
+/**
  * Input for {@link buildPrSummaryComment}.
  */
 export interface PrSummaryInput {
@@ -31,13 +42,15 @@ export interface PrSummaryInput {
   readonly rulesRan: number;
   /** Number of rules that completed without errors. */
   readonly rulesPassed: number;
+  /** Delivery skip counters for the collapsed review details section. */
+  readonly deliveryCounters?: DeliveryCounters;
 }
 
 export const CATEGORY_EMOJI: Readonly<Record<FindingCategory, string>> = {
-  safety: "🔴",
-  perf: "🟡",
-  clean: "🔵",
-  idiomatic: "🟢",
+  safety: "\u{1F534}",
+  perf: "\u{1F7E1}",
+  clean: "\u{1F535}",
+  idiomatic: "\u{1F7E2}",
 };
 
 export const CATEGORY_SEVERITY_ORDER: readonly FindingCategory[] = [
@@ -49,12 +62,6 @@ export const CATEGORY_SEVERITY_ORDER: readonly FindingCategory[] = [
 
 export function escapeTableCell(text: string): string {
   return text.replace(/\|/g, "\\|").replace(/\n/g, " ");
-}
-
-export interface FindingGroup {
-  readonly category: FindingCategory;
-  readonly recommendation: string;
-  readonly locations: readonly { readonly filePath: string; readonly line: number }[];
 }
 
 export function buildBlobUrl(
@@ -84,151 +91,166 @@ export function buildLocationLink(
   return `[\`${filePath}:${String(line)}\`](${blobUrl})`;
 }
 
-export const INLINE_LOCATION_THRESHOLD = 4;
+/** Maximum findings shown before the remainder collapse into a nested block. */
+export const INLINE_FINDING_LIMIT = 5;
 
-export function groupFindings(findings: readonly Finding[]): FindingGroup[] {
-  const groupMap = new Map<string, FindingGroup & { locations: { filePath: string; line: number }[] }>();
+/** Maximum file paths listed inline before the remainder are summarised as a count. */
+export const MAX_FILES_DISPLAY = 50;
+
+/**
+ * Escapes table-cell characters then truncates to {@link maxLength},
+ * appending an ellipsis when the escaped text exceeds the limit.
+ */
+export function truncateRecommendation(text: string, maxLength = 80): string {
+  const escaped = escapeTableCell(text);
+  if (escaped.length <= maxLength) return escaped;
+  return escaped.slice(0, maxLength - 1) + "\u2026";
+}
+
+function buildFindingsTable(
+  findings: readonly Finding[],
+  repositoryFullName: string,
+  headSha: string,
+): string[] {
+  const lines: string[] = [
+    "| | File | Line | Suggestion |",
+    "| --- | --- | --- | --- |",
+  ];
 
   for (const finding of findings) {
-    const key = `${finding.ruleId}\0${finding.recommendation}`;
-    const existing = groupMap.get(key);
-    if (existing) {
-      existing.locations.push({ filePath: finding.filePath, line: finding.line });
-    } else {
-      groupMap.set(key, {
-        category: finding.category,
-        recommendation: finding.recommendation,
-        locations: [{ filePath: finding.filePath, line: finding.line }],
-      });
-    }
+    const emoji = CATEGORY_EMOJI[finding.category];
+    const blobUrl = buildBlobUrl(repositoryFullName, headSha, finding.filePath, finding.line);
+    const lineLink = `[${String(finding.line)}](${blobUrl})`;
+    const truncated = truncateRecommendation(finding.recommendation);
+    lines.push(`| ${emoji} | \`${finding.filePath}\` | ${lineLink} | ${truncated} |`);
   }
 
-  const groups = [...groupMap.values()];
+  return lines;
+}
 
-  for (const group of groups) {
-    group.locations.sort((left, right) => {
-      const fileCompare = left.filePath.localeCompare(right.filePath);
-      if (fileCompare !== 0) return fileCompare;
-      return left.line - right.line;
-    });
+/**
+ * Returns a severity-ordered badge string (e.g. `🔴 2 · 🟡 1`) for the
+ * given findings, omitting categories with zero occurrences.
+ */
+export function buildCategoryBadges(findings: readonly Finding[]): string {
+  const counts = new Map<FindingCategory, number>();
+  for (const finding of findings) {
+    counts.set(finding.category, (counts.get(finding.category) ?? 0) + 1);
   }
 
-  groups.sort((left, right) => {
+  return CATEGORY_SEVERITY_ORDER
+    .filter((category) => (counts.get(category) ?? 0) > 0)
+    .map((category) => `${CATEGORY_EMOJI[category]} ${String(counts.get(category))}`)
+    .join(" \u00B7 ");
+}
+
+function buildReviewDetailsSection(
+  rulesPassed: number,
+  rulesRan: number,
+  deliveryCounters: DeliveryCounters | undefined,
+  filePaths: readonly string[],
+): string[] {
+  const lines: string[] = [
+    "",
+    "<details>",
+    "<summary>\u2699\uFE0F Review details</summary>",
+    "",
+    `**Rules:** ${String(rulesPassed)}/${String(rulesRan)} passed`,
+  ];
+
+  if (deliveryCounters) {
+    lines.push("");
+    lines.push("**Delivery:**");
+    lines.push(`- Skipped by confidence: ${String(deliveryCounters.skippedByConfidence)}`);
+    lines.push(`- Skipped by deduplication: ${String(deliveryCounters.skippedByDeduplication)}`);
+    lines.push(`- Skipped by policy: ${String(deliveryCounters.skippedByPolicy)}`);
+    lines.push(`- Skipped by grouping: ${String(deliveryCounters.skippedByGrouping)}`);
+    lines.push(`- Skipped by cap: ${String(deliveryCounters.skippedByCap)}`);
+  }
+
+  if (filePaths.length > 0) {
+    lines.push("");
+    const sortedPaths = [...filePaths].sort((left, right) => left.localeCompare(right));
+    const displayedPaths = sortedPaths.slice(0, MAX_FILES_DISPLAY);
+    const remaining = sortedPaths.length - displayedPaths.length;
+    const fileList = displayedPaths.map((filePath) => `\`${filePath}\``).join(", ");
+    const suffix = remaining > 0 ? ` and ${String(remaining)} more` : "";
+    lines.push(`**Files reviewed:** ${fileList}${suffix}`);
+  }
+
+  lines.push("");
+  lines.push("</details>");
+  return lines;
+}
+
+function buildFindingsSection(
+  findings: readonly Finding[],
+  repositoryFullName: string,
+  headSha: string,
+): string[] {
+  const sortedFindings = [...findings].sort((left, right) => {
     const severityDiff =
       CATEGORY_SEVERITY_ORDER.indexOf(left.category) -
       CATEGORY_SEVERITY_ORDER.indexOf(right.category);
     if (severityDiff !== 0) return severityDiff;
-    const leftFile = left.locations[0]?.filePath ?? "";
-    const rightFile = right.locations[0]?.filePath ?? "";
-    return leftFile.localeCompare(rightFile);
+    const fileCompare = left.filePath.localeCompare(right.filePath);
+    if (fileCompare !== 0) return fileCompare;
+    return left.line - right.line;
   });
 
-  return groups;
-}
-
-export function buildCollapsibleDetail(
-  group: FindingGroup,
-  repositoryFullName: string,
-  headSha: string,
-): string[] {
-  const emoji = CATEGORY_EMOJI[group.category];
-  const uniqueFiles = [...new Set(group.locations.map((loc) => loc.filePath))].sort();
-  const truncatedRecommendation =
-    group.recommendation.length > 60
-      ? group.recommendation.slice(0, 57) + "..."
-      : group.recommendation;
-
+  const badges = buildCategoryBadges(findings);
   const lines: string[] = [
+    "",
     "<details>",
-    `<summary>${emoji} ${String(group.locations.length)} × ${escapeTableCell(truncatedRecommendation)} (${String(uniqueFiles.length)} file${uniqueFiles.length === 1 ? "" : "s"})</summary>`,
+    `<summary>\u{1F4CB} Suggestions | ${badges}</summary>`,
     "",
   ];
 
-  for (const file of uniqueFiles) {
-    const fileLines = group.locations
-      .filter((loc) => loc.filePath === file)
-      .map((loc) => {
-        const blobUrl = buildBlobUrl(repositoryFullName, headSha, file, loc.line);
-        return `[${String(loc.line)}](${blobUrl})`;
-      });
-    lines.push(`- \`${file}\` — lines ${fileLines.join(", ")}`);
+  const inlineFindings = sortedFindings.slice(0, INLINE_FINDING_LIMIT);
+  const overflowFindings = sortedFindings.slice(INLINE_FINDING_LIMIT);
+
+  lines.push(...buildFindingsTable(inlineFindings, repositoryFullName, headSha));
+
+  if (overflowFindings.length > 0) {
+    lines.push("");
+    lines.push("<details>");
+    lines.push(`<summary>and ${String(overflowFindings.length)} more</summary>`);
+    lines.push("");
+    lines.push(...buildFindingsTable(overflowFindings, repositoryFullName, headSha));
+    lines.push("");
+    lines.push("</details>");
   }
 
-  lines.push("", "</details>");
+  lines.push("");
+  lines.push("</details>");
   return lines;
 }
 
 /**
  * Builds the Markdown body for the PR summary comment.
  *
- * Findings with the same rule and recommendation are grouped into a single
- * table row. Groups with four or more locations render a collapsible detail
- * section listing every affected file and line.
+ * All sections are collapsed by default for a compact appearance similar
+ * to CodeRabbit/Greptile. The header gives a one-line verdict; findings
+ * and review details are expandable `<details>` blocks.
  */
 export function buildPrSummaryComment(input: PrSummaryInput): string {
-  const { filePaths, findings, repositoryFullName, headSha, rulesRan, rulesPassed } = input;
+  const { filePaths, findings, repositoryFullName, headSha, rulesRan, rulesPassed, deliveryCounters } = input;
   const fileCount = filePaths.length;
-  const lines: string[] = [PR_SUMMARY_COMMENT_MARKER, "## Mergewise Review Summary", ""];
-
-  const fileStat = `**${fileCount}** file${fileCount === 1 ? "" : "s"} reviewed`;
-  const ruleStat = `**${rulesPassed}/${rulesRan}** rules passed`;
+  const lines: string[] = [PR_SUMMARY_COMMENT_MARKER];
 
   if (findings.length > 0) {
-    const findingStat =
-      `**${findings.length}** finding${findings.length === 1 ? "" : "s"}`;
-    lines.push(`${fileStat} · ${findingStat} · ${ruleStat}`, "");
-  } else {
-    lines.push(`${fileStat} · ✅ No issues found · ${ruleStat}`, "");
-  }
-
-  if (findings.length > 0) {
-    const groups = groupFindings(findings);
-    const collapsibleSections: string[][] = [];
-
-    lines.push("| Severity | Recommendation | Locations |", "| --- | --- | --- |");
-    for (const group of groups) {
-      const emoji = CATEGORY_EMOJI[group.category];
-      const safeRecommendation = escapeTableCell(group.recommendation);
-      let locationCell: string;
-
-      if (group.locations.length < INLINE_LOCATION_THRESHOLD) {
-        locationCell = group.locations
-          .map((loc) => buildLocationLink(repositoryFullName, headSha, loc.filePath, loc.line))
-          .join(", ");
-      } else {
-        const uniqueFiles = new Set(group.locations.map((loc) => loc.filePath));
-        locationCell =
-          `${String(group.locations.length)} locations across ` +
-          `${String(uniqueFiles.size)} file${uniqueFiles.size === 1 ? "" : "s"}`;
-        collapsibleSections.push(
-          buildCollapsibleDetail(group, repositoryFullName, headSha),
-        );
-      }
-
-      lines.push(
-        `| ${emoji} ${group.category} | ${safeRecommendation} | ${locationCell} |`,
-      );
-    }
-    lines.push("");
-
-    for (const section of collapsibleSections) {
-      lines.push(...section, "");
-    }
-  }
-
-  if (fileCount > 0) {
+    const noun = findings.length === 1 ? "suggestion" : "suggestions";
     lines.push(
-      "<details>",
-      `<summary>Files reviewed (${fileCount})</summary>`,
-      "",
+      `**Mergewise** \u00B7 Reviewed ${String(fileCount)} file${fileCount === 1 ? "" : "s"} \u2014 ${String(findings.length)} ${noun}`,
     );
-    const sortedPaths = [...filePaths].sort((left, right) => left.localeCompare(right));
-    for (const filePath of sortedPaths) {
-      lines.push(`- \`${filePath}\``);
-    }
-    lines.push("", "</details>");
+    lines.push(...buildFindingsSection(findings, repositoryFullName, headSha));
+  } else {
+    lines.push(
+      `**Mergewise** \u00B7 No issues found across ${String(fileCount)} file${fileCount === 1 ? "" : "s"} reviewed`,
+    );
   }
 
+  lines.push(...buildReviewDetailsSection(rulesPassed, rulesRan, deliveryCounters, filePaths));
   return lines.join("\n");
 }
 
