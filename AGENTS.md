@@ -46,8 +46,6 @@ When adding new folders, follow this structure.
 - One concern per PR.
 - Rebase frequently against `main`.
 - If active work is detected in the same files, stop and coordinate before continuing.
-- Use git worktrees for parallel agent execution (see `docs/WORKTREES.md`).
-- Use the ops workflow for assignments and status tracking (see `docs/AGENT_OPS.md`).
 
 ## Change Quality Gates
 
