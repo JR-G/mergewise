@@ -1,0 +1,142 @@
+import {
+  type GitHubApiOptions,
+  buildHeaders,
+  trimTrailingSlash,
+  resolveRequestTimeoutMs,
+  parseResponse,
+} from "./http";
+
+/**
+ * Inline comment included in a batch pull request review.
+ */
+export interface PullRequestReviewComment {
+  /**
+   * Repository file path for the inline anchor.
+   */
+  readonly path: string;
+  /**
+   * 1-based line number in the file for the inline anchor.
+   */
+  readonly line: number;
+  /**
+   * Diff side for inline comments.
+   */
+  readonly side?: "LEFT" | "RIGHT";
+  /**
+   * Markdown body for the inline review comment.
+   */
+  readonly body: string;
+}
+
+/**
+ * Request options for creating a batch pull request review.
+ */
+export interface CreatePullRequestReviewOptions extends GitHubApiOptions {
+  /**
+   * Repository owner.
+   */
+  owner: string;
+  /**
+   * Repository name.
+   */
+  repository: string;
+  /**
+   * Pull request number.
+   */
+  pullRequestNumber: number;
+  /**
+   * Installation access token used for API authentication.
+   */
+  installationAccessToken: string;
+  /**
+   * Pull request head commit SHA that the review anchors to.
+   */
+  commitId: string;
+  /**
+   * Markdown body for the review-level comment.
+   */
+  body?: string;
+  /**
+   * Review event type.
+   */
+  event: "COMMENT";
+  /**
+   * Inline comments to include in the review.
+   */
+  comments: readonly PullRequestReviewComment[];
+}
+
+/**
+ * Response shape for a created GitHub pull request review.
+ */
+export interface GitHubPullRequestReview {
+  /**
+   * Review identifier.
+   */
+  id: number;
+  /**
+   * HTML URL for the review.
+   */
+  html_url: string;
+  /**
+   * Review body text.
+   */
+  body: string | null;
+  /**
+   * Review state.
+   */
+  state: string;
+}
+
+/**
+ * Creates a batch pull request review with inline comments.
+ *
+ * @param options - Review creation options.
+ * @returns Created review payload.
+ * @throws {@link GitHubApiError} when GitHub returns a non-success status.
+ */
+export async function createPullRequestReview(
+  options: CreatePullRequestReviewOptions,
+): Promise<GitHubPullRequestReview> {
+  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
+  const apiBaseUrl = trimTrailingSlash(
+    options.apiBaseUrl ?? "https://api.github.com",
+  );
+  const endpointUrl =
+    `${apiBaseUrl}/repos/${encodeURIComponent(options.owner)}` +
+    `/${encodeURIComponent(options.repository)}` +
+    `/pulls/${options.pullRequestNumber}/reviews`;
+  const requestBody: Record<string, unknown> = {
+    commit_id: options.commitId,
+    event: options.event,
+    comments: options.comments.map((comment) => {
+      const clampedLine = Math.max(1, Math.floor(comment.line));
+      if (clampedLine !== comment.line) {
+        console.warn(
+          `[github-client] clamped review comment line: path=${comment.path} original=${comment.line} clamped=${clampedLine}`,
+        );
+      }
+      return {
+        path: comment.path,
+        line: clampedLine,
+        side: comment.side ?? "RIGHT",
+        body: comment.body,
+      };
+    }),
+  };
+  if (options.body !== undefined) {
+    requestBody.body = options.body;
+  }
+  const response = await fetch(endpointUrl, {
+    method: "POST",
+    headers: buildHeaders({
+      authorization: `Bearer ${options.installationAccessToken}`,
+      userAgent: options.userAgent,
+      contentType: "application/json",
+      traceId: options.traceId,
+    }),
+    body: JSON.stringify(requestBody),
+    signal: AbortSignal.timeout(requestTimeoutMs),
+  });
+  return parseResponse<GitHubPullRequestReview>(response, "POST", endpointUrl);
+}
