@@ -289,6 +289,7 @@ async function buildProcessingSummary(
     skippedByDeduplication: delivery.skippedByDeduplication,
     skippedByPolicy: delivery.skippedByPolicy,
     skippedByGrouping: delivery.skippedByGrouping,
+    skippedBySimilarity: delivery.skippedBySimilarity,
     skippedByCap: delivery.skippedByCap,
     checkOutput,
   };

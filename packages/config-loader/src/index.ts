@@ -225,7 +225,7 @@ export class MergewiseConfigValidationError extends Error {
 export const DEFAULT_MERGEWISE_CONFIG: MergewiseConfig = {
   gating: {
     confidenceThreshold: 0.78,
-    maxComments: 20,
+    maxComments: 5,
   },
   rules: {
     include: [],

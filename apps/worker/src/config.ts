@@ -104,7 +104,7 @@ export function loadConfig(): WorkerConfig {
   const confidenceThresholdRaw =
     process.env.WORKER_FINDING_CONFIDENCE_THRESHOLD ?? "0.78";
   const confidenceThreshold = Number.parseFloat(confidenceThresholdRaw);
-  const maxCommentsRaw = process.env.WORKER_FINDING_MAX_COMMENTS ?? "20";
+  const maxCommentsRaw = process.env.WORKER_FINDING_MAX_COMMENTS ?? "5";
   const maxComments = Number.parseInt(maxCommentsRaw, 10);
   const testFileConfidenceThresholdRaw =
     process.env.WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD ??

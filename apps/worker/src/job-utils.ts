@@ -109,6 +109,10 @@ export interface AnalyzePullRequestJobSummary {
    */
   readonly skippedByGrouping?: number;
   /**
+   * Number of findings removed by recommendation text similarity deduplication.
+   */
+  readonly skippedBySimilarity?: number;
+  /**
    * Structured check output payload for PR status reporting.
    */
   readonly checkOutput?: WorkerCheckOutput;

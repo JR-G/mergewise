@@ -5,6 +5,7 @@ import type { CreatePullRequestReviewOptions } from "@mergewise/github-client";
 import {
   applyFindingGates,
   buildWorkerCheckOutput,
+  computeTextSimilarity,
   postPreparedFindingComments,
   prepareFindingDelivery,
 } from "./index";
@@ -134,7 +135,7 @@ describe("finding delivery", () => {
         filePath: "src/a.ts",
         line: 1,
         evidence: "const a: any = source;",
-        recommendation: "Use a typed value.",
+        recommendation: "Use a typed value instead of explicit any annotation.",
         confidence: 0.9,
       },
       {
@@ -144,7 +145,7 @@ describe("finding delivery", () => {
         filePath: "src/a.ts",
         line: 1,
         evidence: "const a: any = source;",
-        recommendation: "Use a typed value.",
+        recommendation: "Use a typed value instead of explicit any annotation.",
         confidence: 0.88,
       },
       {
@@ -154,7 +155,7 @@ describe("finding delivery", () => {
         filePath: "src/b.ts",
         line: 2,
         evidence: "const b: any = source;",
-        recommendation: "Use a typed value.",
+        recommendation: "Wrap database queries in a transaction to prevent partial writes.",
         confidence: 0.87,
       },
       {
@@ -164,7 +165,7 @@ describe("finding delivery", () => {
         filePath: "src/c.ts",
         line: 3,
         evidence: "const c: any = source;",
-        recommendation: "Use a typed value.",
+        recommendation: "Memoize expensive render calculations to avoid unnecessary re-paints.",
         confidence: 0.86,
       },
       {
@@ -174,7 +175,7 @@ describe("finding delivery", () => {
         filePath: "src/d.ts",
         line: 4,
         evidence: "const d: any = source;",
-        recommendation: "Use a typed value.",
+        recommendation: "Validate user input at the boundary before passing downstream.",
         confidence: 0.4,
       },
     ];
@@ -201,7 +202,7 @@ describe("finding delivery", () => {
         filePath: "src/a.ts",
         line: 1,
         evidence: "const a: any = source;",
-        recommendation: "Use a typed value.",
+        recommendation: "Use a typed value instead of explicit any annotation.",
         confidence: 0.9,
       },
       {
@@ -211,7 +212,7 @@ describe("finding delivery", () => {
         filePath: "src/a.ts",
         line: 1,
         evidence: "const a: any = source;",
-        recommendation: "Use a typed value.",
+        recommendation: "Use a typed value instead of explicit any annotation.",
         confidence: 0.88,
       },
       {
@@ -221,7 +222,7 @@ describe("finding delivery", () => {
         filePath: "src/b.ts",
         line: 2,
         evidence: "const b: any = source;",
-        recommendation: "Use a typed value.",
+        recommendation: "Wrap database queries in a transaction to prevent partial writes.",
         confidence: 0.87,
       },
       {
@@ -231,7 +232,7 @@ describe("finding delivery", () => {
         filePath: "src/c.ts",
         line: 3,
         evidence: "const c: any = source;",
-        recommendation: "Use a typed value.",
+        recommendation: "Memoize expensive render calculations to avoid unnecessary re-paints.",
         confidence: 0.86,
       },
     ];
@@ -515,7 +516,7 @@ describe("finding delivery", () => {
           filePath: "src/a.ts",
           line: 1,
           evidence: "const a: any = source;",
-          recommendation: "Use a typed value.",
+          recommendation: "Use a typed value instead of explicit any annotation.",
           confidence: 0.9,
         },
         {
@@ -525,7 +526,7 @@ describe("finding delivery", () => {
           filePath: "src/b.ts",
           line: 1,
           evidence: "const b: any = source;",
-          recommendation: "Use a typed value.",
+          recommendation: "Wrap database queries in a transaction to prevent partial writes.",
           confidence: 0.89,
         },
       ],
@@ -565,7 +566,7 @@ describe("finding delivery", () => {
     expect(capturedReviewOptions[0]!.body).toBe("1 file reviewed, 1 comment");
     expect(capturedReviewOptions[0]!.event).toBe("COMMENT");
     expect(capturedReviewOptions[0]!.comments[0]).toBeDefined();
-    expect(capturedReviewOptions[0]!.comments[0]!.body).toContain("**safety**: Use a typed value.");
+    expect(capturedReviewOptions[0]!.comments[0]!.body).toContain("**safety**: Use a typed value instead of explicit any annotation.");
     expect(capturedReviewOptions[0]!.comments[0]!.body).toContain("dedupeKey=acme/widget#3:one");
     expect(postingResult.successes[0]!.requestOptions.installationAccessToken).toBe("[REDACTED]");
     expect(postingResult.successes[0]!.requestOptions.traceId).toBe("trace-post-1");
@@ -581,7 +582,7 @@ describe("finding delivery", () => {
           filePath: "src/a.ts",
           line: 1,
           evidence: "const a: any = source;",
-          recommendation: "Use a typed value.",
+          recommendation: "Use a typed value instead of explicit any annotation.",
           confidence: 0.9,
         },
         {
@@ -591,7 +592,7 @@ describe("finding delivery", () => {
           filePath: "src/b.ts",
           line: 1,
           evidence: "const b: any = source;",
-          recommendation: "Use a typed value.",
+          recommendation: "Wrap database queries in a transaction to prevent partial writes.",
           confidence: 0.89,
         },
       ],
@@ -644,7 +645,7 @@ describe("finding delivery", () => {
           filePath: "src/a.ts",
           line: 1,
           evidence: "const a: any = source;",
-          recommendation: "Use a typed value.",
+          recommendation: "Use a typed value instead of explicit any annotation.",
           confidence: 0.9,
         },
         {
@@ -654,7 +655,7 @@ describe("finding delivery", () => {
           filePath: "src/b.ts",
           line: 1,
           evidence: "const b: any = source;",
-          recommendation: "Use a typed value.",
+          recommendation: "Wrap database queries in a transaction to prevent partial writes.",
           confidence: 0.89,
         },
       ],
@@ -938,6 +939,193 @@ describe("finding delivery", () => {
     expect(checkOutput.text).toContain("### Delivery Counters");
     expect(checkOutput.text).toContain("skipped_by_confidence");
     expect(checkOutput.text).toContain("skipped_by_policy");
+    expect(checkOutput.text).toContain("skipped_by_similarity");
     expect(checkOutput.text).toContain("skipped_by_grouping");
+  });
+});
+
+describe("computeTextSimilarity", () => {
+  test("returns 1 for identical texts", () => {
+    expect(computeTextSimilarity("extract for SRP", "extract for SRP")).toBe(1);
+  });
+
+  test("returns 0 for completely different texts", () => {
+    expect(computeTextSimilarity("extract function for SRP", "use memoization for cache")).toBeLessThan(0.3);
+  });
+
+  test("returns high similarity for minor phrasing differences", () => {
+    const similarity = computeTextSimilarity(
+      "Extract this logic into a separate function for Single Responsibility Principle",
+      "Extract the logic into a separate function to follow Single Responsibility Principle",
+    );
+    expect(similarity).toBeGreaterThanOrEqual(0.7);
+  });
+
+  test("returns 1 when both texts are empty", () => {
+    expect(computeTextSimilarity("", "")).toBe(1);
+  });
+
+  test("returns 0 when only one text is empty", () => {
+    expect(computeTextSimilarity("extract function", "")).toBe(0);
+  });
+});
+
+describe("similarity deduplication", () => {
+  const baseFinding = {
+    installationId: 1,
+    repo: "acme/widget",
+    prNumber: 3,
+    language: "typescript",
+    category: "clean" as const,
+    status: "posted" as const,
+  };
+
+  test("groups findings with same category and similar recommendations", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "srp-1",
+          ruleId: "llm/srp",
+          filePath: "src/a.ts",
+          line: 10,
+          evidence: "class A { ... }",
+          recommendation: "Extract this logic into a separate function for Single Responsibility Principle",
+          confidence: 0.92,
+        },
+        {
+          ...baseFinding,
+          findingId: "srp-2",
+          ruleId: "llm/srp",
+          filePath: "src/b.ts",
+          line: 20,
+          evidence: "class B { ... }",
+          recommendation: "Extract the logic into a separate function to follow Single Responsibility Principle",
+          confidence: 0.88,
+        },
+        {
+          ...baseFinding,
+          findingId: "srp-3",
+          ruleId: "llm/srp",
+          filePath: "src/c.ts",
+          line: 30,
+          evidence: "class C { ... }",
+          recommendation: "Extract this code into a separate function for Single Responsibility Principle",
+          confidence: 0.85,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 10,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(1);
+    expect(delivery.comments[0]!.finding.findingId).toBe("srp-1");
+    expect(delivery.skippedBySimilarity).toBe(2);
+  });
+
+  test("keeps findings with different categories even if recommendations are similar", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "clean-1",
+          ruleId: "llm/srp",
+          category: "clean",
+          filePath: "src/a.ts",
+          line: 10,
+          evidence: "class A { ... }",
+          recommendation: "Extract this logic into a separate function for SRP",
+          confidence: 0.92,
+        },
+        {
+          ...baseFinding,
+          findingId: "perf-1",
+          ruleId: "llm/perf",
+          category: "perf",
+          filePath: "src/b.ts",
+          line: 20,
+          evidence: "class B { ... }",
+          recommendation: "Extract this logic into a separate function for SRP",
+          confidence: 0.88,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 10,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(2);
+    expect(delivery.skippedBySimilarity).toBe(0);
+  });
+
+  test("keeps the highest-confidence finding from each similarity group", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "low-conf",
+          ruleId: "llm/srp",
+          filePath: "src/a.ts",
+          line: 10,
+          evidence: "class A { ... }",
+          recommendation: "Extract this logic into a separate function for Single Responsibility",
+          confidence: 0.85,
+        },
+        {
+          ...baseFinding,
+          findingId: "high-conf",
+          ruleId: "llm/srp",
+          filePath: "src/b.ts",
+          line: 20,
+          evidence: "class B { ... }",
+          recommendation: "Extract the logic into a separate function for Single Responsibility",
+          confidence: 0.95,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 10,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(1);
+    expect(delivery.comments[0]!.finding.findingId).toBe("high-conf");
+  });
+
+  test("does not group findings with genuinely different recommendations", () => {
+    const delivery = prepareFindingDelivery(
+      [
+        {
+          ...baseFinding,
+          findingId: "srp-finding",
+          ruleId: "llm/srp",
+          filePath: "src/a.ts",
+          line: 10,
+          evidence: "class A { ... }",
+          recommendation: "Extract this logic into a separate function for Single Responsibility Principle",
+          confidence: 0.92,
+        },
+        {
+          ...baseFinding,
+          findingId: "memo-finding",
+          ruleId: "llm/memo",
+          filePath: "src/b.ts",
+          line: 20,
+          evidence: "function compute() { ... }",
+          recommendation: "Use React.memo or useMemo to avoid expensive re-renders on every parent update",
+          confidence: 0.88,
+        },
+      ],
+      {
+        confidenceThreshold: 0.8,
+        maxComments: 10,
+      },
+    );
+
+    expect(delivery.comments).toHaveLength(2);
+    expect(delivery.skippedBySimilarity).toBe(0);
   });
 });
