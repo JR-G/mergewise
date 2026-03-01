@@ -141,10 +141,8 @@ ${header}\n${rows.join("\n")}
 `;
 }
 
-function buildFewShotExamples(): string {
-  return `## Few-shot examples
-
-### Example A — correct finding
+function buildCoreFewShotExamples(): string {
+  return `### Example A — correct finding
 \`\`\`typescript
 +function processOrder(order: Order) {
 +  validateOrder(order);
@@ -190,9 +188,11 @@ Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0
 +  return <div>{sorted.map(u => <div key={u.id} onClick={() => { setUsers(prev => prev.filter(p => p.id !== u.id)); fetch(\`/api/users/\${u.id}\`, {method:"DELETE"}); }}>{u.name}</div>)}</div>;
 +}
 \`\`\`
-Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.95, "evidence": "Dashboard component", "recommendation": "Dashboard mixes data fetching, sorting, deletion, and rendering. Extract data fetching into a custom hook (e.g. \`useUsers\`), move the delete handler into a named function, and separate the list rendering into a \`UserList\` component (SRP)."}]}\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.95, "evidence": "Dashboard component", "recommendation": "Dashboard mixes data fetching, sorting, deletion, and rendering. Extract data fetching into a custom hook (e.g. \`useUsers\`), move the delete handler into a named function, and separate the list rendering into a \`UserList\` component (SRP)."}]}\``;
+}
 
-### Example E — hardcoded dependency (DIP violation)
+function buildAdvancedFewShotExamples(): string {
+  return `### Example E — hardcoded dependency (DIP violation)
 \`\`\`typescript
 +async function sendReport(reportId: string) {
 +  const db = new PrismaClient();
@@ -218,7 +218,36 @@ Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0
 \`\`\`
 Correct output: \`{"findings": [{"line": 8, "category": "clean", "confidence": 0.93, "evidence": "save and delete throw 'Not supported'", "recommendation": "\`ReadOnlyRepo\` throws on \`save\` and \`delete\`, violating Liskov Substitution — callers with a \`Repository\` reference cannot safely use this subtype. Split the interface into \`Readable\` and \`Writable\` (ISP) so \`ReadOnlyRepo\` only implements what it supports."}]}\`
 
+### Example G — two distinct anti-patterns in the same diff
+\`\`\`typescript
++interface UserProfile {
++  name: string;
++  email: string | null;
++  phone?: string;
++  address: string | undefined;
++}
++
++function AuthProvider({ children }: { children: ReactNode }) {
++  const [user, setUser] = useState(null);
++  const login = (u: string) => setUser(u);
++  return (
++    <AuthContext.Provider value={{ user, login }}>
++      {children}
++    </AuthContext.Provider>
++  );
++}
+\`\`\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.88, "evidence": "email: string | null; phone?: string; address: string | undefined", "recommendation": "\`UserProfile\` mixes three absent-value conventions (\`| null\`, \`?\`, \`| undefined\`). Pick one — preferably optional (\`?\`) — and apply it consistently to reduce branching for callers."}, {"line": 14, "category": "perf", "confidence": 0.92, "evidence": "value={{ user, login }}", "recommendation": "The inline object \`{{ user, login }}\` creates a new reference every render, causing all \`useContext(AuthContext)\` consumers to re-render. Wrap the value in \`useMemo\` and stabilise \`login\` with \`useCallback\`."}]}\`
+
 Note: clean utility functions, static data objects, and configuration arrays should return \`{"findings": []}\`. Only flag code with genuine structural issues.`;
+}
+
+function buildFewShotExamples(): string {
+  return `## Few-shot examples
+
+${buildCoreFewShotExamples()}
+
+${buildAdvancedFewShotExamples()}`;
 }
 
 function buildQualityBarSection(): string {
