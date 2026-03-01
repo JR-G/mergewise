@@ -188,7 +188,7 @@ export function isPlausibleRewrite(
 }
 
 const MAX_REWRITE_LINES = 20;
-const DECLARATION_PATTERN = /^\s*(?:export\s+)?(?:function|class|interface|enum|type|const\s+\w+\s*=\s*(?:\(|async\s*\())\s/;
+const DECLARATION_PATTERN = /^\s*(?:export\s+)?(?:(?:function|class|interface|enum|type)\s|const\s+\w+\s*=\s*(?:\(|async\s*\())/;
 
 /**
  * Strips invalid `suggestedRewrite` values from a raw finding.

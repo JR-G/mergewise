@@ -710,6 +710,42 @@ describe("sanitiseSuggestedRewrite", () => {
     expect(result.suggestedRewrite).toBe("function fetchData() {");
   });
 
+  test("preserves rewrite when original line is an arrow function assignment", () => {
+    const arrowDiff = makeDiff("src/file.ts", [
+      makeHunk("@@ -1,1 +1,1 @@", [
+        "+const fetchUser = () => api.get('/user')",
+      ]),
+    ]);
+    const arrowLineMap = extractAddedLineMap(arrowDiff);
+    const arrowAddedLines = new Set(arrowLineMap.keys());
+
+    const finding: RawLlmFinding = {
+      line: 1,
+      category: "clean",
+      confidence: 0.9,
+      evidence: "const fetchUser = () =>",
+      recommendation: "Use function declaration.",
+      suggestedRewrite: "function fetchUser() {\n  return api.get('/user')\n}",
+    };
+
+    const result = sanitiseSuggestedRewrite(finding, arrowAddedLines, arrowLineMap);
+    expect(result.suggestedRewrite).toBeDefined();
+  });
+
+  test("strips rewrite containing arrow function when original is not a declaration", () => {
+    const finding: RawLlmFinding = {
+      line: 4,
+      category: "clean",
+      confidence: 0.9,
+      evidence: "const email = data.email",
+      recommendation: "Extract helper.",
+      suggestedRewrite: "const getEmail = () => data.email",
+    };
+
+    const result = sanitiseSuggestedRewrite(finding, addedLines, addedLineMap);
+    expect(result.suggestedRewrite).toBeUndefined();
+  });
+
   test("strips rewrite with export class when original is a plain assignment", () => {
     const finding: RawLlmFinding = {
       line: 4,
