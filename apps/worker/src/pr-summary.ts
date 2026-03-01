@@ -94,6 +94,9 @@ export function buildLocationLink(
 /** Maximum findings shown before the remainder collapse into a nested block. */
 export const INLINE_FINDING_LIMIT = 5;
 
+/** Maximum file paths listed inline before the remainder are summarised as a count. */
+export const MAX_FILES_DISPLAY = 50;
+
 /**
  * Escapes table-cell characters then truncates to {@link maxLength},
  * appending an ellipsis when the escaped text exceeds the limit.
@@ -168,7 +171,11 @@ function buildReviewDetailsSection(
   if (filePaths.length > 0) {
     lines.push("");
     const sortedPaths = [...filePaths].sort((left, right) => left.localeCompare(right));
-    lines.push(`**Files reviewed:** ${sortedPaths.map((filePath) => `\`${filePath}\``).join(", ")}`);
+    const displayedPaths = sortedPaths.slice(0, MAX_FILES_DISPLAY);
+    const remaining = sortedPaths.length - displayedPaths.length;
+    const fileList = displayedPaths.map((filePath) => `\`${filePath}\``).join(", ");
+    const suffix = remaining > 0 ? ` and ${String(remaining)} more` : "";
+    lines.push(`**Files reviewed:** ${fileList}${suffix}`);
   }
 
   lines.push("");

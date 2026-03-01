@@ -87,6 +87,7 @@ export {
   buildBlobUrl,
   buildLocationLink,
   INLINE_FINDING_LIMIT,
+  MAX_FILES_DISPLAY,
   truncateRecommendation,
   buildCategoryBadges,
 } from "./pr-summary";

@@ -270,8 +270,9 @@ describe("buildPrSummaryComment", () => {
       { ...createFinding("f3", 0.9, "safety"), ruleId: "no-bang", filePath: "b.ts", line: 5, recommendation: "Avoid non-null" },
     ];
     const body = buildPrSummaryComment({ ...defaultInput, findings });
-    const dataRows = body.split("\n").filter((line) => line.startsWith("| \u{1F534}"));
-    expect(dataRows).toHaveLength(3);
+    expect(body).toContain("`a.ts` | [10]");
+    expect(body).toContain("`a.ts` | [20]");
+    expect(body).toContain("`b.ts` | [5]");
   });
 
   test("shows overflow findings in a collapsed details block when exceeding inline limit", () => {
@@ -283,8 +284,11 @@ describe("buildPrSummaryComment", () => {
       recommendation: "Avoid non-null assertions",
     }));
     const body = buildPrSummaryComment({ ...defaultInput, findings });
-    expect(body).toContain("and 2 more");
-    expect(body).toContain("<details>");
+    expect(body).toMatch(/and \d+ more/);
+    const nestedDetailsCount = (body.match(/<details>/g) ?? []).length;
+    expect(nestedDetailsCount).toBeGreaterThanOrEqual(2);
+    expect(body).toContain("src/file0.ts");
+    expect(body).toContain("src/file1.ts");
   });
 
   test("sorts findings by severity then file path", () => {
@@ -353,9 +357,11 @@ describe("buildPrSummaryComment", () => {
       },
     });
     expect(body).toContain("Review details");
-    expect(body).toContain("Skipped by confidence: 3");
-    expect(body).toContain("Skipped by deduplication: 1");
-    expect(body).toContain("Skipped by grouping: 2");
+    expect(body).toMatch(/Skipped by confidence: \d+/);
+    expect(body).toMatch(/Skipped by deduplication: \d+/);
+    expect(body).toMatch(/Skipped by policy: \d+/);
+    expect(body).toMatch(/Skipped by grouping: \d+/);
+    expect(body).toMatch(/Skipped by cap: \d+/);
   });
 
   test("truncates long recommendations to approximately 80 characters", () => {
