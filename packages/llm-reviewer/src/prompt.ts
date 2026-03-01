@@ -141,41 +141,8 @@ ${header}\n${rows.join("\n")}
 `;
 }
 
-function buildQualityBarSection(): string {
-  return `## Quality bar
-
-- Only flag things a staff engineer would comment on in a real review — not things a junior developer would nitpick
-- Every finding must be actionable — the author should know exactly what to change after reading it
-- Prefer fewer, higher-quality findings over many marginal ones. Zero findings is better than one noisy finding.
-- Maximum 8 findings per file — prioritise the most impactful
-- Ask yourself: "Would I mass-approve this comment in a batch review, or would I actually stop and think about it?" If the former, do not include it.
-
-### Bad findings (do not produce these)
-
-- "Consider extracting this logic into a separate function" — on a 5-line helper that already is a separate function
-- "This could use reduce instead of a for loop" — when the reduce version would need a complex accumulator
-- "This function has multiple responsibilities" — on a function that does one thing with a few steps
-- "Consider using a more descriptive name" — without providing a concrete alternative
-- "This configuration object could be simplified" — on a static data structure with no logic
-
-### Good findings (aim for these)
-
-- "Extract the validation logic (lines 15-40) into a validateUser(input) function — the handler mixes HTTP response handling with business rules (SRP)."
-- "filterItems mutates options.sortOrder via direct assignment. Clone or use a parameter instead to avoid surprising callers."
-- "This useState + useEffect pair computes fullName from firstName and lastName — derive it directly as a const."
-
-## Finding deduplication
-
-Each finding must address a **distinct anti-pattern or concept**. Two findings are duplicates if fixing one would fix the other.
-
-- If the same issue appears on multiple lines (e.g. three validation rules that should all be extracted, or three nested callbacks that should all be flattened), emit ONE finding anchored at the first occurrence. Reference the other lines in the recommendation.
-- If a function is a pointless abstraction, flag the function — do not separately flag its type annotations, return statements, or variable assignments.
-- If a try/catch block should be removed, flag the block once — do not separately flag the inner and outer catch.
-- Never emit two findings where one is a subset of the other (e.g. "extract validation" and "extract username validation").
-
-Aim for **breadth across different anti-pattern categories** rather than depth on a single issue. If a file has both a structural problem and a performance problem, flag both — do not spend two findings on two aspects of the same structural problem.
-
-## Few-shot examples
+function buildFewShotExamples(): string {
+  return `## Few-shot examples
 
 ### Example A — correct finding
 \`\`\`typescript
@@ -225,7 +192,70 @@ Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0
 \`\`\`
 Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.95, "evidence": "Dashboard component", "recommendation": "Dashboard mixes data fetching, sorting, deletion, and rendering. Extract data fetching into a custom hook (e.g. \`useUsers\`), move the delete handler into a named function, and separate the list rendering into a \`UserList\` component (SRP)."}]}\`
 
+### Example E — hardcoded dependency (DIP violation)
+\`\`\`typescript
++async function sendReport(reportId: string) {
++  const db = new PrismaClient();
++  const report = await db.report.findUnique({ where: { id: reportId } });
++  const s3 = new S3Client({ region: "eu-west-1" });
++  await s3.send(new PutObjectCommand({ Bucket: "reports", Key: reportId, Body: report }));
++}
+\`\`\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.92, "evidence": "new PrismaClient() and new S3Client() inside sendReport", "recommendation": "\`sendReport\` creates concrete dependencies (\`PrismaClient\`, \`S3Client\`) internally, making it impossible to test or swap implementations. Accept these as constructor or function parameters behind abstractions (DIP)."}]}\`
+
+### Example F — LSP violation (throws on inherited method)
+\`\`\`typescript
++interface Repository {
++  find(id: string): Item;
++  save(item: Item): void;
++  delete(id: string): void;
++}
++class ReadOnlyRepo implements Repository {
++  find(id: string) { return this.store.get(id); }
++  save(item: Item) { throw new Error("Not supported"); }
++  delete(id: string) { throw new Error("Not supported"); }
++}
+\`\`\`
+Correct output: \`{"findings": [{"line": 8, "category": "clean", "confidence": 0.93, "evidence": "save and delete throw 'Not supported'", "recommendation": "\`ReadOnlyRepo\` throws on \`save\` and \`delete\`, violating Liskov Substitution — callers with a \`Repository\` reference cannot safely use this subtype. Split the interface into \`Readable\` and \`Writable\` (ISP) so \`ReadOnlyRepo\` only implements what it supports."}]}\`
+
 Note: clean utility functions, static data objects, and configuration arrays should return \`{"findings": []}\`. Only flag code with genuine structural issues.`;
+}
+
+function buildQualityBarSection(): string {
+  return `## Quality bar
+
+- Only flag things a staff engineer would comment on in a real review — not things a junior developer would nitpick
+- Every finding must be actionable — the author should know exactly what to change after reading it
+- Prefer fewer, higher-quality findings over many marginal ones. Zero findings is better than one noisy finding.
+- Maximum 8 findings per file — prioritise the most impactful
+- Ask yourself: "Would I mass-approve this comment in a batch review, or would I actually stop and think about it?" If the former, do not include it.
+
+### Bad findings (do not produce these)
+
+- "Consider extracting this logic into a separate function" — on a 5-line helper that already is a separate function
+- "This could use reduce instead of a for loop" — when the reduce version would need a complex accumulator
+- "This function has multiple responsibilities" — on a function that does one thing with a few steps
+- "Consider using a more descriptive name" — without providing a concrete alternative
+- "This configuration object could be simplified" — on a static data structure with no logic
+
+### Good findings (aim for these)
+
+- "Extract the validation logic (lines 15-40) into a validateUser(input) function — the handler mixes HTTP response handling with business rules (SRP)."
+- "filterItems mutates options.sortOrder via direct assignment. Clone or use a parameter instead to avoid surprising callers."
+- "This useState + useEffect pair computes fullName from firstName and lastName — derive it directly as a const."
+
+## Finding deduplication
+
+Each finding must address a **distinct anti-pattern or concept**. Two findings are duplicates if fixing one would fix the other.
+
+- If the same issue appears on multiple lines (e.g. three validation rules that should all be extracted, or three nested callbacks that should all be flattened), emit ONE finding anchored at the first occurrence. Reference the other lines in the recommendation.
+- If a function is a pointless abstraction, flag the function — do not separately flag its type annotations, return statements, or variable assignments.
+- If a try/catch block should be removed, flag the block once — do not separately flag the inner and outer catch.
+- Never emit two findings where one is a subset of the other (e.g. "extract validation" and "extract username validation").
+
+Aim for **breadth across different anti-pattern categories** rather than depth on a single issue. If a file has both a structural problem and a performance problem, flag both — do not spend two findings on two aspects of the same structural problem.
+
+${buildFewShotExamples()}`;
 }
 
 /**
