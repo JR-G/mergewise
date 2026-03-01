@@ -1,58 +1,51 @@
 # Mergewise
 
-Refactoring-focused code review tool for PRs. TypeScript and React first.
+## Commands
 
-## Project Structure
+```bash
+bun run lint            # ESLint strict-type-checked
+bun run typecheck       # tsc --noEmit
+bun run test            # bun test
+bun run build           # tsc -p tsconfig.build.json
+bun run quality:gates   # cross-package imports, secrets, catch logging
+```
 
-Monorepo with tsconfig path aliases.
+Run all four before opening a PR. If any fail, fix before proceeding.
 
-- `apps/webhook-api` — validates GitHub webhooks, enqueues jobs
-- `apps/worker` — polls jobs, runs analysis pipeline, posts PR comments + check output
-- `packages/rule-engine` — executes rules, gating, delivery
-- `packages/rule-ts-react` — AST-based TS/React rules (anti-patterns)
-- `packages/llm-reviewer` — OpenAI-compatible LLM review with file selection, token budgets, structural signals
-- `packages/config-loader` — `.mergewise.yml` config (gating, rules, LLM settings)
-- `packages/github-client` — GitHub API wrapper (PRs, comments, check runs, file content)
-- `packages/job-store` — in-memory job queue
+## Don'ts
 
-## Tech & Tooling
-
-- **Runtime:** Bun for dev/CI, npm for publishing
-- **Pre-commit hooks:** lefthook — runs lint + typecheck + test + build
-- **Linting:** ESLint with strict-type-checked + stylistic-type-checked presets
-- **Quality gates:** script checks cross-package imports, catch logging, secrets
-
-## Code Style
-
-- No inline comments — use proper documentation (TSDoc, JSDoc) where explanation is needed
-- Code should be self-documenting through naming, structure, and type signatures
+- No inline comments (`//` inside function bodies) — use TSDoc for documentation
+- No single-letter or abbreviated variable names
+- No npm/pnpm/yarn — Bun only
+- No deep relative imports across package boundaries — use workspace imports
+- No unbounded lists, strings, or loops that grow with input size
+- No output to external APIs (GitHub comments, check runs) without size limits
+- No unhandled I/O or network failures in request handlers
+- No committing secrets, tokens, or private keys
+- No mentioning AI tools or assistants in commits, PRs, or code
+- No app-to-app imports — extract shared logic to a package
 
 ## Testing
 
-Test **behaviour**, not implementation details or internal state.
+Test behaviour, not implementation.
 
-A test should answer: "if someone breaks a user-facing behaviour, will this test catch it?"
+Bad — breaks when internals change:
+```typescript
+expect(results).toHaveLength(3);
+expect(results[0].category).toBe("clean");
+```
 
-### Never assert on
+Good — verifies observable outcome:
+```typescript
+expect(results.some(r => r.filePath === "src/index.ts")).toBe(true);
+expect(output).toContain("Review completed");
+```
 
-- Collection sizes or exact counts (e.g. `expect(items).toHaveLength(18)`)
-- Internal data shape or category distribution
-- Enum membership or schema validation of internal structures
+## Pre-PR Verification
 
-### Never write tests that
+Before opening a PR, verify each against your actual diff — do not tick blindly:
 
-- Break when you add, remove, or rename an internal entry but no behaviour changed
-- Snapshot internal state rather than verifying observable outcomes
-- Duplicate checks that belong at the type or build level
-
-### Good examples
-
-- "when I pass patterns to `buildSystemPrompt`, the prompt contains their detection hints"
-- "when the LLM returns a finding on a non-added line, it gets discarded"
-- "each catalogue pattern's detectionHint appears in the default prompt"
-
-### Bad examples
-
-- "ANTI_PATTERNS has exactly 18 entries"
-- "has expected category distribution: 5 clean, 6 idiomatic, 3 safety, 4 perf"
-- "every pattern has non-empty required fields" (schema validation, not behaviour)
+- Any list/string that grows with input has a bound or cap
+- Any output sent to external APIs has a size limit
+- New async operations handle errors and rejections
+- New I/O boundaries have failure-mode handling
