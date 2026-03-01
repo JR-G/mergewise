@@ -97,7 +97,7 @@ function buildFileContextSection(
   for (const window of windows) {
     const slice = fileLines.slice(window.start - 1, window.end);
     const numberedLines = slice.map(
-      (line, idx) => `// line ${window.start + idx}: ${line}`,
+      (line, index) => `// line ${window.start + index}: ${line}`,
     );
     parts.push(
       `## File context (lines ${window.start}–${window.end} of ${totalLines}) — only comment on changed lines`,
