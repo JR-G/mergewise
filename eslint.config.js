@@ -106,7 +106,6 @@ export default [
       "apps/worker/src/main.ts",
       "apps/webhook-api/src/main.ts",
       "packages/llm-reviewer/src/signals.ts",
-      "scripts/ops/core.ts",
     ],
     rules: {
       "max-lines": "off",
