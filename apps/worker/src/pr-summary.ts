@@ -158,14 +158,22 @@ function buildReviewDetailsSection(
     `**Rules:** ${String(rulesPassed)}/${String(rulesRan)} passed`,
   ];
 
-  if (deliveryCounters) {
+  const deliveryEntries: [string, number][] = deliveryCounters
+    ? [
+        ["Skipped by confidence", deliveryCounters.skippedByConfidence],
+        ["Skipped by deduplication", deliveryCounters.skippedByDeduplication],
+        ["Skipped by policy", deliveryCounters.skippedByPolicy],
+        ["Skipped by grouping", deliveryCounters.skippedByGrouping],
+        ["Skipped by cap", deliveryCounters.skippedByCap],
+      ]
+    : [];
+  const nonZeroDelivery = deliveryEntries.filter(([, count]) => count > 0);
+  if (nonZeroDelivery.length > 0) {
     lines.push("");
     lines.push("**Delivery:**");
-    lines.push(`- Skipped by confidence: ${String(deliveryCounters.skippedByConfidence)}`);
-    lines.push(`- Skipped by deduplication: ${String(deliveryCounters.skippedByDeduplication)}`);
-    lines.push(`- Skipped by policy: ${String(deliveryCounters.skippedByPolicy)}`);
-    lines.push(`- Skipped by grouping: ${String(deliveryCounters.skippedByGrouping)}`);
-    lines.push(`- Skipped by cap: ${String(deliveryCounters.skippedByCap)}`);
+    for (const [label, count] of nonZeroDelivery) {
+      lines.push(`- ${label}: ${String(count)}`);
+    }
   }
 
   if (filePaths.length > 0) {
