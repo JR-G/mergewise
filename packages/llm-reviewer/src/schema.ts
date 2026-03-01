@@ -180,7 +180,10 @@ export function isPlausibleRewrite(
     if (originalTokens.has(token)) shared += 1;
   }
 
-  const overlapRatio = shared / Math.min(originalTokens.size, rewriteTokens.size);
+  const smaller = Math.min(originalTokens.size, rewriteTokens.size);
+  if (smaller < 5 && shared < 2) return false;
+
+  const overlapRatio = shared / smaller;
   return overlapRatio >= 0.15;
 }
 
@@ -188,7 +191,8 @@ function buildLlmPatchPreview(
   suggestedRewrite: string | undefined,
   lineInfo: AddedLineInfo | undefined,
 ): PatchPreview | undefined {
-  if (!suggestedRewrite || !lineInfo) return undefined;
+  if (typeof suggestedRewrite !== "string" || suggestedRewrite.length === 0) return undefined;
+  if (!lineInfo) return undefined;
   if (isNonCodeLine(lineInfo.content)) return undefined;
   if (!isPlausibleRewrite(lineInfo.content, suggestedRewrite)) return undefined;
 

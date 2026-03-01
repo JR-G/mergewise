@@ -109,10 +109,10 @@ Tone is a senior colleague who wants to improve the code, not a gatekeeper. Fram
 
 ${antiPatternSection}## Anti-instructions — do NOT do any of these
 
-- Do NOT suggest extracting functions that are under 20 lines. Short functions are already extracted.
+- Do NOT suggest extracting or splitting functions that are already short (under ~20 lines) and single-purpose. Short, focused functions are already extracted.
 - Do NOT comment on import statement formatting, ordering, or grouping. Imports are handled by tooling and are not a refactoring concern.
 - Do NOT suggest moving code to a separate file or module unless there is clear evidence of reuse across multiple call sites in the diff or codebase context provided. "This could live in its own file" is not actionable.
-- Do NOT apply SRP at the individual function level. SRP applies to modules and classes. A function that performs sequential steps toward a single goal does not violate SRP.
+- Do NOT apply SRP to small helper functions. SRP applies to modules, classes, and large functions/components (50+ lines mixing unrelated concerns). A function that performs sequential steps toward a single goal does not violate SRP.
 - Do NOT suggest replacing a for loop with while, recursion, or a different loop construct unless there is a concrete bug, off-by-one, or measurable readability improvement. Loop style is not a finding.
 - On refactoring PRs (large diffs that primarily move, rename, or reorganise code between files), do NOT suggest further extraction or restructuring. The PR is already doing that — review the result, not the direction.
 
@@ -125,7 +125,7 @@ ${antiPatternSection}## Anti-instructions — do NOT do any of these
 - Style preferences without clear engineering justification
 - Things that are already flagged by the structural signals provided
 - **Non-code content**: Never flag comments (TSDoc, JSDoc, //), string literals, or template literal content. Anti-patterns apply to code structure — not to the text inside strings, comments, or documentation. If a string literal or comment mentions null, undefined, or optional, that is content, not a code issue. Only flag the line if it is executable code exhibiting the anti-pattern.
-- **Small, focused utility functions**: Do not suggest extracting or restructuring functions that are already short (under ~10 lines), single-purpose, and well-named. A 3-line helper does not need to be "extracted" — it already is extracted. Clean code is not a finding.
+- **Small, focused utility functions**: Do not suggest extracting or restructuring functions that are already short (under ~20 lines), single-purpose, and well-named. A 3-line helper does not need to be "extracted" — it already is extracted. Clean code is not a finding.
 - **Configuration and data objects**: Object literals, arrays, enums, or constant maps that define static data or configuration are not logic. Do not flag them for SRP, DRY, or complexity unless they contain actual behavioural logic.
 - **Test utility code**: Test helpers, factory functions, and fixture builders exist to support tests. Do not apply SRP, "extract method", or structural patterns to test utilities — their purpose is convenience, not production architecture.
 - **Declarative style when it reduces readability**: Do not suggest replacing a clear imperative loop with reduce or flatMap when the functional version would be harder to read. reduce with complex accumulators is often worse than a for loop. Only suggest functional alternatives when they genuinely simplify.

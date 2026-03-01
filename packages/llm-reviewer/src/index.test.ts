@@ -384,6 +384,35 @@ describe("parseLlmResponse", () => {
     });
   });
 
+  test("strips patchPreview when suggestedRewrite is a hallucinated unrelated replacement", () => {
+    const hallucinationDiff = makeDiff("src/file.ts", [
+      makeHunk("@@ -1,3 +1,5 @@", [
+        " existing",
+        '+contentType: "application/json",',
+        "+added line 3",
+        " existing2",
+        "+added line 5",
+      ]),
+    ]);
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 2,
+          category: "clean",
+          confidence: 0.9,
+          evidence: 'contentType: "application/json"',
+          recommendation: "Use a pagination helper.",
+          suggestedRewrite: "while (pageNumber < maxPages && hasNextPage) {",
+        },
+      ],
+    });
+
+    const result = parseLlmResponse(raw, hallucinationDiff, PULL_REQUEST_METADATA);
+    const finding = result.find((item) => item.line === 2 && item.category === "clean");
+    expect(finding).toBeDefined();
+    expect(finding!.patchPreview).toBeUndefined();
+  });
+
   test("omits patchPreview when suggestedRewrite is absent", () => {
     const raw = JSON.stringify({
       findings: [
