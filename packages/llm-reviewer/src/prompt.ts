@@ -173,7 +173,59 @@ Each finding must address a **distinct anti-pattern or concept**. Two findings a
 - If a try/catch block should be removed, flag the block once — do not separately flag the inner and outer catch.
 - Never emit two findings where one is a subset of the other (e.g. "extract validation" and "extract username validation").
 
-Aim for **breadth across different anti-pattern categories** rather than depth on a single issue. If a file has both a structural problem and a performance problem, flag both — do not spend two findings on two aspects of the same structural problem.`;
+Aim for **breadth across different anti-pattern categories** rather than depth on a single issue. If a file has both a structural problem and a performance problem, flag both — do not spend two findings on two aspects of the same structural problem.
+
+## Few-shot examples
+
+### Example A — correct finding
+\`\`\`typescript
++function processOrder(order: Order) {
++  validateOrder(order);
++  const tax = calculateTax(order);
++  const discount = applyDiscount(order);
++  sendConfirmationEmail(order.customer, buildReceipt(order, tax, discount));
++  updateInventory(order.items);
++  logAnalytics("order_processed", order.id);
++}
+\`\`\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.92, "evidence": "function processOrder", "recommendation": "\`processOrder\` mixes business logic (tax, discount) with side effects (email, inventory, analytics). Extract side effects into a \`dispatchOrderSideEffects\` function so the core computation is pure and testable (SRP)."}]}\`
+
+### Example B — correct finding (React)
+\`\`\`typescript
++const [fullName, setFullName] = useState("");
++useEffect(() => {
++  setFullName(\`\${firstName} \${lastName}\`);
++}, [firstName, lastName]);
+\`\`\`
+Correct output: \`{"findings": [{"line": 1, "category": "idiomatic", "confidence": 0.95, "evidence": "useState + useEffect to derive fullName", "recommendation": "\`fullName\` is derived from \`firstName\` and \`lastName\` — compute it directly as \`const fullName = \\u0060\${firstName} \${lastName}\\u0060\` instead of synchronising with state + effect."}]}\`
+
+### Example C — imperative loop that should be functional
+\`\`\`typescript
++function getActiveEmails(users: User[]): string[] {
++  const emails: string[] = [];
++  for (const user of users) {
++    if (user.active) {
++      emails.push(user.email);
++    }
++  }
++  return emails;
++}
+\`\`\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.88, "evidence": "imperative loop with push", "recommendation": "Replace the imperative filter-and-push loop with \`users.filter(u => u.active).map(u => u.email)\` for a more declarative style.", "suggestedRewrite": "function getActiveEmails(users: User[]): string[] {\\n  return users.filter(u => u.active).map(u => u.email);\\n}"}]}\`
+
+### Example D — god component with mixed concerns
+\`\`\`typescript
++function Dashboard() {
++  const [users, setUsers] = useState([]);
++  const [loading, setLoading] = useState(true);
++  useEffect(() => { fetch("/api/users").then(r => r.json()).then(setUsers).finally(() => setLoading(false)); }, []);
++  const sorted = users.sort((a, b) => a.name.localeCompare(b.name));
++  return <div>{sorted.map(u => <div key={u.id} onClick={() => { setUsers(prev => prev.filter(p => p.id !== u.id)); fetch(\`/api/users/\${u.id}\`, {method:"DELETE"}); }}>{u.name}</div>)}</div>;
++}
+\`\`\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.95, "evidence": "Dashboard component", "recommendation": "Dashboard mixes data fetching, sorting, deletion, and rendering. Extract data fetching into a custom hook (e.g. \`useUsers\`), move the delete handler into a named function, and separate the list rendering into a \`UserList\` component (SRP)."}]}\`
+
+Note: clean utility functions, static data objects, and configuration arrays should return \`{"findings": []}\`. Only flag code with genuine structural issues.`;
 }
 
 /**

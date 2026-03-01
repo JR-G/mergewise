@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "description": "Should not flag string literal content as a code anti-pattern",
+    "matchLineRange": [7, 26],
+    "matchRecommendationContainsAny": ["inconsistent", "null", "undefined", "optional", "absent", "catch", "generic"],
+    "required": false,
+    "forbidden": true
+  },
+  {
+    "description": "Should not suggest extracting or restructuring a static data catalogue",
+    "matchLineRange": [7, 26],
+    "matchRecommendationContainsAny": ["extract", "separate", "split", "SRP", "responsibility"],
+    "required": false,
+    "forbidden": true
+  }
+]
