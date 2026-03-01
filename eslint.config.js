@@ -104,11 +104,8 @@ export default [
   {
     files: [
       "apps/worker/src/main.ts",
-      "apps/webhook-api/src/index.ts",
       "apps/webhook-api/src/main.ts",
-      "packages/llm-reviewer/src/anti-patterns.ts",
       "packages/llm-reviewer/src/signals.ts",
-      "packages/config-loader/src/index.ts",
       "scripts/ops/core.ts",
     ],
     rules: {
