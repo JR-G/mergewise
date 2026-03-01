@@ -48,6 +48,7 @@ export {
   type PreparedFindingComment,
   type PreparedFindingDelivery,
   buildFindingDedupeKey,
+  computeTextSimilarity,
   prepareFindingDelivery,
   buildWorkerCheckOutput,
   isTestFilePath,

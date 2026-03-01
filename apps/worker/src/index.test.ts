@@ -545,7 +545,7 @@ describe("loadConfig", () => {
     expect(config.githubFetchRetries).toBe(2);
     expect(config.githubRetryDelayMs).toBe(250);
     expect(config.confidenceThreshold).toBe(0.78);
-    expect(config.maxComments).toBe(20);
+    expect(config.maxComments).toBe(5);
     expect(config.testFileConfidenceThreshold).toBe(0.98);
   });
 

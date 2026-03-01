@@ -8,6 +8,105 @@ import {
   DEFAULT_BLOCKED_POST_RULE_IDS,
 } from "./config";
 
+const SIMILARITY_THRESHOLD = 0.7;
+
+/**
+ * Extracts a normalised set of lowercase words from text.
+ *
+ * @param text - Input text.
+ * @returns Set of lowercase words with punctuation stripped.
+ */
+function extractWords(text: string): Set<string> {
+  return new Set(
+    text.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(Boolean),
+  );
+}
+
+/**
+ * Computes Dice coefficient similarity between two texts using word sets.
+ *
+ * @param textA - First text.
+ * @param textB - Second text.
+ * @returns Similarity score between 0 and 1.
+ */
+export function computeTextSimilarity(textA: string, textB: string): number {
+  const wordsA = extractWords(textA);
+  const wordsB = extractWords(textB);
+  if (wordsA.size === 0 && wordsB.size === 0) {
+    return 1;
+  }
+  if (wordsA.size === 0 || wordsB.size === 0) {
+    return 0;
+  }
+
+  let intersectionCount = 0;
+  for (const word of wordsA) {
+    if (wordsB.has(word)) {
+      intersectionCount += 1;
+    }
+  }
+
+  return (2 * intersectionCount) / (wordsA.size + wordsB.size);
+}
+
+/**
+ * Groups findings by category and recommendation similarity.
+ *
+ * Findings in the same category whose recommendation text exceeds
+ * the similarity threshold are merged into a single group. The
+ * highest-confidence finding in each group is kept as the representative.
+ *
+ * @param findings - Deduplicated findings sorted by confidence descending.
+ * @returns Deduplicated findings and count of those removed.
+ */
+function deduplicateBySimilarity(
+  findings: readonly Finding[],
+): { deduplicated: readonly Finding[]; skippedBySimilarity: number } {
+  const categoryGroups = new Map<string, Finding[][]>();
+
+  for (const finding of findings) {
+    const groups = categoryGroups.get(finding.category) ?? [];
+    let matchedGroup: Finding[] | undefined;
+
+    for (const group of groups) {
+      const representative = group[0];
+      if (representative && computeTextSimilarity(representative.recommendation, finding.recommendation) >= SIMILARITY_THRESHOLD) {
+        matchedGroup = group;
+        break;
+      }
+    }
+
+    if (matchedGroup) {
+      matchedGroup.push(finding);
+    } else {
+      groups.push([finding]);
+      categoryGroups.set(finding.category, groups);
+    }
+  }
+
+  const deduplicated: Finding[] = [];
+  let skippedBySimilarity = 0;
+
+  for (const groups of categoryGroups.values()) {
+    for (const group of groups) {
+      const best = group.reduce((top, current) =>
+        current.confidence > top.confidence ? current : top,
+      );
+      deduplicated.push(best);
+      skippedBySimilarity += group.length - 1;
+    }
+  }
+
+  deduplicated.sort((left, right) => {
+    if (right.confidence !== left.confidence) {
+      return right.confidence - left.confidence;
+    }
+    return buildFindingDedupeKey(left).localeCompare(buildFindingDedupeKey(right));
+  });
+
+  return { deduplicated, skippedBySimilarity };
+}
+
 /**
  * Delivery options for finding-to-GitHub posting.
  */
@@ -102,6 +201,10 @@ export interface PreparedFindingDelivery {
    * Findings grouped into an existing file/rule comment.
    */
   readonly skippedByGrouping: number;
+  /**
+   * Findings removed by recommendation text similarity deduplication.
+   */
+  readonly skippedBySimilarity: number;
 }
 
 /**
@@ -192,7 +295,7 @@ function filterByConfidenceAndPolicy(
 function deduplicateAndGroupFindings(
   sortedFindings: readonly Finding[],
   maxComments: number,
-): { groups: readonly Finding[][]; skippedByDeduplication: number; skippedByGrouping: number; skippedByCap: number } {
+): { groups: readonly Finding[][]; skippedByDeduplication: number; skippedByGrouping: number; skippedByCap: number; skippedBySimilarity: number } {
   const seenKeys = new Set<string>();
   const deduplicatedFindings: Finding[] = [];
   let skippedByDeduplication = 0;
@@ -207,9 +310,12 @@ function deduplicateAndGroupFindings(
     deduplicatedFindings.push(finding);
   }
 
+  const { deduplicated: similarityDeduplicated, skippedBySimilarity } =
+    deduplicateBySimilarity(deduplicatedFindings);
+
   const groupedByFileRule = new Map<string, Finding[]>();
   let skippedByGrouping = 0;
-  for (const finding of deduplicatedFindings) {
+  for (const finding of similarityDeduplicated) {
     const groupKey = `${finding.filePath}:${finding.ruleId}`;
     const groupEntries = groupedByFileRule.get(groupKey);
     if (!groupEntries) {
@@ -225,7 +331,7 @@ function deduplicateAndGroupFindings(
   const selectedGroups = allGroups.slice(0, maxComments);
   const skippedByCap = Math.max(allGroups.length - selectedGroups.length, 0);
 
-  return { groups: selectedGroups, skippedByDeduplication, skippedByGrouping, skippedByCap };
+  return { groups: selectedGroups, skippedByDeduplication, skippedByGrouping, skippedByCap, skippedBySimilarity };
 }
 
 /**
@@ -256,7 +362,7 @@ export function prepareFindingDelivery(
     return leftKey.localeCompare(rightKey);
   });
 
-  const { groups, skippedByDeduplication, skippedByGrouping, skippedByCap } =
+  const { groups, skippedByDeduplication, skippedByGrouping, skippedByCap, skippedBySimilarity } =
     deduplicateAndGroupFindings(sortedFindings, options.maxComments);
 
   const comments = groups.flatMap((group) => {
@@ -278,6 +384,7 @@ export function prepareFindingDelivery(
     skippedByPolicy,
     skippedByGrouping,
     skippedByCap,
+    skippedBySimilarity,
   };
 }
 
@@ -306,6 +413,7 @@ export function buildWorkerCheckOutput(
     `- skipped_by_confidence=${delivery.skippedByConfidence}`,
     `- skipped_by_deduplication=${delivery.skippedByDeduplication}`,
     `- skipped_by_policy=${delivery.skippedByPolicy}`,
+    `- skipped_by_similarity=${delivery.skippedBySimilarity}`,
     `- skipped_by_grouping=${delivery.skippedByGrouping}`,
     `- skipped_by_cap=${delivery.skippedByCap}`,
   ].join("\n");
