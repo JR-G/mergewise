@@ -91,8 +91,13 @@ export function buildLocationLink(
   return `[\`${filePath}:${String(line)}\`](${blobUrl})`;
 }
 
+/** Maximum findings shown before the remainder collapse into a nested block. */
 export const INLINE_FINDING_LIMIT = 5;
 
+/**
+ * Escapes table-cell characters then truncates to {@link maxLength},
+ * appending an ellipsis when the escaped text exceeds the limit.
+ */
 export function truncateRecommendation(text: string, maxLength = 80): string {
   const escaped = escapeTableCell(text);
   if (escaped.length <= maxLength) return escaped;
@@ -120,6 +125,10 @@ function buildFindingsTable(
   return lines;
 }
 
+/**
+ * Returns a severity-ordered badge string (e.g. `🔴 2 · 🟡 1`) for the
+ * given findings, omitting categories with zero occurrences.
+ */
 export function buildCategoryBadges(findings: readonly Finding[]): string {
   const counts = new Map<FindingCategory, number>();
   for (const finding of findings) {
@@ -159,7 +168,7 @@ function buildReviewDetailsSection(
   if (filePaths.length > 0) {
     lines.push("");
     const sortedPaths = [...filePaths].sort((left, right) => left.localeCompare(right));
-    lines.push(`**Files reviewed:** ${sortedPaths.map((fp) => `\`${fp}\``).join(", ")}`);
+    lines.push(`**Files reviewed:** ${sortedPaths.map((filePath) => `\`${filePath}\``).join(", ")}`);
   }
 
   lines.push("");
