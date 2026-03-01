@@ -27,7 +27,19 @@ Run all four before opening a PR. If any fail, fix before proceeding.
 
 ## Testing
 
-Test behaviour, not implementation. Never assert on collection sizes, internal data shape, or category distribution.
+Test behaviour, not implementation.
+
+Bad — breaks when internals change:
+```typescript
+expect(results).toHaveLength(3);
+expect(results[0].category).toBe("clean");
+```
+
+Good — verifies observable outcome:
+```typescript
+expect(results.some(r => r.filePath === "src/index.ts")).toBe(true);
+expect(output).toContain("Review completed");
+```
 
 ## Pre-PR Verification
 
