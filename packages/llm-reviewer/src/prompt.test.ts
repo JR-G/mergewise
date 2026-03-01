@@ -60,7 +60,7 @@ function makeHunk(header: string, lines: string[] = []): DiffHunk {
 }
 
 function makeFileContent(lineCount: number): string {
-  return Array.from({ length: lineCount }, (_, idx) => `line ${idx + 1} content`).join("\n");
+  return Array.from({ length: lineCount }, (_, index) => `line ${index + 1} content`).join("\n");
 }
 
 describe("computeContextWindows", () => {
@@ -166,5 +166,31 @@ describe("buildFileReviewPrompt context windowing", () => {
 
     expect(prompt).not.toContain("File context");
     expect(prompt).not.toContain("Full file content");
+  });
+
+  test("malformed hunk headers fall back to full file content", () => {
+    const fileContent = makeFileContent(200);
+    const diff: FileDiff = {
+      filePath: "src/broken.ts",
+      previousPath: null,
+      hunks: [makeHunk("INVALID HEADER", ["+added"])],
+    };
+    const prompt = buildFileReviewPrompt(diff, fileContent, emptySignals);
+
+    expect(prompt).toContain("Full file content");
+    expect(prompt).not.toContain("File context (lines");
+  });
+
+  test("falls back to full file when windowed output is larger than full file", () => {
+    const fileContent = makeFileContent(10);
+    const diff: FileDiff = {
+      filePath: "src/tiny.ts",
+      previousPath: null,
+      hunks: [makeHunk("@@ -1,3 +1,5 @@", ["+added"])],
+    };
+    const prompt = buildFileReviewPrompt(diff, fileContent, emptySignals);
+
+    expect(prompt).toContain("Full file content");
+    expect(prompt).not.toContain("File context (lines");
   });
 });

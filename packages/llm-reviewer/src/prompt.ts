@@ -80,16 +80,22 @@ function buildFileContextSection(
   const totalLines = fileLines.length;
   const windows = computeContextWindows(hunks, totalLines);
 
+  const fullFileSection = [
+    "",
+    "## Full file content (for context only — only comment on changed lines)",
+    "```typescript",
+    fullContent,
+    "```",
+  ];
+
+  if (windows.length === 0) {
+    return fullFileSection;
+  }
+
   const windowedLineCount = windows.reduce((sum, window) => sum + (window.end - window.start + 1), 0);
 
   if (windowedLineCount >= totalLines) {
-    return [
-      "",
-      "## Full file content (for context only — only comment on changed lines)",
-      "```typescript",
-      fullContent,
-      "```",
-    ];
+    return fullFileSection;
   }
 
   const parts: string[] = [""];
@@ -105,6 +111,10 @@ function buildFileContextSection(
     parts.push("```typescript");
     parts.push(numberedLines.join("\n"));
     parts.push("```");
+  }
+
+  if (parts.join("\n").length >= fullFileSection.join("\n").length) {
+    return fullFileSection;
   }
 
   return parts;
