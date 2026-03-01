@@ -1,0 +1,8 @@
+[
+  {
+    "description": "Flags query-with-side-effect — get/find functions that mutate state",
+    "matchLineRange": [12, 44],
+    "matchRecommendationContainsAny": ["query", "side effect", "command", "read", "write", "mutate", "separate", "CQS", "get", "find", "pure", "modifier"],
+    "required": true
+  }
+]

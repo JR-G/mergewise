@@ -1,0 +1,42 @@
+{
+  "filePath": "src/pricing/shippingRates.ts",
+  "previousPath": null,
+  "hunks": [
+    {
+      "header": "@@ -0,0 +1,30 @@",
+      "lines": [
+        "+interface ShippingQuote {",
+        "+  baseCost: number;",
+        "+  weightSurcharge: number;",
+        "+  distanceSurcharge: number;",
+        "+  total: number;",
+        "+}",
+        "+",
+        "+export function calculateShippingQuote(",
+        "+  weightKg: number,",
+        "+  distanceKm: number,",
+        "+): ShippingQuote {",
+        "+  const baseCost = 4.99;",
+        "+",
+        "+  const weightSurcharge = weightKg > 20",
+        "+    ? (weightKg - 20) * 0.75",
+        "+    : 0;",
+        "+",
+        "+  const distanceSurcharge = distanceKm > 500",
+        "+    ? (distanceKm - 500) * 0.012",
+        "+    : distanceKm > 100",
+        "+      ? (distanceKm - 100) * 0.006",
+        "+      : 0;",
+        "+",
+        "+  const total = baseCost + weightSurcharge + distanceSurcharge;",
+        "+",
+        "+  if (total > 250) {",
+        "+    return { baseCost, weightSurcharge, distanceSurcharge, total: total * 0.9 };",
+        "+  }",
+        "+",
+        "+  return { baseCost, weightSurcharge, distanceSurcharge, total };",
+        "+}"
+      ]
+    }
+  ]
+}

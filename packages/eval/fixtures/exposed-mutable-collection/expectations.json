@@ -1,0 +1,8 @@
+[
+  {
+    "description": "Flags exposed mutable collection — getter returns raw internal reference",
+    "matchLineRange": [23, 33],
+    "matchRecommendationContainsAny": ["encapsulat", "mutable", "copy", "readonly", "spread", "defensive", "reference", "internal", "expose", "return this", "Array.from", "structuredClone"],
+    "required": true
+  }
+]
