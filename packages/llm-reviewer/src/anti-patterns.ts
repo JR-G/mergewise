@@ -27,9 +27,9 @@ import { PERF_PATTERNS } from "./perf-patterns";
  * into the LLM system prompt. The array is frozen at module level — treat it
  * as immutable.
  */
-export const ANTI_PATTERNS: readonly import("./anti-pattern-types").AntiPattern[] = [
+export const ANTI_PATTERNS: readonly import("./anti-pattern-types").AntiPattern[] = Object.freeze([
   ...CLEAN_PATTERNS,
   ...IDIOMATIC_PATTERNS,
   ...SAFETY_PATTERNS,
   ...PERF_PATTERNS,
-];
+]);

@@ -6,6 +6,10 @@ import {
   parseGraphQlResponse,
 } from "./http";
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 /**
  * Request options for minimising a comment via the GitHub GraphQL API.
  */
@@ -184,8 +188,9 @@ export async function minimizeComment(
 export async function listPullRequestReviewThreads(
   options: ListPullRequestReviewThreadsOptions,
 ): Promise<ReviewThread[]> {
-  const perPage = options.perPage ?? 100;
-  const maxPages = options.maxPages ?? 20;
+  const perPage = clamp(options.perPage ?? 100, 1, 100);
+  const maxPages = clamp(options.maxPages ?? 20, 1, 50);
+  const maxTotalThreads = perPage * maxPages;
   const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
   const apiBaseUrl = trimTrailingSlash(
     options.apiBaseUrl ?? "https://api.github.com",
@@ -226,7 +231,9 @@ export async function listPullRequestReviewThreads(
     }>(response, endpointUrl, extractReviewThreadPage);
 
     collectedThreads.push(...page.threads);
-
+    if (collectedThreads.length >= maxTotalThreads) {
+      break;
+    }
     if (!page.hasNextPage || page.endCursor === null) {
       break;
     }

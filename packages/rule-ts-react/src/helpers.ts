@@ -1,20 +1,35 @@
 import type { AnalysisContext, Finding, PatchPreview } from "@mergewise/shared-types";
 import { parseHunkStartingLine } from "./ast";
 
-const NON_CODE_MARKER_PATTERN = /(?:'|"|`|\/\/|\/\*)/;
+export const NON_CODE_MARKER_PATTERN = /(?:'|"|`|\/\/|\/\*)/;
 
 interface LineScanState {
   insideBlockComment: boolean;
 }
 
+/**
+ * A single added line from a diff/patch hunk.
+ */
 export interface AddedLine {
+  /** Path to the file containing the added line. */
   filePath: string;
+  /** Line number in the target file. */
   lineNumber: number;
+  /** Original added text from the diff. */
   evidence: string;
+  /** Content with comments and string literals stripped. */
   sanitizedContent: string;
+  /** Diff hunk header string for context. */
   hunkHeader: string;
 }
 
+/**
+ * Constructs a complete {@link Finding} from an analysis context and core finding fields.
+ *
+ * @param context - Analysis context providing PR metadata.
+ * @param findingCore - Core finding fields including rule, location, and confidence.
+ * @returns A fully populated finding with a deterministic ID.
+ */
 export function buildFinding(
   context: AnalysisContext,
   findingCore: {
@@ -48,6 +63,14 @@ export function buildFinding(
   };
 }
 
+/**
+ * Constructs a single-line {@link PatchPreview} from hunk components.
+ *
+ * @param hunkHeader - Diff hunk header for context.
+ * @param removedLine - The line being replaced.
+ * @param addedLine - The suggested replacement line.
+ * @returns A patch preview with one removed and one added line.
+ */
 export function buildPatchPreview(
   hunkHeader: string,
   removedLine: string,
@@ -177,6 +200,15 @@ export function skipStringLiteral(
       continue;
     }
 
+    if (
+      quoteCharacter === "`" &&
+      currentCharacter === "$" &&
+      sourceLine[cursorIndex + 1] === "{"
+    ) {
+      cursorIndex = skipTemplateExpression(sourceLine, cursorIndex + 2);
+      continue;
+    }
+
     if (currentCharacter === quoteCharacter) {
       return cursorIndex + 1;
     }
@@ -187,4 +219,39 @@ export function skipStringLiteral(
   return cursorIndex;
 }
 
-export { NON_CODE_MARKER_PATTERN };
+function skipTemplateExpression(sourceLine: string, startIndex: number): number {
+  let cursorIndex = startIndex;
+  let braceDepth = 1;
+
+  while (cursorIndex < sourceLine.length && braceDepth > 0) {
+    const currentCharacter = sourceLine[cursorIndex];
+
+    if (currentCharacter === "{") {
+      braceDepth += 1;
+      cursorIndex += 1;
+      continue;
+    }
+
+    if (currentCharacter === "}" && --braceDepth === 0) {
+      return cursorIndex + 1;
+    }
+    if (currentCharacter === "}") {
+      cursorIndex += 1;
+      continue;
+    }
+
+    if (
+      currentCharacter === "\"" ||
+      currentCharacter === "'" ||
+      currentCharacter === "`"
+    ) {
+      cursorIndex = skipStringLiteral(sourceLine, cursorIndex, currentCharacter);
+      continue;
+    }
+
+    cursorIndex += 1;
+  }
+
+  return cursorIndex;
+}
+

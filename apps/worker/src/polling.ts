@@ -121,7 +121,7 @@ export function createPollingLoopController(
   let isShutdownRequested = false;
 
   const runPollCycle = (): void => {
-    if (isShutdownRequested) {
+    if (isShutdownRequested || inFlightPollPromise !== null) {
       return;
     }
 
@@ -204,10 +204,12 @@ export function trackProcessedKey(
     return;
   }
 
+  const effectiveMaxKeys = Math.max(0, maxKeys);
+
   state.keys.add(key);
   state.order.push(key);
 
-  while (state.order.length > maxKeys) {
+  while (state.order.length > effectiveMaxKeys) {
     const evicted = state.order.shift();
     if (evicted) {
       state.keys.delete(evicted);

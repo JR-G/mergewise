@@ -333,11 +333,12 @@ export function buildReviewerSummaryMarkdown(
 
   const groupedByCategory = new Map<FindingCategory, Map<string, Finding[]>>();
   for (const preparedComment of comments) {
-    const finding = preparedComment.finding;
-    const groupedByRule = groupedByCategory.get(finding.category) ?? new Map<string, Finding[]>();
-    const findingsForRule = groupedByRule.get(finding.ruleId) ?? [];
-    groupedByRule.set(finding.ruleId, [...findingsForRule, finding]);
-    groupedByCategory.set(finding.category, groupedByRule);
+    for (const finding of preparedComment.groupedFindings) {
+      const groupedByRule = groupedByCategory.get(finding.category) ?? new Map<string, Finding[]>();
+      const findingsForRule = groupedByRule.get(finding.ruleId) ?? [];
+      groupedByRule.set(finding.ruleId, [...findingsForRule, finding]);
+      groupedByCategory.set(finding.category, groupedByRule);
+    }
   }
 
   const categoryOrder: readonly FindingCategory[] = ["safety", "perf", "clean", "idiomatic"];

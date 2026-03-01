@@ -28,9 +28,15 @@ import type { WorkerGitHubFetchOptions } from "./config";
 import type { WorkerFindingDeliveryOptions } from "./delivery";
 import type { fetchPullRequestFilesWithRetry } from "./github-fetch";
 
+/**
+ * Logger callbacks used by the worker job processing pipeline.
+ */
 export interface ResolvedLoggers {
+  /** Logs operational info events. */
   readonly infoLogger: (message: string) => void;
+  /** Logs error events for failures and diagnostics. */
   readonly errorLogger: (message: string) => void;
+  /** Logs warnings for retryable or non-fatal issues. */
   readonly warnLogger: (message: string) => void;
 }
 

@@ -6,6 +6,10 @@ import {
   parseResponse,
 } from "./http";
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 /**
  * Reaction counts returned by GitHub on comments.
  */
@@ -295,8 +299,9 @@ export async function postPullRequestInlineComment(
 export async function listPullRequestSummaryComments(
   options: ListPullRequestCommentsOptions,
 ): Promise<GitHubIssueComment[]> {
-  const perPage = options.perPage ?? 100;
-  const maxPages = options.maxPages ?? 20;
+  const perPage = clamp(options.perPage ?? 100, 1, 100);
+  const maxPages = clamp(options.maxPages ?? 20, 1, 50);
+  const maxTotalComments = perPage * maxPages;
   const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
   const apiBaseUrl = trimTrailingSlash(
     options.apiBaseUrl ?? "https://api.github.com",
@@ -324,6 +329,9 @@ export async function listPullRequestSummaryComments(
       endpointUrl,
     );
     collectedComments.push(...pageComments);
+    if (collectedComments.length >= maxTotalComments) {
+      break;
+    }
     if (pageComments.length < perPage) {
       break;
     }
@@ -342,8 +350,9 @@ export async function listPullRequestSummaryComments(
 export async function listPullRequestInlineComments(
   options: ListPullRequestCommentsOptions,
 ): Promise<GitHubPullRequestReviewComment[]> {
-  const perPage = options.perPage ?? 100;
-  const maxPages = options.maxPages ?? 20;
+  const perPage = clamp(options.perPage ?? 100, 1, 100);
+  const maxPages = clamp(options.maxPages ?? 20, 1, 50);
+  const maxTotalComments = perPage * maxPages;
   const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
   const apiBaseUrl = trimTrailingSlash(
     options.apiBaseUrl ?? "https://api.github.com",
@@ -371,6 +380,9 @@ export async function listPullRequestInlineComments(
       endpointUrl,
     );
     collectedComments.push(...pageComments);
+    if (collectedComments.length >= maxTotalComments) {
+      break;
+    }
     if (pageComments.length < perPage) {
       break;
     }

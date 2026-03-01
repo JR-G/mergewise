@@ -91,7 +91,8 @@ export interface PostedFindingCommentSuccess {
    */
   readonly requestOptions: PostedCommentRequestOptions;
   /**
-   * Created GitHub issue comment response.
+   * Created GitHub issue comment response, or `null` for batch review posts
+   * where individual comment metadata is unavailable.
    */
   readonly createdComment: {
     readonly id: number;
@@ -99,7 +100,7 @@ export interface PostedFindingCommentSuccess {
     readonly body: string;
     readonly path?: string;
     readonly line?: number;
-  };
+  } | null;
 }
 
 /**
@@ -325,13 +326,7 @@ export async function postPreparedFindingComments(
         index,
         preparedComment,
         requestOptions: buildCommentRequestOptions(options, preparedComment),
-        createdComment: {
-          id: 0,
-          html_url: "",
-          body: preparedComment.body,
-          path: preparedComment.finding.filePath,
-          line: preparedComment.finding.line,
-        },
+        createdComment: null,
       }),
     );
 
@@ -506,6 +501,13 @@ async function loadReviewThreadDedupeKeys(
   }
 }
 
+/**
+ * Populates dedupe keys by fetching existing summary comments and review threads from a PR.
+ *
+ * @param options - GitHub API coordinates and authentication for the target PR.
+ * @param dependencies - Summary comment and review thread listing function overrides.
+ * @returns Accumulated dedupe state including keys, thread IDs, and outdated markers.
+ */
 export async function loadExistingDedupeKeys(
   options: ListPullRequestCommentsOptions,
   dependencies: {
@@ -538,6 +540,12 @@ export async function loadExistingDedupeKeys(
   return accumulator;
 }
 
+/**
+ * Extracts the dedupe key from a comment body containing a `mergewise-meta` HTML marker.
+ *
+ * @param commentBody - Raw comment body, or `undefined` for missing bodies.
+ * @returns The dedupe key string, or `null` when the marker is absent or empty.
+ */
 export function extractDedupeKeyFromCommentBody(commentBody: string | undefined): string | null {
   if (!commentBody) {
     return null;
@@ -602,6 +610,14 @@ export function collectCommentFeedback(
   };
 }
 
+/**
+ * Logs an aggregate feedback summary for a job when comments exist.
+ *
+ * @param feedbackSummary - Aggregated reaction counts from PR comments.
+ * @param traceId - End-to-end trace identifier for log stitching.
+ * @param jobId - Job identifier for log correlation.
+ * @param infoLogger - Logging callback for the summary line. No-op when totalComments is 0.
+ */
 export function logFeedbackSummary(
   feedbackSummary: CommentFeedbackSummary,
   traceId: string,
