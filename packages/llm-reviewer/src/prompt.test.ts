@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import type { DiffHunk, FileDiff } from "@mergewise/shared-types";
 
-import { buildSystemPrompt } from "./prompt";
+import { buildFileReviewPrompt, buildSystemPrompt, computeContextWindows } from "./prompt";
 
 describe("buildSystemPrompt", () => {
   test("does not contain the problematic structural suggestion rewrite clause", () => {
@@ -52,4 +53,144 @@ describe("buildSystemPrompt", () => {
     );
   });
 
+});
+
+function makeHunk(header: string, lines: string[] = []): DiffHunk {
+  return { header, lines };
+}
+
+function makeFileContent(lineCount: number): string {
+  return Array.from({ length: lineCount }, (_, index) => `line ${index + 1} content`).join("\n");
+}
+
+describe("computeContextWindows", () => {
+  test("single hunk produces a padded window clamped to file bounds", () => {
+    const hunks = [makeHunk("@@ -100,5 +100,7 @@")];
+    const windows = computeContextWindows(hunks, 500);
+    expect(windows).toEqual([{ start: 50, end: 156 }]);
+  });
+
+  test("clamps window start to line 1", () => {
+    const hunks = [makeHunk("@@ -1,3 +1,5 @@")];
+    const windows = computeContextWindows(hunks, 500);
+    expect(windows).toEqual([{ start: 1, end: 55 }]);
+  });
+
+  test("clamps window end to total lines", () => {
+    const hunks = [makeHunk("@@ -490,5 +490,5 @@")];
+    const windows = computeContextWindows(hunks, 500);
+    expect(windows).toEqual([{ start: 440, end: 500 }]);
+  });
+
+  test("merges overlapping windows from adjacent hunks", () => {
+    const hunks = [
+      makeHunk("@@ -10,3 +10,3 @@"),
+      makeHunk("@@ -50,3 +50,3 @@"),
+    ];
+    const windows = computeContextWindows(hunks, 500);
+    expect(windows).toEqual([{ start: 1, end: 102 }]);
+  });
+
+  test("keeps non-overlapping windows separate", () => {
+    const hunks = [
+      makeHunk("@@ -10,3 +10,3 @@"),
+      makeHunk("@@ -200,3 +200,3 @@"),
+    ];
+    const windows = computeContextWindows(hunks, 500);
+    expect(windows).toEqual([
+      { start: 1, end: 62 },
+      { start: 150, end: 252 },
+    ]);
+  });
+
+  test("handles hunk header with no count (single-line change)", () => {
+    const hunks = [makeHunk("@@ -100,0 +100 @@")];
+    const windows = computeContextWindows(hunks, 500);
+    expect(windows).toEqual([{ start: 50, end: 150 }]);
+  });
+
+  test("respects custom padding", () => {
+    const hunks = [makeHunk("@@ -100,5 +100,5 @@")];
+    const windows = computeContextWindows(hunks, 500, 10);
+    expect(windows).toEqual([{ start: 90, end: 114 }]);
+  });
+});
+
+describe("buildFileReviewPrompt context windowing", () => {
+  const emptySignals = {
+    componentLineCount: 0,
+    hookCount: 0,
+    importCount: 0,
+    maxNestingDepth: 0,
+    functionCount: 0,
+    maxFunctionLineCount: 0,
+    maxParameterCount: 0,
+    classCount: 0,
+    typeAssertionCount: 0,
+  };
+
+  test("large file with a single small hunk produces windowed context", () => {
+    const fileContent = makeFileContent(1000);
+    const diff: FileDiff = {
+      filePath: "src/big.ts",
+      previousPath: null,
+      hunks: [makeHunk("@@ -500,3 +500,5 @@", ["+added line"])],
+    };
+    const prompt = buildFileReviewPrompt(diff, fileContent, emptySignals);
+
+    expect(prompt).toContain("File context (lines 450");
+    expect(prompt).not.toContain("Full file content");
+    expect(prompt).toContain("// line 450:");
+  });
+
+  test("small file falls back to full file content", () => {
+    const fileContent = makeFileContent(80);
+    const diff: FileDiff = {
+      filePath: "src/small.ts",
+      previousPath: null,
+      hunks: [makeHunk("@@ -1,80 +1,82 @@", ["+added"])],
+    };
+    const prompt = buildFileReviewPrompt(diff, fileContent, emptySignals);
+
+    expect(prompt).toContain("Full file content");
+    expect(prompt).not.toContain("File context (lines");
+  });
+
+  test("null fullContent produces no context section", () => {
+    const diff: FileDiff = {
+      filePath: "src/gone.ts",
+      previousPath: null,
+      hunks: [makeHunk("@@ -1,3 +1,3 @@", ["+x"])],
+    };
+    const prompt = buildFileReviewPrompt(diff, null, emptySignals);
+
+    expect(prompt).not.toContain("File context");
+    expect(prompt).not.toContain("Full file content");
+  });
+
+  test("malformed hunk headers fall back to full file content", () => {
+    const fileContent = makeFileContent(200);
+    const diff: FileDiff = {
+      filePath: "src/broken.ts",
+      previousPath: null,
+      hunks: [makeHunk("INVALID HEADER", ["+added"])],
+    };
+    const prompt = buildFileReviewPrompt(diff, fileContent, emptySignals);
+
+    expect(prompt).toContain("Full file content");
+    expect(prompt).not.toContain("File context (lines");
+  });
+
+  test("falls back to full file when windowed output is larger than full file", () => {
+    const fileContent = makeFileContent(10);
+    const diff: FileDiff = {
+      filePath: "src/tiny.ts",
+      previousPath: null,
+      hunks: [makeHunk("@@ -1,3 +1,5 @@", ["+added"])],
+    };
+    const prompt = buildFileReviewPrompt(diff, fileContent, emptySignals);
+
+    expect(prompt).toContain("Full file content");
+    expect(prompt).not.toContain("File context (lines");
+  });
 });
