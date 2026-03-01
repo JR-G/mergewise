@@ -1,6 +1,13 @@
 import type { AnalysisContext, Finding, PatchPreview } from "@mergewise/shared-types";
 import { parseHunkStartingLine } from "./ast";
 
+/**
+ * Matches the opening token of a string literal or comment within source code.
+ *
+ * Detects single-quote, double-quote, backtick, line-comment (`//`), and
+ * block-comment open sequences. Used as a fast pre-check to decide whether a
+ * line contains non-code content worth stripping via {@link stripNonCodeContent}.
+ */
 export const NON_CODE_MARKER_PATTERN = /(?:'|"|`|\/\/|\/\*)/;
 
 interface LineScanState {
