@@ -1,7 +1,114 @@
-import type { FileDiff } from "@mergewise/shared-types";
+import type { DiffHunk, FileDiff } from "@mergewise/shared-types";
 import type { AntiPattern } from "./anti-patterns";
 import { ANTI_PATTERNS } from "./anti-patterns";
 import type { StructuralSignals } from "./signals";
+
+const CONTEXT_PADDING = 50;
+
+interface LineRange {
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * Parses a unified diff hunk header to extract the new-file start line and count.
+ *
+ * @returns The 1-indexed start line and line count for the new side, or `null`
+ *   if the header cannot be parsed.
+ */
+function parseHunkNewRange(header: string): { start: number; count: number } | null {
+  const match = /\+(\d+)(?:,(\d+))?/.exec(header);
+  if (!match) return null;
+  const start = Number(match[1]);
+  const count = match[2] !== undefined ? Number(match[2]) : 1;
+  return { start, count };
+}
+
+/**
+ * Computes context windows around each hunk and merges overlapping ranges.
+ *
+ * @param hunks - Parsed diff hunks for the file.
+ * @param totalLines - Total line count of the full file.
+ * @param padding - Number of context lines either side of each hunk. Defaults to {@link CONTEXT_PADDING}.
+ * @returns Merged, sorted, 1-indexed line ranges clamped to file bounds.
+ */
+export function computeContextWindows(
+  hunks: readonly DiffHunk[],
+  totalLines: number,
+  padding: number = CONTEXT_PADDING,
+): LineRange[] {
+  const ranges: LineRange[] = [];
+
+  for (const hunk of hunks) {
+    const parsed = parseHunkNewRange(hunk.header);
+    if (!parsed) continue;
+    const hunkEnd = parsed.start + Math.max(parsed.count - 1, 0);
+    ranges.push({
+      start: Math.max(1, parsed.start - padding),
+      end: Math.min(totalLines, hunkEnd + padding),
+    });
+  }
+
+  ranges.sort((range1, range2) => range1.start - range2.start);
+
+  const merged: LineRange[] = [];
+  for (const range of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && range.start <= last.end + 1) {
+      merged[merged.length - 1] = { start: last.start, end: Math.max(last.end, range.end) };
+    } else {
+      merged.push(range);
+    }
+  }
+
+  return merged;
+}
+
+/**
+ * Builds the file context section for the review prompt.
+ *
+ * @remarks
+ * When windowed context is smaller than the full file, emits labelled blocks
+ * with line numbers. Falls back to the full file when windowing would not save
+ * tokens (e.g. small files with many hunks).
+ */
+function buildFileContextSection(
+  fullContent: string,
+  hunks: readonly DiffHunk[],
+): string[] {
+  const fileLines = fullContent.split("\n");
+  const totalLines = fileLines.length;
+  const windows = computeContextWindows(hunks, totalLines);
+
+  const windowedLineCount = windows.reduce((sum, window) => sum + (window.end - window.start + 1), 0);
+
+  if (windowedLineCount >= totalLines) {
+    return [
+      "",
+      "## Full file content (for context only — only comment on changed lines)",
+      "```typescript",
+      fullContent,
+      "```",
+    ];
+  }
+
+  const parts: string[] = [""];
+
+  for (const window of windows) {
+    const slice = fileLines.slice(window.start - 1, window.end);
+    const numberedLines = slice.map(
+      (line, idx) => `// line ${window.start + idx}: ${line}`,
+    );
+    parts.push(
+      `## File context (lines ${window.start}–${window.end} of ${totalLines}) — only comment on changed lines`,
+    );
+    parts.push("```typescript");
+    parts.push(numberedLines.join("\n"));
+    parts.push("```");
+  }
+
+  return parts;
+}
 
 const escapePipe = (value: string): string => value.replaceAll("|", "\\|");
 
@@ -203,11 +310,7 @@ export function buildFileReviewPrompt(
   parts.push("```");
 
   if (fullContent) {
-    parts.push("");
-    parts.push("## Full file content (for context only — only comment on changed lines)");
-    parts.push("```typescript");
-    parts.push(fullContent);
-    parts.push("```");
+    parts.push(...buildFileContextSection(fullContent, fileDiff.hunks));
   }
 
   if (signalLines.length > 0) {
