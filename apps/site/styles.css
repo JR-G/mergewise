@@ -1594,16 +1594,9 @@ h1 {
   .demo-scan-beam { display: none; }
   .demo-scan-line { opacity: 1; background: var(--blue); animation: none; }
   .demo-llm-finding { opacity: 1; animation: none; }
-  .demo-bar-fill { animation: none !important; }
-  .fill-high { width: 92%; }
-  .fill-mid { width: 61%; }
-  .fill-low { width: 34%; }
-  .demo-bar-tag { opacity: 1; animation: none; }
-  .tag-skip { opacity: 0.4; }
   .demo-check-mark { opacity: 1; transform: none; animation: none; }
   .demo-diff-line { opacity: 1; animation: none; }
   .demo-suggestion { opacity: 1; animation: none; }
-  .demo-meter-fill { animation: none !important; width: 85%; }
   .mock-nest { background: rgba(241, 89, 65, 0.1); border-left-color: var(--red); animation: none; }
   .mock-comment { opacity: 1; transform: none; animation: none; }
   .mock-suggestion { opacity: 1; animation: none; }
