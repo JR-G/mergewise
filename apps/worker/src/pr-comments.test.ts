@@ -232,7 +232,7 @@ describe("buildPrSummaryComment", () => {
     expect(body).toContain("<!-- mergewise-summary -->");
   });
 
-  test("shows stats line with file count, finding count, and rules", () => {
+  test("shows compact header with file count and suggestion count", () => {
     const findings: Finding[] = [
       createFinding("f1", 0.9, "safety"),
       createFinding("f2", 0.85, "perf"),
@@ -242,97 +242,91 @@ describe("buildPrSummaryComment", () => {
       filePaths: ["a.ts", "b.ts", "c.ts"],
       findings,
     });
-    expect(body).toContain("**3** files reviewed");
-    expect(body).toContain("**2** findings");
-    expect(body).toContain("**5/5** rules passed");
+    expect(body).toContain("**Mergewise**");
+    expect(body).toContain("Reviewed 3 files");
+    expect(body).toContain("2 suggestions");
   });
 
-  test("renders grouped table with severity, recommendation, and locations columns", () => {
+  test("renders findings inside a collapsed details block with category badges", () => {
     const findings: Finding[] = [
       { ...createFinding("f1", 0.9, "safety"), ruleId: "r1", filePath: "src/app.ts", line: 10, recommendation: "Fix null" },
       { ...createFinding("f2", 0.85, "perf"), ruleId: "r2", filePath: "src/utils.ts", line: 25, recommendation: "Cache result" },
     ];
     const body = buildPrSummaryComment({ ...defaultInput, findings });
-    expect(body).toContain("| Severity | Recommendation | Locations |");
-    expect(body).toContain("🔴 safety");
-    expect(body).toContain("🟡 perf");
+    expect(body).toContain("Suggestions |");
+    expect(body).toContain("\u{1F534} 1");
+    expect(body).toContain("\u{1F7E1} 1");
+    expect(body).toContain("| | File | Line | Suggestion |");
+    expect(body).toContain("src/app.ts");
     expect(body).toContain("Fix null");
-    expect(body).toContain("[`src/app.ts:10`]");
+    expect(body).toContain("Cache result");
     expect(body).toContain("https://github.com/acme/widget/blob/abc123/src/app.ts#L10");
   });
 
-  test("groups findings with the same ruleId and recommendation into one row", () => {
+  test("shows each finding as its own row", () => {
     const findings: Finding[] = [
       { ...createFinding("f1", 0.9, "safety"), ruleId: "no-bang", filePath: "a.ts", line: 10, recommendation: "Avoid non-null" },
       { ...createFinding("f2", 0.9, "safety"), ruleId: "no-bang", filePath: "a.ts", line: 20, recommendation: "Avoid non-null" },
       { ...createFinding("f3", 0.9, "safety"), ruleId: "no-bang", filePath: "b.ts", line: 5, recommendation: "Avoid non-null" },
     ];
     const body = buildPrSummaryComment({ ...defaultInput, findings });
-    const rows = body.split("\n").filter((line) => line.startsWith("| 🔴"));
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toContain("Avoid non-null");
-    expect(rows[0]).toContain("[`a.ts:10`]");
-    expect(rows[0]).toContain("[`a.ts:20`]");
-    expect(rows[0]).toContain("[`b.ts:5`]");
+    const dataRows = body.split("\n").filter((line) => line.startsWith("| \u{1F534}"));
+    expect(dataRows).toHaveLength(3);
   });
 
-  test("renders collapsible detail section for groups with 4+ locations", () => {
-    const findings: Finding[] = Array.from({ length: 5 }, (_, index) => ({
+  test("shows overflow findings in a collapsed details block when exceeding inline limit", () => {
+    const findings: Finding[] = Array.from({ length: 7 }, (_, index) => ({
       ...createFinding(`f${String(index)}`, 0.9, "safety"),
       ruleId: "no-bang",
-      filePath: index < 3 ? "src/a.test.ts" : "src/b.test.ts",
+      filePath: `src/file${String(index)}.ts`,
       line: (index + 1) * 10,
       recommendation: "Avoid non-null assertions",
     }));
     const body = buildPrSummaryComment({ ...defaultInput, findings });
-    const tableRows = body.split("\n").filter((line) => line.startsWith("| 🔴"));
-    expect(tableRows).toHaveLength(1);
-    expect(tableRows[0]).toContain("5 locations across 2 files");
+    expect(body).toContain("and 2 more");
     expect(body).toContain("<details>");
-    expect(body).toContain("5 ×");
-    expect(body).toContain("`src/a.test.ts`");
-    expect(body).toContain("`src/b.test.ts`");
   });
 
-  test("sorts groups by severity then first file path", () => {
+  test("sorts findings by severity then file path", () => {
     const findings: Finding[] = [
       { ...createFinding("f1", 0.8, "clean"), ruleId: "r-clean", filePath: "src/z.ts", line: 1, recommendation: "Clean up" },
       { ...createFinding("f2", 0.9, "safety"), ruleId: "r-safety", filePath: "src/a.ts", line: 5, recommendation: "Fix null" },
       { ...createFinding("f3", 0.85, "perf"), ruleId: "r-perf", filePath: "src/b.ts", line: 3, recommendation: "Cache it" },
     ];
     const body = buildPrSummaryComment({ ...defaultInput, findings });
-    const safetyIdx = body.indexOf("🔴 safety");
-    const perfIdx = body.indexOf("🟡 perf");
-    const cleanIdx = body.indexOf("🔵 clean");
+    const safetyIdx = body.indexOf("src/a.ts");
+    const perfIdx = body.indexOf("src/b.ts");
+    const cleanIdx = body.indexOf("src/z.ts");
     expect(safetyIdx).toBeLessThan(perfIdx);
     expect(perfIdx).toBeLessThan(cleanIdx);
   });
 
-  test("shows no-issues message and no findings table when no findings exist", () => {
+  test("shows no-issues message and no suggestions section when no findings exist", () => {
     const body = buildPrSummaryComment(defaultInput);
-    expect(body).toContain("✅ No issues found");
-    expect(body).not.toContain("| Severity |");
+    expect(body).toContain("No issues found");
+    expect(body).not.toContain("Suggestions |");
+    expect(body).not.toContain("| | File |");
   });
 
-  test("renders collapsible files reviewed section", () => {
+  test("renders files reviewed inside collapsed review details section", () => {
     const body = buildPrSummaryComment(defaultInput);
     expect(body).toContain("<details>");
-    expect(body).toContain("Files reviewed (2)");
-    expect(body).toContain("- `src/app.ts`");
-    expect(body).toContain("- `src/index.ts`");
+    expect(body).toContain("Review details");
+    expect(body).toContain("`src/app.ts`");
+    expect(body).toContain("`src/index.ts`");
   });
 
-  test("uses singular for one file and one finding", () => {
+  test("uses singular for one file and one suggestion", () => {
     const findings: Finding[] = [createFinding("f1", 0.9, "clean")];
     const body = buildPrSummaryComment({
       ...defaultInput,
       filePaths: ["src/a.ts"],
       findings,
     });
-    expect(body).toContain("**1** file reviewed");
-    expect(body).toContain("**1** finding");
+    expect(body).toContain("1 file");
+    expect(body).toContain("1 suggestion");
     expect(body).not.toContain("files");
-    expect(body).not.toContain("findings");
+    expect(body).not.toContain("suggestions");
   });
 
   test("escapes pipes and newlines in recommendation text", () => {
@@ -347,14 +341,37 @@ describe("buildPrSummaryComment", () => {
     expect(body).not.toContain("Use A | B");
   });
 
-  test("does not group findings with different ruleIds even if recommendation matches", () => {
+  test("renders delivery counters inside collapsed review details when provided", () => {
+    const body = buildPrSummaryComment({
+      ...defaultInput,
+      deliveryCounters: {
+        skippedByConfidence: 3,
+        skippedByDeduplication: 1,
+        skippedByPolicy: 0,
+        skippedByGrouping: 2,
+        skippedByCap: 0,
+      },
+    });
+    expect(body).toContain("Review details");
+    expect(body).toContain("Skipped by confidence: 3");
+    expect(body).toContain("Skipped by deduplication: 1");
+    expect(body).toContain("Skipped by grouping: 2");
+  });
+
+  test("truncates long recommendations to approximately 80 characters", () => {
+    const longRecommendation = "A".repeat(100);
     const findings: Finding[] = [
-      { ...createFinding("f1", 0.9, "safety"), ruleId: "rule-x", filePath: "a.ts", line: 1, recommendation: "Same text" },
-      { ...createFinding("f2", 0.9, "safety"), ruleId: "rule-y", filePath: "b.ts", line: 2, recommendation: "Same text" },
+      { ...createFinding("f1", 0.9, "safety"), recommendation: longRecommendation },
     ];
     const body = buildPrSummaryComment({ ...defaultInput, findings });
-    const rows = body.split("\n").filter((line) => line.startsWith("| 🔴"));
-    expect(rows).toHaveLength(2);
+    expect(body).not.toContain(longRecommendation);
+    expect(body).toContain("\u2026");
+  });
+
+  test("does not use markdown headers", () => {
+    const findings: Finding[] = [createFinding("f1", 0.9, "safety")];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body).not.toMatch(/^##+ /m);
   });
 });
 

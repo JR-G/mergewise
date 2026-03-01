@@ -143,6 +143,7 @@ async function upsertSummaryComment(
     headSha: ctx.job.head_sha,
     rulesRan: ctx.gatedExecutionResult.summary.totalRules,
     rulesPassed: ctx.gatedExecutionResult.summary.successfulRules,
+    deliveryCounters: ctx.delivery,
   });
 
   try {

@@ -924,7 +924,7 @@ describe("finding delivery", () => {
 
     expect(checkOutput.title).toBe("Review completed");
     expect(checkOutput.summary).toContain("Rules=3/3");
-    expect(checkOutput.text).toContain("### Reviewer Summary");
+    expect(checkOutput.text).toContain("**Reviewer Summary**");
     expect(checkOutput.text).toContain("- `safety` (1)");
     expect(checkOutput.text).toContain("- `perf` (1)");
     expect(checkOutput.text).toContain("`rule/a` (1)");
@@ -935,7 +935,7 @@ describe("finding delivery", () => {
     expect(checkOutput.text).toContain(
       "[src/b.ts:12](https://github.com/acme/widget/blob/abc123/src/b.ts#L12)",
     );
-    expect(checkOutput.text).toContain("### Delivery Counters");
+    expect(checkOutput.text).toContain("Delivery counters");
     expect(checkOutput.text).toContain("skipped_by_confidence");
     expect(checkOutput.text).toContain("skipped_by_policy");
     expect(checkOutput.text).toContain("skipped_by_grouping");
