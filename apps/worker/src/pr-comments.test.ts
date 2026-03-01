@@ -5,6 +5,7 @@ import type { Finding } from "@mergewise/shared-types";
 import {
   buildPrSummaryComment,
   collectCommentFeedback,
+  postPreparedFindingComments,
   resolveOutdatedComments,
   upsertPrSummaryComment,
   type ExistingCommentState,
@@ -588,5 +589,62 @@ describe("collectCommentFeedback", () => {
     expect(summary.records.every((rec) => rec.findingId !== "f3")).toBe(true);
     expect(summary.thumbsUp).toBeGreaterThan(0);
     expect(summary.thumbsDown).toBeGreaterThan(0);
+  });
+});
+
+describe("postPreparedFindingComments", () => {
+  const baseOptions = {
+    owner: "acme",
+    repository: "widget",
+    pullRequestNumber: 50,
+    pullRequestHeadSha: "abc123",
+    installationAccessToken: "ghs_token",
+    traceId: "trace-review",
+    githubFetchOptions: workerFetchOptions,
+    summaryBody: "2 files reviewed, 0 comments",
+  };
+
+  test("skips review submission when there are no inline comments", async () => {
+    let reviewCalled = false;
+
+    const result = await postPreparedFindingComments(
+      { ...baseOptions, comments: [] },
+      {
+        existingDedupeKeys: new Set(),
+        createPullRequestReviewFn: async () => {
+          reviewCalled = true;
+          return { id: 1, node_id: "PRR_1", html_url: "", body: "", state: "COMMENTED" };
+        },
+        logInfo: () => {},
+      },
+    );
+
+    expect(reviewCalled).toBe(false);
+    expect(result.postedCount).toBe(0);
+  });
+
+  test("submits review when there are inline comments", async () => {
+    let reviewCalled = false;
+    const finding = createFinding("f1", 0.9, "safety");
+
+    const result = await postPreparedFindingComments(
+      {
+        ...baseOptions,
+        comments: [
+          { dedupeKey: "key-1", finding, groupedFindings: [], body: "Fix this" },
+        ],
+      },
+      {
+        existingDedupeKeys: new Set(),
+        createPullRequestReviewFn: async () => {
+          reviewCalled = true;
+          return { id: 1, node_id: "PRR_1", html_url: "", body: "", state: "COMMENTED" };
+        },
+        logInfo: () => {},
+      },
+    );
+
+    expect(reviewCalled).toBe(true);
+    expect(result.postedCount).toBeGreaterThan(0);
   });
 });

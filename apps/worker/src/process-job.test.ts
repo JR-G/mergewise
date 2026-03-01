@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { GitHubApiError } from "@mergewise/github-client";
-import type { CreatePullRequestReviewOptions } from "@mergewise/github-client";
 
 import { processAnalyzePullRequestJob } from "./index";
 import {
@@ -719,11 +718,11 @@ describe("processAnalyzePullRequestJob", () => {
     expect(errors.some((msg) => msg.includes("check_run_failed"))).toBe(true);
   });
 
-  test("posts summary as review body via batch review API", async () => {
+  test("skips review submission when there are zero inline comments", async () => {
     process.env.GITHUB_APP_ID = "123";
     process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
 
-    const capturedReviewOptions: CreatePullRequestReviewOptions[] = [];
+    let reviewCalled = false;
     await processAnalyzePullRequestJob(
       {
         job_id: "job-summary",
@@ -773,7 +772,7 @@ describe("processAnalyzePullRequestJob", () => {
           failedRuleIds: [],
         }),
         createPullRequestReviewFn: async (options) => {
-          capturedReviewOptions.push(options);
+          reviewCalled = true;
           return { id: 1, html_url: "https://github.com/x", body: options.body ?? null, state: "commented" };
         },
         createCheckRunFn: async () => ({
@@ -791,10 +790,7 @@ describe("processAnalyzePullRequestJob", () => {
       },
     );
 
-    expect(capturedReviewOptions[0]).toBeDefined();
-    expect(capturedReviewOptions[0]!.body).toBe("2 files reviewed, 0 comments");
-    expect(capturedReviewOptions[0]!.event).toBe("COMMENT");
-    expect(capturedReviewOptions[0]!.comments).toEqual([]);
+    expect(reviewCalled).toBe(false);
   });
 
   test("skips processing when PR is closed", async () => {

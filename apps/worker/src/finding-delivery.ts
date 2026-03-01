@@ -100,6 +100,8 @@ export async function deliverFindingsToGitHub(
     {
       createPullRequestReviewFn: dependencies.createPullRequestReviewFn,
       existingDedupeKeys: existingCommentState.dedupeKeys,
+      logInfo: ctx.loggers.infoLogger,
+      logError: ctx.loggers.errorLogger,
     },
   );
 
