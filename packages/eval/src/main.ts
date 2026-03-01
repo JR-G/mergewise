@@ -101,12 +101,24 @@ if (runCount > 1) {
   printReport(allResults[0]);
 }
 
-try {
-  for (const results of allResults) {
+const failedAppends: number[] = [];
+
+for (let runIndex = 0; runIndex < allResults.length; runIndex++) {
+  try {
+    const results = allResults[runIndex];
+    if (!results) continue;
     await appendRunRecord(results);
+  } catch (error) {
+    console.error(`Failed to write run record for run ${runIndex + 1}:`, error);
+    failedAppends.push(runIndex + 1);
   }
-  console.log("Results appended to packages/eval/results/runs.ndjson");
-} catch (error) {
-  console.error("Failed to write run record:", error);
+}
+
+if (failedAppends.length === allResults.length) {
+  console.error("All run records failed to write");
   process.exit(1);
+} else if (failedAppends.length > 0) {
+  console.error(`Failed to write ${failedAppends.length} of ${allResults.length} run records`);
+} else {
+  console.log("Results appended to packages/eval/results/runs.ndjson");
 }

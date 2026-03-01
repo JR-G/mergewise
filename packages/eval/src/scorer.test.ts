@@ -198,7 +198,7 @@ describe("scoreFindings", () => {
         required: true,
       },
       {
-        description: "Only finding[0] matches (no 'rename' in its recommendation)",
+        description: "Only finding[1] matches (contains 'rename' in its recommendation)",
         matchLineRange: [1, 10],
         matchCategory: "clean",
         matchRecommendationContains: "rename",
