@@ -56,12 +56,14 @@ export class ReviewClient {
    * @param systemPrompt - System message setting the reviewer persona.
    * @param userPrompt - User message with diff and file context.
    * @param maxTokens - Maximum tokens in the response.
+   * @param temperature - Sampling temperature (defaults to 0.2).
    * @returns Content and token usage from the model response.
    */
   async complete(
     systemPrompt: string,
     userPrompt: string,
     maxTokens: number,
+    temperature = 0.2,
   ): Promise<CompletionResult> {
     const response = await this.client.chat.completions.create({
       model: this.model,
@@ -70,7 +72,7 @@ export class ReviewClient {
         { role: "user", content: userPrompt },
       ],
       max_completion_tokens: maxTokens,
-      temperature: 0.2,
+      temperature,
       response_format: { type: "json_object" },
     });
 

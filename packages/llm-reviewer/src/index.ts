@@ -19,6 +19,7 @@ export type { AddedLineInfo } from "./schema";
 export { extractStructuralSignals, type StructuralSignals } from "./signals";
 export { reviewFile } from "./review-file";
 export { createReviewClient, ReviewClient } from "./client";
+export { applyConsensusFilter, extractWordTokens, jaccardSimilarity } from "./consensus";
 
 const DEFAULT_TOKEN_BUDGET = 30_000;
 
@@ -41,6 +42,15 @@ export interface LlmReviewerConfig {
    */
   readonly userSkipPatterns?: readonly string[];
   readonly confidenceThreshold?: number;
+  /**
+   * Number of independent LLM samples for self-consistency filtering.
+   *
+   * @remarks
+   * When greater than 1, each file is reviewed N times with elevated
+   * temperature and only findings appearing in the majority of runs
+   * are kept. Defaults to 1 (single-shot).
+   */
+  readonly consistencySamples?: number;
   readonly onFileReviewError?: (filePath: string, error: unknown) => void;
   readonly onFileReviewComplete?: (filePath: string, findingCount: number, promptTokens: number, completionTokens: number) => void;
 }
@@ -65,6 +75,7 @@ export function createLlmReviewerRule(
   const tokenBudget = config.tokenBudget ?? DEFAULT_TOKEN_BUDGET;
   const userSkipPatterns = config.userSkipPatterns;
   const confidenceThreshold = config.confidenceThreshold;
+  const consistencySamples = config.consistencySamples;
   const onFileReviewError = config.onFileReviewError ?? noop;
 
   return {
@@ -97,6 +108,7 @@ export function createLlmReviewerRule(
             codebaseContext,
             client,
             confidenceThreshold,
+            consistencySamples,
           });
           allFindings.push(...result.findings);
           config.onFileReviewComplete?.(

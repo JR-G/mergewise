@@ -64,6 +64,15 @@ export interface MergewiseLlmConfigV1 {
    * OpenAI-compatible endpoint, Ollama, OpenRouter).
    */
   baseUrl: string;
+  /**
+   * Number of independent LLM samples for self-consistency filtering.
+   *
+   * @remarks
+   * When greater than 1, each file is reviewed N times and only findings
+   * that appear in the majority of runs are kept. Defaults to 1
+   * (single-shot, no consensus filtering).
+   */
+  consistencySamples: number;
 }
 
 /**
@@ -239,6 +248,7 @@ export const DEFAULT_MERGEWISE_CONFIG: MergewiseConfig = {
     model: "gpt-4o",
     tokenBudget: 30_000,
     baseUrl: "https://api.openai.com/v1",
+    consistencySamples: 1,
   },
 };
 
@@ -259,6 +269,7 @@ interface RawMergewiseConfig {
     model?: unknown;
     tokenBudget?: unknown;
     baseUrl?: unknown;
+    consistencySamples?: unknown;
   };
 }
 
@@ -451,6 +462,21 @@ function applyLlm(
   }
   if (hasBaseUrl) {
     normalizedConfig.llm.baseUrl = baseUrl.trim();
+  }
+
+  const consistencySamples = rawConfig.llm.consistencySamples;
+  const hasConsistencySamples = consistencySamples !== undefined;
+  if (
+    hasConsistencySamples &&
+    (typeof consistencySamples !== "number" || !Number.isInteger(consistencySamples) || consistencySamples < 1 || consistencySamples > 10)
+  ) {
+    throw new MergewiseConfigValidationError(
+      filePath,
+      "llm.consistencySamples must be an integer between 1 and 10",
+    );
+  }
+  if (hasConsistencySamples) {
+    normalizedConfig.llm.consistencySamples = consistencySamples;
   }
 }
 
