@@ -83,6 +83,18 @@ export function buildPatchPreview(
   };
 }
 
+/**
+ * Yields added lines from diff hunks whose file path matches a given pattern.
+ *
+ * Iterates each file diff in the analysis context, parses hunk headers via
+ * {@link parseHunkStartingLine}, and delegates line-level extraction to an
+ * internal generator. A shared {@link LineScanState} is maintained per file
+ * to track block-comment boundaries across hunks.
+ *
+ * @param context - Analysis context containing parsed diffs.
+ * @param filePattern - Regular expression to filter file paths.
+ * @returns Iterator of added lines with sanitised content and hunk metadata.
+ */
 export function* collectAddedLines(
   context: AnalysisContext,
   filePattern: RegExp,
@@ -143,6 +155,19 @@ function* collectHunkAddedLines(
   }
 }
 
+/**
+ * Strips comments and string literals from a source line, returning only executable code content.
+ *
+ * Handles line comments, block comments, and string literals (single-quoted,
+ * double-quoted, and template). Block-comment state is tracked across calls
+ * via {@link LineScanState} so multi-line comments spanning hunks are handled
+ * correctly. String literals are skipped using {@link skipStringLiteral}.
+ *
+ * @param sourceLine - Raw source line to sanitise.
+ * @param lineScanState - Mutable state tracking whether a block comment is open;
+ *   updated as a side-effect when block-comment open or close sequences are encountered.
+ * @returns The source line with comments and string literals removed.
+ */
 export function stripNonCodeContent(sourceLine: string, lineScanState: LineScanState): string {
   let cursorIndex = 0;
   let sanitizedContent = "";
@@ -186,6 +211,20 @@ export function stripNonCodeContent(sourceLine: string, lineScanState: LineScanS
   return sanitizedContent;
 }
 
+/**
+ * Advances a cursor past a string literal, returning the index after the closing quote.
+ *
+ * Handles escape sequences (backslash followed by any character) and, for
+ * backtick-quoted template literals, delegates `${…}` expressions to
+ * {@link skipTemplateExpression} so nested strings and braces are handled
+ * correctly.
+ *
+ * @param sourceLine - Full source line containing the string literal.
+ * @param startIndex - Index of the opening quote character.
+ * @param quoteCharacter - The quote character (`"`, `'`, or backtick).
+ * @returns Index immediately after the closing quote, or the end of the line
+ *   if the string is unterminated.
+ */
 export function skipStringLiteral(
   sourceLine: string,
   startIndex: number,

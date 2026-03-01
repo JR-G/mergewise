@@ -14,6 +14,7 @@ export { IDIOMATIC_PATTERNS } from "./idiomatic-patterns";
 export { SAFETY_PATTERNS } from "./safety-patterns";
 export { PERF_PATTERNS } from "./perf-patterns";
 
+import type { AntiPattern } from "./anti-pattern-types";
 import { CLEAN_PATTERNS } from "./clean-patterns";
 import { IDIOMATIC_PATTERNS } from "./idiomatic-patterns";
 import { SAFETY_PATTERNS } from "./safety-patterns";
@@ -27,7 +28,7 @@ import { PERF_PATTERNS } from "./perf-patterns";
  * into the LLM system prompt. The array is frozen at module level — treat it
  * as immutable.
  */
-export const ANTI_PATTERNS: readonly import("./anti-pattern-types").AntiPattern[] = Object.freeze([
+export const ANTI_PATTERNS: readonly AntiPattern[] = Object.freeze([
   ...CLEAN_PATTERNS,
   ...IDIOMATIC_PATTERNS,
   ...SAFETY_PATTERNS,
