@@ -140,12 +140,61 @@ function isNonCodeLine(line: string): boolean {
   return false;
 }
 
+/**
+ * Extracts identifier-like tokens from a code string for similarity comparison.
+ */
+function extractTokens(code: string): Set<string> {
+  const matches = code.match(/[a-zA-Z_$][a-zA-Z0-9_$]*/g);
+  return new Set(matches ?? []);
+}
+
+/**
+ * Checks whether a suggestedRewrite is plausibly a replacement for the original line.
+ *
+ * @remarks
+ * Strips rewrites that share no identifiers with the original — a strong signal
+ * the LLM hallucinated unrelated code. Also rejects rewrites that are structural
+ * suggestions (contain function/class/interface declarations when the original doesn't).
+ */
+export function isPlausibleRewrite(
+  originalLine: string,
+  suggestedRewrite: string,
+): boolean {
+  const trimmedOriginal = originalLine.trim();
+  const trimmedRewrite = suggestedRewrite.trim();
+
+  if (trimmedRewrite.length === 0) return false;
+
+  const structuralDeclaration = /^(?:(?:export\s+)?(?:class|interface|enum)\s)/;
+  const originalIsStructural = structuralDeclaration.test(trimmedOriginal);
+  const rewriteIsStructural = structuralDeclaration.test(trimmedRewrite);
+  if (rewriteIsStructural && !originalIsStructural) return false;
+
+  const originalTokens = extractTokens(trimmedOriginal);
+  const rewriteTokens = extractTokens(trimmedRewrite);
+
+  if (originalTokens.size === 0 || rewriteTokens.size === 0) return true;
+
+  let shared = 0;
+  for (const token of rewriteTokens) {
+    if (originalTokens.has(token)) shared += 1;
+  }
+
+  const smaller = Math.min(originalTokens.size, rewriteTokens.size);
+  if (smaller < 5 && shared < 2) return false;
+
+  const overlapRatio = shared / smaller;
+  return overlapRatio >= 0.15;
+}
+
 function buildLlmPatchPreview(
   suggestedRewrite: string | undefined,
   lineInfo: AddedLineInfo | undefined,
 ): PatchPreview | undefined {
-  if (!suggestedRewrite || !lineInfo) return undefined;
+  if (typeof suggestedRewrite !== "string" || suggestedRewrite.length === 0) return undefined;
+  if (!lineInfo) return undefined;
   if (isNonCodeLine(lineInfo.content)) return undefined;
+  if (!isPlausibleRewrite(lineInfo.content, suggestedRewrite)) return undefined;
 
   return {
     removedLines: [lineInfo.content],

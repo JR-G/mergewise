@@ -354,25 +354,63 @@ describe("parseLlmResponse", () => {
   });
 
   test("creates patchPreview when suggestedRewrite is present", () => {
+    const rewriteDiff = makeDiff("src/file.ts", [
+      makeHunk("@@ -1,3 +1,5 @@", [
+        " existing",
+        "+const data = fetchUser()",
+        "+added line 3",
+        " existing2",
+        "+added line 5",
+      ]),
+    ]);
     const raw = JSON.stringify({
       findings: [
         {
           line: 2,
           category: "clean",
           confidence: 0.9,
-          evidence: "added line 2",
+          evidence: "const data = fetchUser()",
           recommendation: "Rename variable.",
           suggestedRewrite: "const userData = fetchUser()",
         },
       ],
     });
 
-    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
+    const result = parseLlmResponse(raw, rewriteDiff, PULL_REQUEST_METADATA);
     expect(result[0]!.patchPreview).toEqual({
-      removedLines: ["added line 2"],
+      removedLines: ["const data = fetchUser()"],
       addedLines: ["const userData = fetchUser()"],
       hunkHeader: "@@ -1,3 +1,5 @@",
     });
+  });
+
+  test("strips patchPreview when suggestedRewrite is a hallucinated unrelated replacement", () => {
+    const hallucinationDiff = makeDiff("src/file.ts", [
+      makeHunk("@@ -1,3 +1,5 @@", [
+        " existing",
+        '+contentType: "application/json",',
+        "+added line 3",
+        " existing2",
+        "+added line 5",
+      ]),
+    ]);
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 2,
+          category: "clean",
+          confidence: 0.9,
+          evidence: 'contentType: "application/json"',
+          recommendation: "Use a pagination helper.",
+          suggestedRewrite: "while (pageNumber < maxPages && hasNextPage) {",
+        },
+      ],
+    });
+
+    const result = parseLlmResponse(raw, hallucinationDiff, PULL_REQUEST_METADATA);
+    const finding = result.find((item) => item.line === 2 && item.category === "clean");
+    expect(finding).toBeDefined();
+    expect(finding!.patchPreview).toBeUndefined();
   });
 
   test("omits patchPreview when suggestedRewrite is absent", () => {
@@ -449,46 +487,64 @@ describe("parseLlmResponse", () => {
   });
 
   test("preserves patchPreview when target line is actual code", () => {
+    const codeDiff = makeDiff("src/file.ts", [
+      makeHunk("@@ -1,3 +1,5 @@", [
+        " existing",
+        "+const data = fetchUser()",
+        "+added line 3",
+        " existing2",
+        "+added line 5",
+      ]),
+    ]);
     const raw = JSON.stringify({
       findings: [
         {
           line: 2,
           category: "clean",
           confidence: 0.9,
-          evidence: "added line 2",
+          evidence: "const data = fetchUser()",
           recommendation: "Rename variable.",
           suggestedRewrite: "const userData = fetchUser()",
         },
       ],
     });
 
-    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
+    const result = parseLlmResponse(raw, codeDiff, PULL_REQUEST_METADATA);
     const finding = result.find((item) => item.line === 2 && item.category === "clean");
     expect(finding).toBeDefined();
     expect(finding!.patchPreview).toBeDefined();
   });
 
   test("splits multi-line suggestedRewrite into addedLines", () => {
+    const multiLineDiff = makeDiff("src/file.ts", [
+      makeHunk("@@ -1,3 +1,5 @@", [
+        " existing",
+        "+const fetchUser = () => api.get('/user')",
+        "+added line 3",
+        " existing2",
+        "+added line 5",
+      ]),
+    ]);
     const raw = JSON.stringify({
       findings: [
         {
           line: 2,
           category: "clean",
           confidence: 0.9,
-          evidence: "added line 2",
-          recommendation: "Extract function.",
+          evidence: "const fetchUser = () => api.get('/user')",
+          recommendation: "Use function declaration.",
           suggestedRewrite: "function fetchUser() {\n  return api.get('/user')\n}",
         },
       ],
     });
 
-    const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
+    const result = parseLlmResponse(raw, multiLineDiff, PULL_REQUEST_METADATA);
     expect(result[0]!.patchPreview?.addedLines).toEqual([
       "function fetchUser() {",
       "  return api.get('/user')",
       "}",
     ]);
-    expect(result[0]!.patchPreview?.removedLines).toEqual(["added line 2"]);
+    expect(result[0]!.patchPreview?.removedLines).toEqual(["const fetchUser = () => api.get('/user')"]);
   });
 
 });
