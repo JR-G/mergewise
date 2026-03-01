@@ -1,0 +1,50 @@
+{
+  "filePath": "src/reports/reportGenerator.ts",
+  "previousPath": null,
+  "hunks": [
+    {
+      "header": "@@ -0,0 +1,38 @@",
+      "lines": [
+        "+import { PrismaClient } from \"@prisma/client\";",
+        "+import { S3Client, PutObjectCommand } from \"@aws-sdk/client-s3\";",
+        "+import nodemailer from \"nodemailer\";",
+        "+",
+        "+interface ReportResult {",
+        "+  reportId: string;",
+        "+  url: string;",
+        "+  notified: boolean;",
+        "+}",
+        "+",
+        "+export async function generateReport(",
+        "+  reportId: string,",
+        "+  recipientEmail: string,",
+        "+): Promise<ReportResult> {",
+        "+  const prisma = new PrismaClient();",
+        "+  const report = await prisma.report.findUniqueOrThrow({",
+        "+    where: { id: reportId },",
+        "+    include: { sections: true, author: true },",
+        "+  });",
+        "+",
+        "+  const rendered = renderReportHtml(report);",
+        "+  const pdfBuffer = await htmlToPdf(rendered);",
+        "+",
+        "+  const s3 = new S3Client({ region: \"eu-west-1\" });",
+        "+  const key = `reports/${reportId}/${Date.now()}.pdf`;",
+        "+  await s3.send(",
+        "+    new PutObjectCommand({ Bucket: \"company-reports\", Key: key, Body: pdfBuffer }),",
+        "+  );",
+        "+",
+        "+  const transport = nodemailer.createTransport({ host: \"smtp.internal.example.com\", port: 587 });",
+        "+  await transport.sendMail({",
+        "+    from: \"reports@example.com\",",
+        "+    to: recipientEmail,",
+        "+    subject: `Report ${reportId} is ready`,",
+        "+    html: `<p>Your report is available at <a href=\"https://cdn.example.com/${key}\">download</a>.</p>`,",
+        "+  });",
+        "+",
+        "+  return { reportId, url: `https://cdn.example.com/${key}`, notified: true };",
+        "+}"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "description": "Flags LSP violation — ReadOnlyCache throws on inherited methods",
+    "matchLineRange": [33, 48],
+    "matchRecommendationContainsAny": ["Liskov", "LSP", "substitut", "throw", "not supported", "contract", "interface", "segregat", "read-only", "separate"],
+    "required": true
+  },
+  {
+    "description": "Flags ISP opportunity — DataStore interface should be split",
+    "matchLineRange": [1, 7],
+    "matchRecommendationContainsAny": ["Interface Segregation", "ISP", "split", "separate", "Readable", "Writable", "narrower", "role interface", "segregat"],
+    "required": false
+  }
+]

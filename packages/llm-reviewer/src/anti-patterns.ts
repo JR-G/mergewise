@@ -10,12 +10,14 @@
 
 export type { AntiPattern } from "./anti-pattern-types";
 export { CLEAN_PATTERNS } from "./clean-patterns";
+export { REFACTORING_PATTERNS } from "./refactoring-patterns";
 export { IDIOMATIC_PATTERNS } from "./idiomatic-patterns";
 export { SAFETY_PATTERNS } from "./safety-patterns";
 export { PERF_PATTERNS } from "./perf-patterns";
 
 import type { AntiPattern } from "./anti-pattern-types";
 import { CLEAN_PATTERNS } from "./clean-patterns";
+import { REFACTORING_PATTERNS } from "./refactoring-patterns";
 import { IDIOMATIC_PATTERNS } from "./idiomatic-patterns";
 import { SAFETY_PATTERNS } from "./safety-patterns";
 import { PERF_PATTERNS } from "./perf-patterns";
@@ -30,6 +32,7 @@ import { PERF_PATTERNS } from "./perf-patterns";
  */
 export const ANTI_PATTERNS: readonly AntiPattern[] = Object.freeze([
   ...CLEAN_PATTERNS,
+  ...REFACTORING_PATTERNS,
   ...IDIOMATIC_PATTERNS,
   ...SAFETY_PATTERNS,
   ...PERF_PATTERNS,

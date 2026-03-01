@@ -1,0 +1,14 @@
+[
+  {
+    "description": "Flags ISP violation — DocumentService is a fat interface",
+    "matchLineRange": [1, 16],
+    "matchRecommendationContainsAny": ["Interface Segregation", "ISP", "split", "separate", "fat", "role interface", "segregat", "focused", "narrower", "smaller"],
+    "required": true
+  },
+  {
+    "description": "Flags LSP violations in DocumentViewer or DocumentExporter",
+    "matchLineRange": [18, 47],
+    "matchRecommendationContainsAny": ["Liskov", "LSP", "substitut", "throw", "contract", "not supported"],
+    "required": false
+  }
+]

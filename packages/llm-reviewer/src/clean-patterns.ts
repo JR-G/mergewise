@@ -58,6 +58,40 @@ function OrderForm({ items }) {
   },
 
   {
+    id: "prop-drilling",
+    title: "Prop drilling through intermediate layers",
+    description:
+      "A prop is passed through one or more intermediate components that do not use it, just to reach a deeply nested consumer. This couples the intermediaries to a prop they have no interest in and makes refactoring fragile.",
+    category: "clean",
+    languages: ["react"],
+    badExample: `function App({ theme }: { theme: Theme }) {
+  return <Layout theme={theme} />;
+}
+function Layout({ theme }: { theme: Theme }) {
+  return <Sidebar theme={theme} />;
+}
+function Sidebar({ theme }: { theme: Theme }) {
+  return <NavItem theme={theme} />;
+}`,
+    goodExample: `const ThemeContext = createContext<Theme>(defaultTheme);
+
+function App({ theme }: { theme: Theme }) {
+  return (
+    <ThemeContext.Provider value={theme}>
+      <Layout />
+    </ThemeContext.Provider>
+  );
+}
+function NavItem() {
+  const theme = useContext(ThemeContext);
+  return <span style={{ color: theme.primary }}>Home</span>;
+}`,
+    principle: "Lift shared state into React Context to avoid prop drilling",
+    detectionHint:
+      "The same prop appears in 3+ component signatures in a parent-child chain, where intermediate components merely forward it without using it. Look for repeated prop names threading through Layout → Sidebar → Child patterns.",
+  },
+
+  {
     id: "options-object-mutation",
     title: "Options object mutation",
     description:

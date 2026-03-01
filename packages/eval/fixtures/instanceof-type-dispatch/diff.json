@@ -1,0 +1,53 @@
+{
+  "filePath": "src/payments/paymentProcessor.ts",
+  "previousPath": null,
+  "hunks": [
+    {
+      "header": "@@ -0,0 +1,42 @@",
+      "lines": [
+        "+import { CreditCard } from \"./methods/CreditCard\";",
+        "+import { PayPal } from \"./methods/PayPal\";",
+        "+import { BankTransfer } from \"./methods/BankTransfer\";",
+        "+import { CryptoWallet } from \"./methods/CryptoWallet\";",
+        "+",
+        "+interface PaymentResult {",
+        "+  success: boolean;",
+        "+  transactionId: string;",
+        "+}",
+        "+",
+        "+export function processPayment(method: unknown): PaymentResult {",
+        "+  if (method instanceof CreditCard) {",
+        "+    validateCardNumber(method.cardNumber);",
+        "+    const token = tokeniseCard(method.cardNumber, method.expiry);",
+        "+    return chargeStripe(token, method.amount);",
+        "+  } else if (method instanceof PayPal) {",
+        "+    const session = createPayPalSession(method.email);",
+        "+    return chargePayPal(session, method.amount);",
+        "+  } else if (method instanceof BankTransfer) {",
+        "+    validateIban(method.iban);",
+        "+    const mandate = createMandate(method.iban, method.bic);",
+        "+    return chargeBankTransfer(mandate, method.amount);",
+        "+  } else if (method instanceof CryptoWallet) {",
+        "+    const address = resolveWalletAddress(method.walletId);",
+        "+    const gasEstimate = estimateGas(method.chain);",
+        "+    return chargeCrypto(address, method.amount, gasEstimate);",
+        "+  }",
+        "+",
+        "+  throw new Error(`Unsupported payment method: ${String(method)}`);",
+        "+}",
+        "+",
+        "+function validateCardNumber(card: string): void { /* ... */ }",
+        "+function tokeniseCard(card: string, expiry: string): string { return \"\"; }",
+        "+function chargeStripe(token: string, amount: number): PaymentResult { return { success: true, transactionId: \"\" }; }",
+        "+function createPayPalSession(email: string): string { return \"\"; }",
+        "+function chargePayPal(session: string, amount: number): PaymentResult { return { success: true, transactionId: \"\" }; }",
+        "+function validateIban(iban: string): void { /* ... */ }",
+        "+function createMandate(iban: string, bic: string): string { return \"\"; }",
+        "+function chargeBankTransfer(mandate: string, amount: number): PaymentResult { return { success: true, transactionId: \"\" }; }",
+        "+function resolveWalletAddress(walletId: string): string { return \"\"; }",
+        "+function estimateGas(chain: string): number { return 0; }",
+        "+function chargeCrypto(address: string, amount: number, gas: number): PaymentResult { return { success: true, transactionId: \"\" }; }"
+      ]
+    }
+  ]
+}

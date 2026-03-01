@@ -1,0 +1,8 @@
+[
+  {
+    "description": "Flags magic literals — unnamed numeric constants in business logic",
+    "matchLineRange": [7, 36],
+    "matchRecommendationContainsAny": ["magic", "constant", "named", "literal", "extract", "variable", "readable", "0.15", "0.1", "0.05", "0.2", "10000", "50000", "7.99"],
+    "required": true
+  }
+]

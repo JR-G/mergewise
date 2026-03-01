@@ -141,6 +141,115 @@ ${header}\n${rows.join("\n")}
 `;
 }
 
+function buildCoreFewShotExamples(): string {
+  return `### Example A — correct finding
+\`\`\`typescript
++function processOrder(order: Order) {
++  validateOrder(order);
++  const tax = calculateTax(order);
++  const discount = applyDiscount(order);
++  sendConfirmationEmail(order.customer, buildReceipt(order, tax, discount));
++  updateInventory(order.items);
++  logAnalytics("order_processed", order.id);
++}
+\`\`\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.92, "evidence": "function processOrder", "recommendation": "\`processOrder\` mixes business logic (tax, discount) with side effects (email, inventory, analytics). Extract side effects into a \`dispatchOrderSideEffects\` function so the core computation is pure and testable (SRP)."}]}\`
+
+### Example B — correct finding (React)
+\`\`\`typescript
++const [fullName, setFullName] = useState("");
++useEffect(() => {
++  setFullName(\`\${firstName} \${lastName}\`);
++}, [firstName, lastName]);
+\`\`\`
+Correct output: \`{"findings": [{"line": 1, "category": "idiomatic", "confidence": 0.95, "evidence": "useState + useEffect to derive fullName", "recommendation": "\`fullName\` is derived from \`firstName\` and \`lastName\` — compute it directly as \`const fullName = \\u0060\${firstName} \${lastName}\\u0060\` instead of synchronising with state + effect."}]}\`
+
+### Example C — imperative loop that should be functional
+\`\`\`typescript
++function getActiveEmails(users: User[]): string[] {
++  const emails: string[] = [];
++  for (const user of users) {
++    if (user.active) {
++      emails.push(user.email);
++    }
++  }
++  return emails;
++}
+\`\`\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.88, "evidence": "imperative loop with push", "recommendation": "Replace the imperative filter-and-push loop with \`users.filter(u => u.active).map(u => u.email)\` for a more declarative style.", "suggestedRewrite": "function getActiveEmails(users: User[]): string[] {\\n  return users.filter(u => u.active).map(u => u.email);\\n}"}]}\`
+
+### Example D — god component with mixed concerns
+\`\`\`typescript
++function Dashboard() {
++  const [users, setUsers] = useState([]);
++  const [loading, setLoading] = useState(true);
++  useEffect(() => { fetch("/api/users").then(r => r.json()).then(setUsers).finally(() => setLoading(false)); }, []);
++  const sorted = users.sort((a, b) => a.name.localeCompare(b.name));
++  return <div>{sorted.map(u => <div key={u.id} onClick={() => { setUsers(prev => prev.filter(p => p.id !== u.id)); fetch(\`/api/users/\${u.id}\`, {method:"DELETE"}); }}>{u.name}</div>)}</div>;
++}
+\`\`\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.95, "evidence": "Dashboard component", "recommendation": "Dashboard mixes data fetching, sorting, deletion, and rendering. Extract data fetching into a custom hook (e.g. \`useUsers\`), move the delete handler into a named function, and separate the list rendering into a \`UserList\` component (SRP)."}]}\``;
+}
+
+function buildAdvancedFewShotExamples(): string {
+  return `### Example E — hardcoded dependency (DIP violation)
+\`\`\`typescript
++async function sendReport(reportId: string) {
++  const db = new PrismaClient();
++  const report = await db.report.findUnique({ where: { id: reportId } });
++  const s3 = new S3Client({ region: "eu-west-1" });
++  await s3.send(new PutObjectCommand({ Bucket: "reports", Key: reportId, Body: report }));
++}
+\`\`\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.92, "evidence": "new PrismaClient() and new S3Client() inside sendReport", "recommendation": "\`sendReport\` creates concrete dependencies (\`PrismaClient\`, \`S3Client\`) internally, making it impossible to test or swap implementations. Accept these as constructor or function parameters behind abstractions (DIP)."}]}\`
+
+### Example F — LSP violation (throws on inherited method)
+\`\`\`typescript
++interface Repository {
++  find(id: string): Item;
++  save(item: Item): void;
++  delete(id: string): void;
++}
++class ReadOnlyRepo implements Repository {
++  find(id: string) { return this.store.get(id); }
++  save(item: Item) { throw new Error("Not supported"); }
++  delete(id: string) { throw new Error("Not supported"); }
++}
+\`\`\`
+Correct output: \`{"findings": [{"line": 8, "category": "clean", "confidence": 0.93, "evidence": "save and delete throw 'Not supported'", "recommendation": "\`ReadOnlyRepo\` throws on \`save\` and \`delete\`, violating Liskov Substitution — callers with a \`Repository\` reference cannot safely use this subtype. Split the interface into \`Readable\` and \`Writable\` (ISP) so \`ReadOnlyRepo\` only implements what it supports."}]}\`
+
+### Example G — two distinct anti-patterns in the same diff
+\`\`\`typescript
++interface UserProfile {
++  name: string;
++  email: string | null;
++  phone?: string;
++  address: string | undefined;
++}
++
++function AuthProvider({ children }: { children: ReactNode }) {
++  const [user, setUser] = useState(null);
++  const login = (u: string) => setUser(u);
++  return (
++    <AuthContext.Provider value={{ user, login }}>
++      {children}
++    </AuthContext.Provider>
++  );
++}
+\`\`\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.88, "evidence": "email: string | null; phone?: string; address: string | undefined", "recommendation": "\`UserProfile\` mixes three absent-value conventions (\`| null\`, \`?\`, \`| undefined\`). Pick one — preferably optional (\`?\`) — and apply it consistently to reduce branching for callers."}, {"line": 14, "category": "perf", "confidence": 0.92, "evidence": "value={{ user, login }}", "recommendation": "The inline object \`{{ user, login }}\` creates a new reference every render, causing all \`useContext(AuthContext)\` consumers to re-render. Wrap the value in \`useMemo\` and stabilise \`login\` with \`useCallback\`."}]}\`
+
+Note: clean utility functions, static data objects, and configuration arrays should return \`{"findings": []}\`. Only flag code with genuine structural issues.`;
+}
+
+function buildFewShotExamples(): string {
+  return `## Few-shot examples
+
+${buildCoreFewShotExamples()}
+
+${buildAdvancedFewShotExamples()}`;
+}
+
 function buildQualityBarSection(): string {
   return `## Quality bar
 
@@ -173,7 +282,9 @@ Each finding must address a **distinct anti-pattern or concept**. Two findings a
 - If a try/catch block should be removed, flag the block once — do not separately flag the inner and outer catch.
 - Never emit two findings where one is a subset of the other (e.g. "extract validation" and "extract username validation").
 
-Aim for **breadth across different anti-pattern categories** rather than depth on a single issue. If a file has both a structural problem and a performance problem, flag both — do not spend two findings on two aspects of the same structural problem.`;
+Aim for **breadth across different anti-pattern categories** rather than depth on a single issue. If a file has both a structural problem and a performance problem, flag both — do not spend two findings on two aspects of the same structural problem.
+
+${buildFewShotExamples()}`;
 }
 
 /**
@@ -232,6 +343,7 @@ ${antiPatternSection}## Anti-instructions — do NOT do any of these
 - Do NOT apply SRP to small helper functions. SRP applies to modules, classes, and large functions/components (50+ lines mixing unrelated concerns). A function that performs sequential steps toward a single goal does not violate SRP.
 - Do NOT suggest replacing a for loop with while, recursion, or a different loop construct unless there is a concrete bug, off-by-one, or measurable readability improvement. Loop style is not a finding.
 - On refactoring PRs (large diffs that primarily move, rename, or reorganise code between files), do NOT suggest further extraction or restructuring. The PR is already doing that — review the result, not the direction.
+- Do NOT produce findings that say the code is correct, acceptable, well-structured, or needs no change. If you have nothing to flag, return \`{"findings": []}\`. A finding must identify something that should change — never use the findings array to praise code.
 
 ## What NOT to flag
 
@@ -252,7 +364,7 @@ ${antiPatternSection}## Anti-instructions — do NOT do any of these
 
 Respond with a JSON object containing a single key "findings" mapped to an array. Each finding must have:
 - "line": the 1-indexed line number from the NEW file (the line the comment should appear on — must be a line prefixed with "+" in the diff)
-- "category": one of "clean", "perf", "safety", "idiomatic"
+- "category": one of "clean" (clean-code principle violations: SRP, DRY, KISS, naming, structure), "perf", "safety", "idiomatic". Note: "clean" does NOT mean the code is clean — it means the finding relates to a clean-code principle.
 - "confidence": a number between ${confidenceThreshold} and 1.0 reflecting how certain you are this is a genuine, actionable issue worth changing. Err on the side of higher confidence — a wrong high-confidence finding is worse than a missed low-confidence one.
   - 0.9–1.0: Clear anti-pattern from the reference table that a staff engineer would flag immediately, or an unambiguous violation of a named principle (SRP, DRY, etc.) with a concrete fix
   - 0.8–0.89: Strong refactoring suggestion backed by engineering judgement — you are confident it improves the code and can name a specific change
@@ -268,7 +380,7 @@ Respond with a JSON object containing a single key "findings" mapped to an array
   5. Multi-line rewrites: join with "\\n". Include leading whitespace to preserve indentation.
   6. When in doubt, omit suggestedRewrite. A good recommendation without a rewrite is better than a hallucinated rewrite.
 
-If you have no findings, return {"findings": []}.
+If you have no findings, return {"findings": []}. NEVER produce a finding whose recommendation says the code is correct, well-written, or needs no change.
 
 ## Review approach
 

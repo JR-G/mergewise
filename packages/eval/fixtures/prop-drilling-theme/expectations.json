@@ -2,7 +2,7 @@
   {
     "description": "Flags prop drilling of theme through multiple layers",
     "matchLineRange": [1, 19],
-    "matchRecommendationContainsAny": ["context", "component", "combine", "reduce"],
+    "matchRecommendationContainsAny": ["context", "drilling", "useContext", "passing through", "threading"],
     "required": true
   },
   {

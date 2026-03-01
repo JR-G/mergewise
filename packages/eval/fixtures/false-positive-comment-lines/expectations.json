@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "description": "Should not flag TSDoc/JSDoc comment content as a code anti-pattern",
+    "matchLineRange": [1, 8],
+    "matchRecommendationContainsAny": ["inconsistent", "null", "undefined", "optional", "absent"],
+    "required": false,
+    "forbidden": true
+  },
+  {
+    "description": "Should not flag clean profile merge function for extraction or SRP",
+    "matchLineRange": [1, 35],
+    "matchRecommendationContainsAny": ["extract", "split", "SRP", "responsibility", "separate", "straightforward", "no change", "appropriate", "clear"],
+    "required": false,
+    "forbidden": true
+  }
+]

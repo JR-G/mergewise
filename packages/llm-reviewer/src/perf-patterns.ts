@@ -93,6 +93,6 @@ function Parent() {
 }`,
     principle: "Stable context values — memoise provider objects",
     detectionHint:
-      "Object literal or array literal passed directly as the value prop of a Context.Provider without useMemo.",
+      "Object literal or array literal passed directly as the value prop of a Context.Provider without useMemo. Also look for unstable callbacks (arrow functions not wrapped in useCallback) included in the value object.",
   },
 ];
