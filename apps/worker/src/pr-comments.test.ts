@@ -6,6 +6,7 @@ import {
   buildPrSummaryComment,
   collectCommentFeedback,
   postPreparedFindingComments,
+  PR_SUMMARY_CHAR_LIMIT,
   resolveOutdatedComments,
   upsertPrSummaryComment,
   type ExistingCommentState,
@@ -406,7 +407,7 @@ describe("buildPrSummaryComment", () => {
       recommendation: "This is a long recommendation that describes the issue in great detail and adds to the total character count of the summary comment body",
     }));
     const body = buildPrSummaryComment({ ...defaultInput, findings });
-    expect(body.length).toBeLessThanOrEqual(4000);
+    expect(body.length).toBeLessThanOrEqual(PR_SUMMARY_CHAR_LIMIT);
     expect(body).toContain("**Mergewise**");
     expect(body).toContain("50 suggestions");
     expect(body).toContain("Review details");
@@ -438,7 +439,7 @@ describe("buildPrSummaryComment", () => {
       { ...createFinding("f1", 0.9, "safety"), recommendation: "Fix null" },
     ];
     const body = buildPrSummaryComment({ ...defaultInput, findings });
-    expect(body.length).toBeLessThan(4000);
+    expect(body.length).toBeLessThan(PR_SUMMARY_CHAR_LIMIT);
     expect(body).toContain("Fix null");
     expect(body).not.toContain("truncated");
   });

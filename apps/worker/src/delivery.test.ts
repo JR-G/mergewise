@@ -1145,23 +1145,43 @@ describe("same-file similarity deduplication", () => {
       [
         {
           ...baseFinding,
-          findingId: "srp-line-10",
-          ruleId: "llm/srp",
+          findingId: "same-file-a",
+          ruleId: "llm/refactor",
           filePath: "src/handler.ts",
           line: 10,
           evidence: "function handleSubmit() { validate(); save(); notify(); }",
-          recommendation: "Extract validate logic for SRP",
+          recommendation: "Refactor the database query builder to reduce duplication",
           confidence: 0.92,
         },
         {
           ...baseFinding,
-          findingId: "srp-line-30",
-          ruleId: "llm/srp",
+          findingId: "same-file-b",
+          ruleId: "llm/refactor",
           filePath: "src/handler.ts",
           line: 30,
           evidence: "function handleSubmit() { validate(); save(); notify(); }",
-          recommendation: "Extract save logic for SRP",
+          recommendation: "Refactor the database connection pooling to reduce overhead",
           confidence: 0.85,
+        },
+        {
+          ...baseFinding,
+          findingId: "other-file-a",
+          ruleId: "llm/refactor",
+          filePath: "src/service.ts",
+          line: 10,
+          evidence: "function processOrder() { ... }",
+          recommendation: "Simplify the validation pipeline for incoming request payloads",
+          confidence: 0.91,
+        },
+        {
+          ...baseFinding,
+          findingId: "other-file-b",
+          ruleId: "llm/refactor",
+          filePath: "src/utils.ts",
+          line: 20,
+          evidence: "function fetchData() { ... }",
+          recommendation: "Simplify the sanitisation pipeline for incoming user submissions",
+          confidence: 0.88,
         },
       ],
       {
@@ -1170,8 +1190,10 @@ describe("same-file similarity deduplication", () => {
       },
     );
 
-    expect(delivery.comments.some((comment) => comment.finding.findingId === "srp-line-10")).toBe(true);
-    expect(delivery.comments.some((comment) => comment.finding.findingId === "srp-line-30")).toBe(false);
+    expect(delivery.comments.some((comment) => comment.finding.findingId === "same-file-a")).toBe(true);
+    expect(delivery.comments.some((comment) => comment.finding.findingId === "same-file-b")).toBe(false);
+    expect(delivery.comments.some((comment) => comment.finding.findingId === "other-file-a")).toBe(true);
+    expect(delivery.comments.some((comment) => comment.finding.findingId === "other-file-b")).toBe(true);
     expect(delivery.skippedBySimilarity).toBeGreaterThanOrEqual(1);
   });
 
@@ -1217,21 +1239,21 @@ describe("same-file similarity deduplication", () => {
         {
           ...baseFinding,
           findingId: "low-conf-same-file",
-          ruleId: "llm/srp",
+          ruleId: "llm/refactor",
           filePath: "src/handler.ts",
           line: 15,
           evidence: "function process() { ... }",
-          recommendation: "Extract notify logic for SRP",
+          recommendation: "Simplify the error handling chain to improve readability",
           confidence: 0.84,
         },
         {
           ...baseFinding,
           findingId: "high-conf-same-file",
-          ruleId: "llm/srp",
+          ruleId: "llm/refactor",
           filePath: "src/handler.ts",
           line: 40,
           evidence: "function process() { ... }",
-          recommendation: "Extract notify code for SRP",
+          recommendation: "Simplify the retry logic chain to improve resilience",
           confidence: 0.95,
         },
       ],

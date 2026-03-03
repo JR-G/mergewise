@@ -347,7 +347,7 @@ export function buildPrSummaryComment(input: PrSummaryInput): string {
   const baseContent = [...headerLines, ...reviewDetailsLines].join("\n");
 
   if (findings.length === 0) {
-    return baseContent;
+    return baseContent.slice(0, PR_SUMMARY_CHAR_LIMIT);
   }
 
   const findingsLines = buildFindingsSection(findings, repositoryFullName, headSha);
@@ -369,7 +369,7 @@ export function buildPrSummaryComment(input: PrSummaryInput): string {
     findingsBudget,
   );
 
-  return [...headerLines, ...truncatedFindingsLines, ...reviewDetailsLines].join("\n");
+  return [...headerLines, ...truncatedFindingsLines, ...reviewDetailsLines].join("\n").slice(0, PR_SUMMARY_CHAR_LIMIT);
 }
 
 /**
