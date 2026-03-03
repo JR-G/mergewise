@@ -181,7 +181,7 @@ describe("buildFileReviewPrompt context windowing", () => {
     expect(prompt).not.toContain("File context (lines");
   });
 
-  test("falls back to full file when windowed output is larger than full file", () => {
+  test("falls back to full file when windows cover most of the file", () => {
     const fileContent = makeFileContent(10);
     const diff: FileDiff = {
       filePath: "src/tiny.ts",
@@ -192,5 +192,21 @@ describe("buildFileReviewPrompt context windowing", () => {
 
     expect(prompt).toContain("Full file content");
     expect(prompt).not.toContain("File context (lines");
+  });
+
+  test("uses windowed context when coverage is below threshold", () => {
+    const fileContent = makeFileContent(500);
+    const diff: FileDiff = {
+      filePath: "src/medium.ts",
+      previousPath: null,
+      hunks: [
+        makeHunk("@@ -100,3 +100,5 @@", ["+added"]),
+        makeHunk("@@ -300,3 +300,5 @@", ["+added"]),
+      ],
+    };
+    const prompt = buildFileReviewPrompt(diff, fileContent, emptySignals);
+
+    expect(prompt).toContain("File context (lines");
+    expect(prompt).not.toContain("Full file content");
   });
 });
