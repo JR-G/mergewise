@@ -59,6 +59,56 @@ export function matchFinding(
 }
 
 /**
+ * Finds a maximum bipartite matching between expectations and findings
+ * using Kuhn's augmenting-path algorithm.
+ *
+ * @param expectations - Expectations to match (left vertices).
+ * @param findings - Findings to match against (right vertices).
+ * @param excludedFindings - Finding indices excluded from matching (e.g. forbidden).
+ * @param alreadyMatched - Finding indices already consumed by a prior pass.
+ * @returns Map from expectation index to matched finding index.
+ */
+function maximumBipartiteMatching(
+  expectations: readonly ExpectedFinding[],
+  findings: readonly Finding[],
+  excludedFindings: ReadonlySet<number>,
+  alreadyMatched: ReadonlySet<number> = new Set(),
+): Map<number, number> {
+  const matchForExpectation = new Map<number, number>();
+  const matchForFinding = new Map<number, number>();
+
+  function tryAugment(
+    expectationIndex: number,
+    visited: Set<number>,
+  ): boolean {
+    for (let findingIndex = 0; findingIndex < findings.length; findingIndex++) {
+      if (excludedFindings.has(findingIndex)) continue;
+      if (alreadyMatched.has(findingIndex)) continue;
+      if (visited.has(findingIndex)) continue;
+      const finding = findings[findingIndex];
+      const expectation = expectations[expectationIndex];
+      if (!finding || !expectation || !matchFinding(finding, expectation)) continue;
+
+      visited.add(findingIndex);
+
+      const currentOwner = matchForFinding.get(findingIndex);
+      if (currentOwner === undefined || tryAugment(currentOwner, visited)) {
+        matchForExpectation.set(expectationIndex, findingIndex);
+        matchForFinding.set(findingIndex, expectationIndex);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  for (let index = 0; index < expectations.length; index++) {
+    tryAugment(index, new Set());
+  }
+
+  return matchForExpectation;
+}
+
+/**
  * Scores a set of findings against expectations.
  *
  * @param findings - Findings produced by the LLM.
@@ -90,33 +140,27 @@ export function scoreFindings(
     }
   }
 
-  let requiredMatched = 0;
+  const requiredMatching = maximumBipartiteMatching(
+    requiredExpectations,
+    findings,
+    falsePositiveIndices,
+  );
 
-  for (const expectation of requiredExpectations) {
-    const matchIndex = findings.findIndex(
-      (finding, index) =>
-        !matchedFindingIndices.has(index) &&
-        !falsePositiveIndices.has(index) &&
-        matchFinding(finding, expectation),
-    );
-
-    if (matchIndex !== -1) {
-      matchedFindingIndices.add(matchIndex);
-      requiredMatched += 1;
-    }
+  for (const findingIndex of requiredMatching.values()) {
+    matchedFindingIndices.add(findingIndex);
   }
 
-  for (const expectation of optionalExpectations) {
-    const matchIndex = findings.findIndex(
-      (finding, index) =>
-        !matchedFindingIndices.has(index) &&
-        !falsePositiveIndices.has(index) &&
-        matchFinding(finding, expectation),
-    );
+  const requiredMatched = requiredMatching.size;
 
-    if (matchIndex !== -1) {
-      matchedFindingIndices.add(matchIndex);
-    }
+  const optionalMatching = maximumBipartiteMatching(
+    optionalExpectations,
+    findings,
+    falsePositiveIndices,
+    matchedFindingIndices,
+  );
+
+  for (const findingIndex of optionalMatching.values()) {
+    matchedFindingIndices.add(findingIndex);
   }
 
   const unmatchedFindings = findings.filter(

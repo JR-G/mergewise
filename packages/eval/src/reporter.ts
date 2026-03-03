@@ -69,6 +69,80 @@ export function printReport(results: readonly EvalResult[]): void {
   console.log();
 }
 
+interface MultiRunSummary {
+  readonly fixtureId: string;
+  readonly variant: string;
+  readonly meanRecall: number;
+  readonly fullRecallRate: number;
+  readonly meanPrecision: number;
+  readonly runs: number;
+}
+
+function summariseRuns(
+  allResults: readonly (readonly EvalResult[])[],
+): readonly MultiRunSummary[] {
+  const grouped = new Map<string, EvalResult[]>();
+
+  for (const results of allResults) {
+    for (const result of results) {
+      const key = `${result.fixtureId}::${result.variant}`;
+      const group = grouped.get(key);
+      if (group) {
+        group.push(result);
+      } else {
+        grouped.set(key, [result]);
+      }
+    }
+  }
+
+  const summaries: MultiRunSummary[] = [];
+
+  for (const results of grouped.values()) {
+    const totalRuns = results.length;
+    const recallSum = results.reduce((sum, result) => sum + result.score.recall, 0);
+    const precisionSum = results.reduce((sum, result) => sum + result.score.precision, 0);
+    const fullRecallCount = results.filter((result) => result.score.recall === 1.0).length;
+
+    const firstResult = results[0];
+    if (!firstResult) continue;
+
+    summaries.push({
+      fixtureId: firstResult.fixtureId,
+      variant: firstResult.variant,
+      meanRecall: recallSum / totalRuns,
+      fullRecallRate: fullRecallCount / totalRuns,
+      meanPrecision: precisionSum / totalRuns,
+      runs: totalRuns,
+    });
+  }
+
+  return summaries;
+}
+
+/**
+ * Prints a multi-run eval report with mean recall and P(full recall).
+ *
+ * @param allResults - Array of result arrays, one per run.
+ */
+export function printMultiRunReport(
+  allResults: readonly (readonly EvalResult[])[],
+): void {
+  console.log(`\n=== Eval Report (${allResults.length} runs) ===\n`);
+
+  const summaries = summariseRuns(allResults);
+
+  const header = `${"Fixture".padEnd(25)} ${"Variant".padEnd(18)} ${"Mean Recall".padEnd(16)} ${"P(full)".padEnd(14)} ${"Mean Prec.".padEnd(14)} ${"Runs".padEnd(6)}`;
+  console.log(header);
+  console.log("─".repeat(95));
+
+  for (const summary of summaries) {
+    const line = `${summary.fixtureId.padEnd(25)} ${summary.variant.padEnd(18)} ${colourScore(summary.meanRecall).padEnd(16 + ANSI_OVERHEAD)} ${colourScore(summary.fullRecallRate).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(summary.meanPrecision).padEnd(14 + ANSI_OVERHEAD)} ${String(summary.runs).padEnd(6)}`;
+    console.log(line);
+  }
+
+  console.log();
+}
+
 /**
  * Appends a run record as NDJSON to the results file.
  *

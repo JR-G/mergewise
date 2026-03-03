@@ -173,6 +173,69 @@ describe("scoreFindings", () => {
     expect(score.matchedFindings).toBe(1);
   });
 
+  test("optimal matching succeeds where greedy assignment would fail", () => {
+    const findings = [
+      makeFinding({
+        line: 5,
+        category: "clean",
+        confidence: 0.9,
+        recommendation: "Extract function",
+      }),
+      makeFinding({
+        line: 5,
+        category: "clean",
+        confidence: 0.9,
+        recommendation: "Extract function and rename variable",
+      }),
+    ];
+
+    const expectations: ExpectedFinding[] = [
+      {
+        description: "Greedy would consume finding[0] here via 'extract'",
+        matchLineRange: [1, 10],
+        matchCategory: "clean",
+        matchRecommendationContainsAny: ["extract"],
+        required: true,
+      },
+      {
+        description: "Only finding[1] matches (contains 'rename' in its recommendation)",
+        matchLineRange: [1, 10],
+        matchCategory: "clean",
+        matchRecommendationContains: "rename",
+        required: true,
+      },
+    ];
+
+    const score = scoreFindings(findings, expectations);
+    expect(score.requiredMatched).toBe(2);
+    expect(score.recall).toBe(1.0);
+  });
+
+  test("optimal matching for optional expectations", () => {
+    const findings = [
+      makeFinding({ line: 10, category: "perf", confidence: 0.7, recommendation: "Cache result" }),
+      makeFinding({ line: 10, category: "perf", confidence: 0.7, recommendation: "Cache result and batch" }),
+    ];
+
+    const expectations: ExpectedFinding[] = [
+      {
+        description: "Greedy would consume finding[0] via 'cache'",
+        matchCategory: "perf",
+        matchRecommendationContainsAny: ["cache"],
+        required: false,
+      },
+      {
+        description: "Only finding[1] matches 'batch', but greedy took finding[0] for first",
+        matchCategory: "perf",
+        matchRecommendationContains: "batch",
+        required: false,
+      },
+    ];
+
+    const score = scoreFindings(findings, expectations);
+    expect(score.matchedFindings).toBe(2);
+  });
+
   test("no findings produces perfect scores with zero false positives", () => {
     const score = scoreFindings([], []);
     expect(score.recall).toBe(1.0);
