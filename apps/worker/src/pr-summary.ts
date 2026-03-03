@@ -61,6 +61,20 @@ export const CATEGORY_SEVERITY_ORDER: readonly FindingCategory[] = [
   "idiomatic",
 ];
 
+/**
+ * Comparator that orders findings by severity (safety first), then file path,
+ * then line number.
+ */
+export function compareFindings(left: Finding, right: Finding): number {
+  const severityDiff =
+    CATEGORY_SEVERITY_ORDER.indexOf(left.category) -
+    CATEGORY_SEVERITY_ORDER.indexOf(right.category);
+  if (severityDiff !== 0) return severityDiff;
+  const fileCompare = left.filePath.localeCompare(right.filePath);
+  if (fileCompare !== 0) return fileCompare;
+  return left.line - right.line;
+}
+
 export function escapeTableCell(text: string): string {
   return text.replace(/\|/g, "\\|").replace(/\n/g, " ");
 }
@@ -201,15 +215,7 @@ function buildFindingsSection(
   repositoryFullName: string,
   headSha: string,
 ): string[] {
-  const sortedFindings = [...findings].sort((left, right) => {
-    const severityDiff =
-      CATEGORY_SEVERITY_ORDER.indexOf(left.category) -
-      CATEGORY_SEVERITY_ORDER.indexOf(right.category);
-    if (severityDiff !== 0) return severityDiff;
-    const fileCompare = left.filePath.localeCompare(right.filePath);
-    if (fileCompare !== 0) return fileCompare;
-    return left.line - right.line;
-  });
+  const sortedFindings = [...findings].sort(compareFindings);
 
   const badges = buildCategoryBadges(findings);
   const lines: string[] = [
@@ -251,15 +257,7 @@ function buildTruncatedFindingsSection(
   headSha: string,
   charBudget: number,
 ): string[] {
-  const sortedFindings = [...findings].sort((left, right) => {
-    const severityDiff =
-      CATEGORY_SEVERITY_ORDER.indexOf(left.category) -
-      CATEGORY_SEVERITY_ORDER.indexOf(right.category);
-    if (severityDiff !== 0) return severityDiff;
-    const fileCompare = left.filePath.localeCompare(right.filePath);
-    if (fileCompare !== 0) return fileCompare;
-    return left.line - right.line;
-  });
+  const sortedFindings = [...findings].sort(compareFindings);
 
   const badges = buildCategoryBadges(findings);
   const preamble = [
@@ -289,7 +287,7 @@ function buildTruncatedFindingsSection(
   const inlineRows: string[] = [];
   let overflowCount = 0;
 
-  for (const finding of sortedFindings) {
+  for (const [findingIndex, finding] of sortedFindings.entries()) {
     const emoji = CATEGORY_EMOJI[finding.category];
     const blobUrl = buildBlobUrl(repositoryFullName, headSha, finding.filePath, finding.line);
     const lineLink = `[${String(finding.line)}](${blobUrl})`;
@@ -300,7 +298,8 @@ function buildTruncatedFindingsSection(
       inlineRows.push(row);
       remaining -= row.length + 1;
     } else {
-      overflowCount += 1;
+      overflowCount = sortedFindings.length - findingIndex;
+      break;
     }
   }
 

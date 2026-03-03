@@ -92,6 +92,7 @@ export {
   PR_SUMMARY_CHAR_LIMIT,
   truncateRecommendation,
   buildCategoryBadges,
+  compareFindings,
 } from "./pr-summary";
 
 export {
