@@ -345,7 +345,7 @@ describe("buildPrSummaryComment", () => {
     expect(body).not.toContain("Use A | B");
   });
 
-  test("renders delivery counters inside collapsed review details when provided", () => {
+  test("renders only non-zero delivery counters inside collapsed review details", () => {
     const body = buildPrSummaryComment({
       ...defaultInput,
       deliveryCounters: {
@@ -357,11 +357,25 @@ describe("buildPrSummaryComment", () => {
       },
     });
     expect(body).toContain("Review details");
-    expect(body).toMatch(/Skipped by confidence: \d+/);
-    expect(body).toMatch(/Skipped by deduplication: \d+/);
-    expect(body).toMatch(/Skipped by policy: \d+/);
-    expect(body).toMatch(/Skipped by grouping: \d+/);
-    expect(body).toMatch(/Skipped by cap: \d+/);
+    expect(body).toContain("Skipped by confidence: 3");
+    expect(body).toContain("Skipped by deduplication: 1");
+    expect(body).toContain("Skipped by grouping: 2");
+    expect(body).not.toContain("Skipped by policy");
+    expect(body).not.toContain("Skipped by cap");
+  });
+
+  test("omits delivery section entirely when all counters are zero", () => {
+    const body = buildPrSummaryComment({
+      ...defaultInput,
+      deliveryCounters: {
+        skippedByConfidence: 0,
+        skippedByDeduplication: 0,
+        skippedByPolicy: 0,
+        skippedByGrouping: 0,
+        skippedByCap: 0,
+      },
+    });
+    expect(body).not.toContain("Delivery");
   });
 
   test("truncates long recommendations to approximately 80 characters", () => {
