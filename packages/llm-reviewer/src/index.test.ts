@@ -19,8 +19,9 @@ import {
   createLlmReviewerRule,
   createReviewClient,
   isCommentLine,
+  sanitiseSuggestedRewrite,
 } from "./index";
-import type { AntiPattern } from "./index";
+import type { AntiPattern, RawLlmFinding } from "./index";
 import { reviewFile } from "./review-file";
 
 function makeHunk(header: string, lines: string[]): DiffHunk {
@@ -519,7 +520,7 @@ describe("parseLlmResponse", () => {
     const multiLineDiff = makeDiff("src/file.ts", [
       makeHunk("@@ -1,3 +1,5 @@", [
         " existing",
-        "+const fetchUser = () => api.get('/user')",
+        "+const result = items.reduce((acc, item) => acc + item.value, 0)",
         "+added line 3",
         " existing2",
         "+added line 5",
@@ -531,22 +532,273 @@ describe("parseLlmResponse", () => {
           line: 2,
           category: "clean",
           confidence: 0.9,
-          evidence: "const fetchUser = () => api.get('/user')",
-          recommendation: "Use function declaration.",
-          suggestedRewrite: "function fetchUser() {\n  return api.get('/user')\n}",
+          evidence: "const result = items.reduce",
+          recommendation: "Use a more readable accumulator.",
+          suggestedRewrite: "const result = items\n  .filter(item => item.value > 0)\n  .reduce((acc, item) => acc + item.value, 0)",
         },
       ],
     });
 
     const result = parseLlmResponse(raw, multiLineDiff, PULL_REQUEST_METADATA);
     expect(result[0]!.patchPreview?.addedLines).toEqual([
-      "function fetchUser() {",
-      "  return api.get('/user')",
-      "}",
+      "const result = items",
+      "  .filter(item => item.value > 0)",
+      "  .reduce((acc, item) => acc + item.value, 0)",
     ]);
-    expect(result[0]!.patchPreview?.removedLines).toEqual(["const fetchUser = () => api.get('/user')"]);
+    expect(result[0]!.patchPreview?.removedLines).toEqual(["const result = items.reduce((acc, item) => acc + item.value, 0)"]);
   });
 
+});
+
+describe("sanitiseSuggestedRewrite", () => {
+  const standardDiff = makeDiff("src/file.ts", [
+    makeHunk("@@ -1,3 +1,6 @@", [
+      " existing",
+      "+const data = fetchUser()",
+      "+const name = data.name",
+      "+const email = data.email",
+      " more context",
+      "+return { name, email }",
+    ]),
+  ]);
+
+  const addedLineMap = extractAddedLineMap(standardDiff);
+  const addedLines = new Set(addedLineMap.keys());
+
+  test("preserves valid suggestedRewrite", () => {
+    const finding: RawLlmFinding = {
+      line: 2,
+      category: "clean",
+      confidence: 0.9,
+      evidence: "const data = fetchUser()",
+      recommendation: "Rename variable.",
+      suggestedRewrite: "const userData = fetchUser()",
+    };
+
+    const result = sanitiseSuggestedRewrite(finding, addedLines, addedLineMap);
+    expect(result.suggestedRewrite).toBe("const userData = fetchUser()");
+  });
+
+  test("passes through findings without suggestedRewrite", () => {
+    const finding: RawLlmFinding = {
+      line: 2,
+      category: "clean",
+      confidence: 0.9,
+      evidence: "const data = fetchUser()",
+      recommendation: "Rename variable.",
+    };
+
+    const result = sanitiseSuggestedRewrite(finding, addedLines, addedLineMap);
+    expect(result.suggestedRewrite).toBeUndefined();
+  });
+
+  test("strips rewrite when line is not in added lines", () => {
+    const finding: RawLlmFinding = {
+      line: 999,
+      category: "clean",
+      confidence: 0.9,
+      evidence: "phantom line",
+      recommendation: "Fix it.",
+      suggestedRewrite: "const fixed = true",
+    };
+
+    const result = sanitiseSuggestedRewrite(finding, addedLines, addedLineMap);
+    expect(result.suggestedRewrite).toBeUndefined();
+  });
+
+  test("strips rewrite exceeding 20 lines", () => {
+    const longRewrite = Array.from(
+      { length: 21 },
+      (_, index) => `  line${index}();`,
+    ).join("\n");
+
+    const finding: RawLlmFinding = {
+      line: 2,
+      category: "clean",
+      confidence: 0.9,
+      evidence: "const data = fetchUser()",
+      recommendation: "Refactor.",
+      suggestedRewrite: longRewrite,
+    };
+
+    const result = sanitiseSuggestedRewrite(finding, addedLines, addedLineMap);
+    expect(result.suggestedRewrite).toBeUndefined();
+  });
+
+  test("preserves rewrite at exactly 20 lines", () => {
+    const borderlineRewrite = Array.from(
+      { length: 20 },
+      (_, index) => `  line${index}();`,
+    ).join("\n");
+
+    const finding: RawLlmFinding = {
+      line: 2,
+      category: "clean",
+      confidence: 0.9,
+      evidence: "const data = fetchUser()",
+      recommendation: "Refactor.",
+      suggestedRewrite: borderlineRewrite,
+    };
+
+    const result = sanitiseSuggestedRewrite(finding, addedLines, addedLineMap);
+    expect(result.suggestedRewrite).toBe(borderlineRewrite);
+  });
+
+  test("strips rewrite containing function declaration not at referenced line", () => {
+    const finding: RawLlmFinding = {
+      line: 2,
+      category: "clean",
+      confidence: 0.9,
+      evidence: "const data = fetchUser()",
+      recommendation: "Extract helper.",
+      suggestedRewrite: "function fetchUserData() {\n  return api.get('/user')\n}",
+    };
+
+    const result = sanitiseSuggestedRewrite(finding, addedLines, addedLineMap);
+    expect(result.suggestedRewrite).toBeUndefined();
+  });
+
+  test("strips rewrite containing class declaration not at referenced line", () => {
+    const finding: RawLlmFinding = {
+      line: 3,
+      category: "clean",
+      confidence: 0.9,
+      evidence: "const name = data.name",
+      recommendation: "Use a DTO.",
+      suggestedRewrite: "class UserDTO {\n  constructor(public name: string) {}\n}",
+    };
+
+    const result = sanitiseSuggestedRewrite(finding, addedLines, addedLineMap);
+    expect(result.suggestedRewrite).toBeUndefined();
+  });
+
+  test("strips rewrite containing interface declaration not at referenced line", () => {
+    const finding: RawLlmFinding = {
+      line: 2,
+      category: "clean",
+      confidence: 0.9,
+      evidence: "const data = fetchUser()",
+      recommendation: "Type it.",
+      suggestedRewrite: "interface UserData {\n  name: string\n}",
+    };
+
+    const result = sanitiseSuggestedRewrite(finding, addedLines, addedLineMap);
+    expect(result.suggestedRewrite).toBeUndefined();
+  });
+
+  test("preserves rewrite with function declaration when original line also has one", () => {
+    const funcDiff = makeDiff("src/file.ts", [
+      makeHunk("@@ -1,1 +1,3 @@", [
+        "+function getData() {",
+        "+  return fetch('/api')",
+        "+}",
+      ]),
+    ]);
+    const funcLineMap = extractAddedLineMap(funcDiff);
+    const funcAddedLines = new Set(funcLineMap.keys());
+
+    const finding: RawLlmFinding = {
+      line: 1,
+      category: "clean",
+      confidence: 0.9,
+      evidence: "function getData",
+      recommendation: "Rename.",
+      suggestedRewrite: "function fetchData() {",
+    };
+
+    const result = sanitiseSuggestedRewrite(finding, funcAddedLines, funcLineMap);
+    expect(result.suggestedRewrite).toBe("function fetchData() {");
+  });
+
+  test("preserves rewrite when original line is an arrow function assignment", () => {
+    const arrowDiff = makeDiff("src/file.ts", [
+      makeHunk("@@ -1,1 +1,1 @@", [
+        "+const fetchUser = () => api.get('/user')",
+      ]),
+    ]);
+    const arrowLineMap = extractAddedLineMap(arrowDiff);
+    const arrowAddedLines = new Set(arrowLineMap.keys());
+
+    const finding: RawLlmFinding = {
+      line: 1,
+      category: "clean",
+      confidence: 0.9,
+      evidence: "const fetchUser = () =>",
+      recommendation: "Use function declaration.",
+      suggestedRewrite: "function fetchUser() {\n  return api.get('/user')\n}",
+    };
+
+    const result = sanitiseSuggestedRewrite(finding, arrowAddedLines, arrowLineMap);
+    expect(result.suggestedRewrite).toBeDefined();
+  });
+
+  test("strips rewrite containing arrow function when original is not a declaration", () => {
+    const finding: RawLlmFinding = {
+      line: 4,
+      category: "clean",
+      confidence: 0.9,
+      evidence: "const email = data.email",
+      recommendation: "Extract helper.",
+      suggestedRewrite: "const getEmail = () => data.email",
+    };
+
+    const result = sanitiseSuggestedRewrite(finding, addedLines, addedLineMap);
+    expect(result.suggestedRewrite).toBeUndefined();
+  });
+
+  test("strips rewrite with export class when original is a plain assignment", () => {
+    const finding: RawLlmFinding = {
+      line: 4,
+      category: "clean",
+      confidence: 0.9,
+      evidence: "const email = data.email",
+      recommendation: "Restructure.",
+      suggestedRewrite: "export class EmailService {\n  get() { return data.email }\n}",
+    };
+
+    const result = sanitiseSuggestedRewrite(finding, addedLines, addedLineMap);
+    expect(result.suggestedRewrite).toBeUndefined();
+  });
+
+  test("end-to-end: parseLlmResponse strips bad rewrites but keeps findings", () => {
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 2,
+          category: "clean",
+          confidence: 0.9,
+          evidence: "const data = fetchUser()",
+          recommendation: "Extract helper.",
+          suggestedRewrite: "function fetchUserData() {\n  return api.get('/user')\n}",
+        },
+      ],
+    });
+
+    const result = parseLlmResponse(raw, standardDiff, PULL_REQUEST_METADATA);
+    const finding = result.find((item) => item.line === 2);
+    expect(finding).toBeDefined();
+    expect(finding!.patchPreview).toBeUndefined();
+  });
+
+  test("end-to-end: parseLlmResponse preserves valid rewrites", () => {
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 2,
+          category: "clean",
+          confidence: 0.9,
+          evidence: "const data = fetchUser()",
+          recommendation: "Rename variable.",
+          suggestedRewrite: "const userData = fetchUser()",
+        },
+      ],
+    });
+
+    const result = parseLlmResponse(raw, standardDiff, PULL_REQUEST_METADATA);
+    const finding = result.find((item) => item.line === 2);
+    expect(finding).toBeDefined();
+    expect(finding!.patchPreview).toBeDefined();
+  });
 });
 
 describe("isCommentLine", () => {

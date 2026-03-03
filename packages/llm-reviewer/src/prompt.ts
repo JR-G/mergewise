@@ -374,11 +374,12 @@ Respond with a JSON object containing a single key "findings" mapped to an array
 - "recommendation": a concise, actionable refactoring suggestion written as a direct instruction (not a question). Max 500 chars. Name the principle or pattern when applicable. Do not use filler words. Do not praise the code. Do not hedge. Wrap code identifiers (function names, variable names, type names) in backticks.
 - "suggestedRewrite" (optional): replacement code for the line referenced by "line". **Rules:**
   1. suggestedRewrite MUST be a valid, compilable, drop-in fix for the exact line(s) at the referenced line number. It must make sense as a direct substitution — if you swapped the original line(s) for suggestedRewrite, the file must still parse and the surrounding code must still work.
-  2. Only provide when a concrete, compilable, drop-in fix exists for a localised change (a renamed variable, an idiomatic API swap, a simplified expression, a type annotation fix).
-  3. Never provide suggestedRewrite for structural suggestions like "extract this function", "split this component", or "move this to a separate file" — use the recommendation field for those.
-  4. If the suggestion cannot be expressed as a line-for-line replacement of the referenced lines, omit suggestedRewrite entirely.
-  5. Multi-line rewrites: join with "\\n". Include leading whitespace to preserve indentation.
-  6. When in doubt, omit suggestedRewrite. A good recommendation without a rewrite is better than a hallucinated rewrite.
+  2. suggestedRewrite must ONLY contain the replacement for the exact lines at the referenced line number. It must NOT include surrounding unchanged code, function signatures from other lines, or imports.
+  3. Only provide when a concrete, compilable, drop-in fix exists for a localised change (a renamed variable, an idiomatic API swap, a simplified expression, a type annotation fix).
+  4. Never provide suggestedRewrite for structural suggestions like "extract this function", "split this component", or "move this to a separate file" — use the recommendation field for those. If your suggestion is "extract this into a function", that is a structural change — omit suggestedRewrite entirely and describe it in recommendation only.
+  5. If the suggestion cannot be expressed as a line-for-line replacement of the referenced lines, omit suggestedRewrite entirely.
+  6. Multi-line rewrites: join with "\\n". Include leading whitespace to preserve indentation. Maximum 20 lines.
+  7. When in doubt, omit suggestedRewrite. A good recommendation without a rewrite is better than a hallucinated rewrite.
 
 If you have no findings, return {"findings": []}. NEVER produce a finding whose recommendation says the code is correct, well-written, or needs no change.
 
