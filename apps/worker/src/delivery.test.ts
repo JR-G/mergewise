@@ -38,6 +38,7 @@ describe("applyFindingGates", () => {
         model: "gpt-4o",
         tokenBudget: 30_000,
         baseUrl: "https://api.openai.com/v1",
+        consistencySamples: 1,
       },
     });
 
@@ -71,6 +72,7 @@ describe("applyFindingGates", () => {
         model: "gpt-4o",
         tokenBudget: 30_000,
         baseUrl: "https://api.openai.com/v1",
+        consistencySamples: 1,
       },
     });
 
@@ -105,6 +107,7 @@ describe("applyFindingGates", () => {
         model: "gpt-4o",
         tokenBudget: 30_000,
         baseUrl: "https://api.openai.com/v1",
+        consistencySamples: 1,
       },
     });
 

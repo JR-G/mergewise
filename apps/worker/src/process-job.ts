@@ -80,6 +80,7 @@ function buildLlmRules(
         model: llmConfig.model,
       },
       tokenBudget: llmConfig.tokenBudget,
+      consistencySamples: llmConfig.consistencySamples,
       userSkipPatterns: mergewiseConfig.review.skipPatterns.length > 0
         ? mergewiseConfig.review.skipPatterns
         : undefined,
