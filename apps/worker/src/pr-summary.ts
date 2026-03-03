@@ -369,7 +369,11 @@ export function buildPrSummaryComment(input: PrSummaryInput): string {
     findingsBudget,
   );
 
-  return [...headerLines, ...truncatedFindingsLines, ...reviewDetailsLines].join("\n").slice(0, PR_SUMMARY_CHAR_LIMIT);
+  const truncatedComment = [...headerLines, ...truncatedFindingsLines, ...reviewDetailsLines].join("\n");
+  if (truncatedComment.length > PR_SUMMARY_CHAR_LIMIT) {
+    return baseContent.slice(0, PR_SUMMARY_CHAR_LIMIT);
+  }
+  return truncatedComment;
 }
 
 /**
