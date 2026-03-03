@@ -24,6 +24,7 @@ export interface DeliveryCounters {
   readonly skippedByPolicy: number;
   readonly skippedByGrouping: number;
   readonly skippedByCap: number;
+  readonly skippedBySimilarity: number;
 }
 
 /**
@@ -59,6 +60,20 @@ export const CATEGORY_SEVERITY_ORDER: readonly FindingCategory[] = [
   "clean",
   "idiomatic",
 ];
+
+/**
+ * Comparator that orders findings by severity (safety first), then file path,
+ * then line number.
+ */
+export function compareFindings(left: Finding, right: Finding): number {
+  const severityDiff =
+    CATEGORY_SEVERITY_ORDER.indexOf(left.category) -
+    CATEGORY_SEVERITY_ORDER.indexOf(right.category);
+  if (severityDiff !== 0) return severityDiff;
+  const fileCompare = left.filePath.localeCompare(right.filePath);
+  if (fileCompare !== 0) return fileCompare;
+  return left.line - right.line;
+}
 
 export function escapeTableCell(text: string): string {
   return text.replace(/\|/g, "\\|").replace(/\n/g, " ");
@@ -96,6 +111,9 @@ export const INLINE_FINDING_LIMIT = 5;
 
 /** Maximum file paths listed inline before the remainder are summarised as a count. */
 export const MAX_FILES_DISPLAY = 50;
+
+/** Maximum character length for the PR summary comment body. */
+export const PR_SUMMARY_CHAR_LIMIT = 4000;
 
 /**
  * Escapes table-cell characters then truncates to {@link maxLength},
@@ -164,6 +182,7 @@ function buildReviewDetailsSection(
         ["Skipped by deduplication", deliveryCounters.skippedByDeduplication],
         ["Skipped by policy", deliveryCounters.skippedByPolicy],
         ["Skipped by grouping", deliveryCounters.skippedByGrouping],
+        ["Skipped by similarity", deliveryCounters.skippedBySimilarity],
         ["Skipped by cap", deliveryCounters.skippedByCap],
       ]
     : [];
@@ -196,15 +215,7 @@ function buildFindingsSection(
   repositoryFullName: string,
   headSha: string,
 ): string[] {
-  const sortedFindings = [...findings].sort((left, right) => {
-    const severityDiff =
-      CATEGORY_SEVERITY_ORDER.indexOf(left.category) -
-      CATEGORY_SEVERITY_ORDER.indexOf(right.category);
-    if (severityDiff !== 0) return severityDiff;
-    const fileCompare = left.filePath.localeCompare(right.filePath);
-    if (fileCompare !== 0) return fileCompare;
-    return left.line - right.line;
-  });
+  const sortedFindings = [...findings].sort(compareFindings);
 
   const badges = buildCategoryBadges(findings);
   const lines: string[] = [
@@ -235,6 +246,80 @@ function buildFindingsSection(
 }
 
 /**
+ * Builds a truncated findings section that fits within a character budget.
+ *
+ * Shows as many table rows as possible inline, then collapses the
+ * remainder into a nested `<details>` block with a count summary.
+ */
+function buildTruncatedFindingsSection(
+  findings: readonly Finding[],
+  repositoryFullName: string,
+  headSha: string,
+  charBudget: number,
+): string[] {
+  const sortedFindings = [...findings].sort(compareFindings);
+
+  const badges = buildCategoryBadges(findings);
+  const preamble = [
+    "",
+    "<details>",
+    `<summary>\u{1F4CB} Suggestions | ${badges}</summary>`,
+    "",
+    "| | File | Line | Suggestion |",
+    "| --- | --- | --- | --- |",
+  ];
+  const epilogue = ["", "</details>"];
+
+  const overflowTemplate = [
+    "",
+    "<details>",
+    `<summary>and __COUNT__ more</summary>`,
+    "",
+    "Remaining findings truncated for brevity.",
+    "",
+    "</details>",
+  ];
+  const overflowOverhead = overflowTemplate.join("\n").length + 10;
+
+  const baseLength = [...preamble, ...epilogue].join("\n").length + overflowOverhead;
+  let remaining = charBudget - baseLength;
+
+  const inlineRows: string[] = [];
+  let overflowCount = 0;
+
+  for (const [findingIndex, finding] of sortedFindings.entries()) {
+    const emoji = CATEGORY_EMOJI[finding.category];
+    const blobUrl = buildBlobUrl(repositoryFullName, headSha, finding.filePath, finding.line);
+    const lineLink = `[${String(finding.line)}](${blobUrl})`;
+    const truncated = truncateRecommendation(finding.recommendation);
+    const row = `| ${emoji} | \`${finding.filePath}\` | ${lineLink} | ${truncated} |`;
+
+    if (remaining - row.length - 1 > 0) {
+      inlineRows.push(row);
+      remaining -= row.length + 1;
+    } else {
+      overflowCount = sortedFindings.length - findingIndex;
+      break;
+    }
+  }
+
+  const lines = [...preamble, ...inlineRows];
+
+  if (overflowCount > 0) {
+    lines.push("");
+    lines.push("<details>");
+    lines.push(`<summary>and ${String(overflowCount)} more</summary>`);
+    lines.push("");
+    lines.push("Remaining findings truncated for brevity.");
+    lines.push("");
+    lines.push("</details>");
+  }
+
+  lines.push(...epilogue);
+  return lines;
+}
+
+/**
  * Builds the Markdown body for the PR summary comment.
  *
  * All sections are collapsed by default for a compact appearance similar
@@ -244,22 +329,50 @@ function buildFindingsSection(
 export function buildPrSummaryComment(input: PrSummaryInput): string {
   const { filePaths, findings, repositoryFullName, headSha, rulesRan, rulesPassed, deliveryCounters } = input;
   const fileCount = filePaths.length;
-  const lines: string[] = [PR_SUMMARY_COMMENT_MARKER];
+  const headerLines: string[] = [PR_SUMMARY_COMMENT_MARKER];
 
   if (findings.length > 0) {
     const noun = findings.length === 1 ? "suggestion" : "suggestions";
-    lines.push(
+    headerLines.push(
       `**Mergewise** \u00B7 Reviewed ${String(fileCount)} file${fileCount === 1 ? "" : "s"} \u2014 ${String(findings.length)} ${noun}`,
     );
-    lines.push(...buildFindingsSection(findings, repositoryFullName, headSha));
   } else {
-    lines.push(
+    headerLines.push(
       `**Mergewise** \u00B7 No issues found across ${String(fileCount)} file${fileCount === 1 ? "" : "s"} reviewed`,
     );
   }
 
-  lines.push(...buildReviewDetailsSection(rulesPassed, rulesRan, deliveryCounters, filePaths));
-  return lines.join("\n");
+  const reviewDetailsLines = buildReviewDetailsSection(rulesPassed, rulesRan, deliveryCounters, filePaths);
+  const baseContent = [...headerLines, ...reviewDetailsLines].join("\n");
+
+  if (findings.length === 0) {
+    return baseContent.slice(0, PR_SUMMARY_CHAR_LIMIT);
+  }
+
+  const findingsLines = buildFindingsSection(findings, repositoryFullName, headSha);
+  const fullComment = [...headerLines, ...findingsLines, ...reviewDetailsLines].join("\n");
+
+  if (fullComment.length <= PR_SUMMARY_CHAR_LIMIT) {
+    return fullComment;
+  }
+
+  const findingsBudget = PR_SUMMARY_CHAR_LIMIT - baseContent.length;
+  if (findingsBudget <= 0) {
+    return baseContent.slice(0, PR_SUMMARY_CHAR_LIMIT);
+  }
+
+  const truncatedFindingsLines = buildTruncatedFindingsSection(
+    findings,
+    repositoryFullName,
+    headSha,
+    findingsBudget,
+  );
+
+  const truncatedComment = [...headerLines, ...truncatedFindingsLines, ...reviewDetailsLines].join("\n");
+  if (truncatedComment.length > PR_SUMMARY_CHAR_LIMIT) {
+    return baseContent.slice(0, PR_SUMMARY_CHAR_LIMIT);
+  }
+  return truncatedComment;
 }
 
 /**

@@ -89,8 +89,10 @@ export {
   buildLocationLink,
   INLINE_FINDING_LIMIT,
   MAX_FILES_DISPLAY,
+  PR_SUMMARY_CHAR_LIMIT,
   truncateRecommendation,
   buildCategoryBadges,
+  compareFindings,
 } from "./pr-summary";
 
 export {
