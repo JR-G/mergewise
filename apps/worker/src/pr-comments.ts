@@ -203,6 +203,7 @@ interface PostFindingCommentsOptions {
 
 interface PostFindingCommentsDependencies {
   readonly logError?: (message: string) => void;
+  readonly logInfo?: (message: string) => void;
   readonly listPullRequestSummaryCommentsFn?: (
     options: ListPullRequestCommentsOptions,
   ) => Promise<GitHubIssueComment[]>;
@@ -292,6 +293,9 @@ export async function postPreparedFindingComments(
   dependencies: PostFindingCommentsDependencies = {},
 ): Promise<PostPreparedFindingCommentsResult> {
   const errorLogger = dependencies.logError ?? console.error;
+  const infoLogger = dependencies.logInfo ?? ((message: string) => {
+    void message;
+  });
   const createPullRequestReviewFn =
     dependencies.createPullRequestReviewFn ?? createPullRequestReview;
 
@@ -304,6 +308,15 @@ export async function postPreparedFindingComments(
       body: preparedComment.body,
     }),
   );
+
+  if (reviewComments.length === 0) {
+    infoLogger(
+      "[worker] skipped empty review submission" +
+        " pr=" + String(options.pullRequestNumber) +
+        " trace=" + options.traceId,
+    );
+    return { postedCount: 0, successes: [], failures: [], skipped };
+  }
 
   try {
     await createPullRequestReviewFn({
