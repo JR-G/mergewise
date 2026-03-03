@@ -4,6 +4,7 @@ import { ANTI_PATTERNS } from "./anti-patterns";
 import type { StructuralSignals } from "./signals";
 
 const CONTEXT_PADDING = 50;
+const WINDOWED_COVERAGE_THRESHOLD = 0.9;
 
 interface LineRange {
   readonly start: number;
@@ -94,7 +95,7 @@ function buildFileContextSection(
 
   const windowedLineCount = windows.reduce((sum, window) => sum + (window.end - window.start + 1), 0);
 
-  if (windowedLineCount >= totalLines) {
+  if (windowedLineCount >= totalLines * WINDOWED_COVERAGE_THRESHOLD) {
     return fullFileSection;
   }
 
@@ -111,10 +112,6 @@ function buildFileContextSection(
     parts.push("```typescript");
     parts.push(numberedLines.join("\n"));
     parts.push("```");
-  }
-
-  if (parts.join("\n").length >= fullFileSection.join("\n").length) {
-    return fullFileSection;
   }
 
   return parts;
