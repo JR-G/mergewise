@@ -4,12 +4,14 @@ import {
   type GitHubIssueComment,
   type ListPullRequestCommentsOptions,
 } from "@mergewise/github-client";
+import type { FeedbackRecord } from "@mergewise/feedback-store";
 import type { RuleExecutionResult } from "@mergewise/rule-engine";
 import type { AnalyzePullRequestJob } from "@mergewise/shared-types";
 import type { WorkerGitHubFetchOptions } from "./config";
 import type { prepareFindingDelivery } from "./delivery";
 import {
   loadExistingDedupeKeys,
+  type CommentFeedbackRecord,
   collectCommentFeedback,
   logFeedbackSummary,
   postPreparedFindingComments,
@@ -61,7 +63,7 @@ export async function deliverFindingsToGitHub(
     },
   );
 
-  logCommentFeedback(ctx, existingCommentState.allComments);
+  logCommentFeedback(ctx, existingCommentState.allComments, dependencies.feedbackStore);
 
   const newDedupeKeys = new Set(ctx.delivery.comments.map((comment) => comment.dedupeKey));
   const resolveResult = await resolveOutdatedComments(
@@ -108,9 +110,30 @@ export async function deliverFindingsToGitHub(
   return postingResult.postedCount;
 }
 
+function mapToFeedbackRecords(
+  records: readonly CommentFeedbackRecord[],
+  ctx: DeliveryContext,
+): FeedbackRecord[] {
+  const now = new Date().toISOString();
+  return records.map((record) => ({
+    findingId: record.findingId,
+    ruleId: record.ruleId,
+    category: record.category,
+    confidence: record.confidence,
+    thumbsUp: record.thumbsUp,
+    thumbsDown: record.thumbsDown,
+    otherReactions: record.otherReactions,
+    repoFullName: ctx.job.repo_full_name,
+    prNumber: ctx.job.pr_number,
+    traceId: ctx.traceId,
+    recordedAt: now,
+  }));
+}
+
 function logCommentFeedback(
   ctx: DeliveryContext,
   allComments: Parameters<typeof collectCommentFeedback>[0],
+  feedbackStore?: WorkerProcessingDependencies["feedbackStore"],
 ): void {
   const feedbackSummary = collectCommentFeedback(allComments);
   for (const record of feedbackSummary.records) {
@@ -123,6 +146,17 @@ function logCommentFeedback(
     );
   }
   logFeedbackSummary(feedbackSummary, ctx.traceId, ctx.job.job_id, ctx.loggers.infoLogger);
+
+  if (feedbackStore && feedbackSummary.records.length > 0) {
+    try {
+      feedbackStore.saveFeedback(mapToFeedbackRecords(feedbackSummary.records, ctx));
+    } catch (persistError) {
+      const detail = persistError instanceof Error ? persistError.message : String(persistError);
+      ctx.loggers.errorLogger(
+        `[worker] feedback_persist_failed trace=${ctx.traceId} job=${ctx.job.job_id}: ${detail}`,
+      );
+    }
+  }
 }
 
 function buildDeliverySummaryBody(ctx: DeliveryContext): string {

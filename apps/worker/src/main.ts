@@ -3,6 +3,7 @@ import {
   readAllAnalyzePullRequestJobs,
 } from "@mergewise/job-store";
 import { loadMergewiseConfig } from "@mergewise/config-loader";
+import { openFeedbackStore, type FeedbackStore } from "@mergewise/feedback-store";
 import type { AnalyzePullRequestJob } from "@mergewise/shared-types";
 
 import {
@@ -82,6 +83,10 @@ export interface StartWorkerProcessDependencies {
     signal: WorkerShutdownSignal,
     listener: (signal: WorkerShutdownSignal) => void,
   ) => void;
+  /**
+   * Feedback store factory override for testing.
+   */
+  readonly openFeedbackStoreFn?: () => FeedbackStore;
   /**
    * Info logger for startup and lifecycle events.
    */
@@ -164,6 +169,8 @@ export function startWorkerProcess(
 
   const config = loadConfigFn();
   const mergewiseConfig = loadMergewiseConfigFn();
+  const openFeedbackStoreFn = dependencies.openFeedbackStoreFn ?? openFeedbackStore;
+  const feedbackStore = openFeedbackStoreFn();
   const processedKeyState = createProcessedKeyState();
   const pollCycleState = { isPollInFlight: false };
 
@@ -203,6 +210,7 @@ export function startWorkerProcess(
             findingDeliveryOptions,
             mergewiseConfig,
             githubFetchOptions,
+            feedbackStore,
           });
           trackProcessedKey(idempotencyKey, processedKeyState, config.maxProcessedKeys);
         } catch (error) {
@@ -224,7 +232,10 @@ export function startWorkerProcess(
     logError: errorLogger,
   });
   const shutdownSignalHandler = createShutdownSignalHandler({
-    shutdown: () => pollingLoop.stop(),
+    shutdown: async () => {
+      await pollingLoop.stop();
+      feedbackStore.close();
+    },
     logInfo: infoLogger,
     logError: errorLogger,
   });
@@ -237,7 +248,10 @@ export function startWorkerProcess(
   registerSignalHandlerFn("SIGINT", shutdownSignalHandler);
 
   return {
-    shutdown: () => pollingLoop.stop(),
+    shutdown: async () => {
+      await pollingLoop.stop();
+      feedbackStore.close();
+    },
     handleSignal: shutdownSignalHandler,
   };
 }

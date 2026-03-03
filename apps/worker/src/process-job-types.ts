@@ -24,6 +24,7 @@ import type {
   CodebaseContext,
   Rule,
 } from "@mergewise/shared-types";
+import type { FeedbackStore } from "@mergewise/feedback-store";
 import type { WorkerGitHubFetchOptions } from "./config";
 import type { WorkerFindingDeliveryOptions } from "./delivery";
 import type { fetchPullRequestFilesWithRetry } from "./github-fetch";
@@ -157,4 +158,8 @@ export interface WorkerProcessingDependencies {
   readonly updateIssueCommentFn?: (
     options: UpdateIssueCommentOptions,
   ) => Promise<GitHubIssueComment>;
+  /**
+   * Persistent store for PR comment reaction feedback.
+   */
+  readonly feedbackStore?: FeedbackStore;
 }
