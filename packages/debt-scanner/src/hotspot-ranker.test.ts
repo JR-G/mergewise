@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { rankHotspots, computeSignalDensity } from "../hotspot-ranker.ts";
-import type { DebtGraph, DebtNode } from "../graph-types.ts";
+import { rankHotspots, computeSignalDensity } from "./hotspot-ranker.ts";
+import type { DebtGraph, DebtNode } from "./graph-types.ts";
 import type { StructuralSignals } from "@mergewise/llm-reviewer";
 
 function makeSignals(overrides: Partial<StructuralSignals> = {}): StructuralSignals {
