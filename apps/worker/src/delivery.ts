@@ -120,10 +120,11 @@ function deduplicateBySimilarity(
 function deduplicateBySameFileSimilarity(
   findings: readonly Finding[],
 ): { deduplicated: readonly Finding[]; skippedBySimilarity: number } {
-  const fileGroups = new Map<string, Finding[][]>();
+  const fileCategoryGroups = new Map<string, Finding[][]>();
 
   for (const finding of findings) {
-    const groups = fileGroups.get(finding.filePath) ?? [];
+    const bucketKey = `${finding.filePath}|${finding.category}`;
+    const groups = fileCategoryGroups.get(bucketKey) ?? [];
     let matchedGroup: Finding[] | undefined;
 
     for (const group of groups) {
@@ -141,14 +142,14 @@ function deduplicateBySameFileSimilarity(
       matchedGroup.push(finding);
     } else {
       groups.push([finding]);
-      fileGroups.set(finding.filePath, groups);
+      fileCategoryGroups.set(bucketKey, groups);
     }
   }
 
   const deduplicated: Finding[] = [];
   let skippedBySimilarity = 0;
 
-  for (const groups of fileGroups.values()) {
+  for (const groups of fileCategoryGroups.values()) {
     for (const group of groups) {
       const best = group.reduce((top, current) =>
         current.confidence > top.confidence ? current : top,

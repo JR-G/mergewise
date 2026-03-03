@@ -344,9 +344,10 @@ export function buildPrSummaryComment(input: PrSummaryInput): string {
   }
 
   const reviewDetailsLines = buildReviewDetailsSection(rulesPassed, rulesRan, deliveryCounters, filePaths);
+  const baseContent = [...headerLines, ...reviewDetailsLines].join("\n");
 
   if (findings.length === 0) {
-    return [...headerLines, ...reviewDetailsLines].join("\n");
+    return baseContent;
   }
 
   const findingsLines = buildFindingsSection(findings, repositoryFullName, headSha);
@@ -356,7 +357,6 @@ export function buildPrSummaryComment(input: PrSummaryInput): string {
     return fullComment;
   }
 
-  const baseContent = [...headerLines, ...reviewDetailsLines].join("\n");
   const findingsBudget = PR_SUMMARY_CHAR_LIMIT - baseContent.length;
   if (findingsBudget <= 0) {
     return baseContent.slice(0, PR_SUMMARY_CHAR_LIMIT);

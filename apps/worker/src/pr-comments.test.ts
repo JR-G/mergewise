@@ -374,6 +374,7 @@ describe("buildPrSummaryComment", () => {
         skippedByDeduplication: 0,
         skippedByPolicy: 0,
         skippedByGrouping: 0,
+        skippedBySimilarity: 0,
         skippedByCap: 0,
       },
     });
