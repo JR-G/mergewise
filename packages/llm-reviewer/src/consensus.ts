@@ -2,6 +2,8 @@ import type { Finding } from "@mergewise/shared-types";
 
 const LINE_PROXIMITY_THRESHOLD = 5;
 const JACCARD_SIMILARITY_THRESHOLD = 0.4;
+const MAX_FINDINGS_PER_RUN = 50;
+const MAX_TOTAL_FINDINGS = 500;
 
 /**
  * Extracts whitespace-separated word tokens from a string, lowercased.
@@ -84,10 +86,16 @@ export function applyConsensusFilter(
   if (totalRuns === 1 && firstRun) return [...firstRun];
 
   const clusters: ConsensusCluster[] = [];
+  let totalProcessed = 0;
 
   for (let runIndex = 0; runIndex < totalRuns; runIndex++) {
-    const runFindings = findingSets[runIndex] ?? [];
+    if (totalProcessed >= MAX_TOTAL_FINDINGS) break;
+
+    const rawRunFindings = findingSets[runIndex] ?? [];
+    const runFindings = rawRunFindings.slice(0, MAX_FINDINGS_PER_RUN);
     for (const finding of runFindings) {
+      if (totalProcessed >= MAX_TOTAL_FINDINGS) break;
+      totalProcessed += 1;
       const tokens = extractWordTokens(finding.recommendation);
       const tagged: FindingWithTokens = { finding, tokens };
 

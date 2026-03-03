@@ -13,6 +13,7 @@ import { extractStructuralSignals } from "./signals";
 
 const MAX_RESPONSE_TOKENS = 4096;
 const CONSISTENCY_TEMPERATURE = 0.5;
+const MAX_CONSISTENCY_SAMPLES = 10;
 
 export interface ReviewFileOptions {
   readonly fileDiff: FileDiff;
@@ -99,7 +100,7 @@ function mergeUsage(
  */
 export async function reviewFile(options: ReviewFileOptions): Promise<FileReviewResult> {
   const { fileDiff, pullRequest, codebaseContext, client } = options;
-  const consistencySamples = options.consistencySamples ?? 1;
+  const consistencySamples = Math.max(1, Math.min(options.consistencySamples ?? 1, MAX_CONSISTENCY_SAMPLES));
 
   const fullContent = await codebaseContext.readFile(fileDiff.filePath);
   const signals = extractStructuralSignals(fileDiff);
@@ -127,9 +128,21 @@ export async function reviewFile(options: ReviewFileOptions): Promise<FileReview
     }),
   );
 
-  const results = await Promise.all(samplePromises);
-  const findingSets = results.map((result) => result.findings);
-  const usages = results.map((result) => result.usage);
+  const settled = await Promise.allSettled(samplePromises);
+  const fulfilled = settled.filter(
+    (result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof runSingleReview>>> =>
+      result.status === "fulfilled",
+  );
+
+  if (fulfilled.length === 0) {
+    const firstRejected = settled.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    throw (firstRejected?.reason ?? new Error("All consistency samples failed")) as Error;
+  }
+
+  const findingSets = fulfilled.map((result) => result.value.findings);
+  const usages = fulfilled.map((result) => result.value.usage);
 
   const consensusFindings = applyConsensusFilter(findingSets);
   return { findings: consensusFindings, usage: mergeUsage(usages) };
