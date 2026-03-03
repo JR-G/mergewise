@@ -162,7 +162,7 @@ function calculateShipping(weight: number, zone: number): number {
 }`,
     principle: "Replace Magic Literal — name your constants",
     detectionHint:
-      "Numeric literals (other than 0, 1, -1) or repeated string literals used in conditionals, arithmetic, or comparisons without a named constant. Look for bare numbers in if/switch conditions, multiplications, or threshold checks.",
+      "Numeric literals (other than 0, 1, -1) or repeated string literals used inline in conditionals, arithmetic, or comparisons instead of referencing a named constant. Look for bare numbers in if/switch conditions, multiplications, or threshold checks. Do NOT flag the right-hand side of a named constant declaration (e.g. `const MAX_RETRIES = 3`) — that IS the fix, not the problem.",
   },
 
   {
