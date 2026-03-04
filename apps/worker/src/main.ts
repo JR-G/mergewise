@@ -170,7 +170,13 @@ export function startWorkerProcess(
   const config = loadConfigFn();
   const mergewiseConfig = loadMergewiseConfigFn();
   const openFeedbackStoreFn = dependencies.openFeedbackStoreFn ?? openFeedbackStore;
-  const feedbackStore = openFeedbackStoreFn();
+  let feedbackStore: FeedbackStore | undefined;
+  try {
+    feedbackStore = openFeedbackStoreFn();
+  } catch (storeError) {
+    const details = storeError instanceof Error ? storeError.message : String(storeError);
+    errorLogger(`[worker] feedback_store_open_failed: ${details}`);
+  }
   const processedKeyState = createProcessedKeyState();
   const pollCycleState = { isPollInFlight: false };
 
@@ -231,10 +237,19 @@ export function startWorkerProcess(
   const pollingLoop = createPollingLoopControllerFn(config.pollIntervalMs, pollAndProcessJobs, {
     logError: errorLogger,
   });
+  const closeFeedbackStore = (): void => {
+    try {
+      feedbackStore?.close();
+    } catch (closeError) {
+      const details = closeError instanceof Error ? closeError.message : String(closeError);
+      errorLogger(`[worker] feedback_store_close_failed: ${details}`);
+    }
+  };
+
   const shutdownSignalHandler = createShutdownSignalHandler({
     shutdown: async () => {
       await pollingLoop.stop();
-      feedbackStore.close();
+      closeFeedbackStore();
     },
     logInfo: infoLogger,
     logError: errorLogger,
@@ -250,7 +265,7 @@ export function startWorkerProcess(
   return {
     shutdown: async () => {
       await pollingLoop.stop();
-      feedbackStore.close();
+      closeFeedbackStore();
     },
     handleSignal: shutdownSignalHandler,
   };
