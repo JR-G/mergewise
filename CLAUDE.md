@@ -24,6 +24,10 @@ Run all four before opening a PR. If any fail, fix before proceeding.
 - No committing secrets, tokens, or private keys
 - No mentioning AI tools or assistants in commits, PRs, or code
 - No app-to-app imports — extract shared logic to a package
+- No `SELECT *` without `LIMIT` — all variable-length SQL queries must be bounded
+- No `parseInt` / `Number()` without immediate validation — check `isFinite` and range before use
+- No passing raw parsed numbers through multiple functions — validate at the boundary, use the validated value downstream
+- No nested if statements — use guard clauses and early returns
 
 ## Testing
 
@@ -41,6 +45,16 @@ expect(results.some(r => r.filePath === "src/index.ts")).toBe(true);
 expect(output).toContain("Review completed");
 ```
 
+### Boundary tests
+
+Functions that accept numeric input must have tests for boundary conditions:
+
+- Zero, negative, and very large values
+- `NaN` and non-integer floats where integers are expected
+- Empty collections passed to functions that iterate
+
+Functions that produce output (reports, SQL results, API payloads) must verify the output is bounded.
+
 ## Pre-PR Verification
 
 Before opening a PR, verify each against your actual diff — do not tick blindly:
@@ -49,3 +63,7 @@ Before opening a PR, verify each against your actual diff — do not tick blindl
 - Any output sent to external APIs has a size limit
 - New async operations handle errors and rejections
 - New I/O boundaries have failure-mode handling
+- Any `parseInt` / `Number()` call is immediately validated (isFinite, range check)
+- Any SQL query returning variable-length results has a LIMIT clause
+- Functions accepting numeric params have boundary tests (0, negative, large)
+- No function trusts its callers for input validity — validate at boundaries
