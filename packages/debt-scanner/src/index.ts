@@ -21,11 +21,11 @@ export { compareScans, type ScanComparison, type HotspotChange, type TrendDirect
 import { resolve, dirname } from "node:path";
 import { mkdirSync } from "node:fs";
 import { parseArgs } from "node:util";
-import type { ScanSummary } from "./graph-types.ts";
+import type { DebtProfile, ScanSummary } from "./graph-types.ts";
 import { scan, type ScanOptions } from "./scanner.ts";
 import { formatJsonReport, formatMarkdownReport, formatComparisonMarkdown, formatComparisonJson } from "./report.ts";
 import { openStore, type DebtStore } from "./store.ts";
-import { compareScans } from "./compare.ts";
+import { compareScans, type ScanComparison } from "./compare.ts";
 
 const DEFAULT_DB_PATH = ".mergewise-runtime/debt.db";
 
@@ -80,9 +80,15 @@ function parseCliArgs(): ParsedArgs {
     strict: true,
   });
 
+  const parsedTop = parseInt(values.top, 10);
+  if (!Number.isFinite(parsedTop) || parsedTop < 1) {
+    console.error(`Invalid --top value: "${values.top}". Must be a positive integer.`);
+    process.exit(1);
+  }
+
   return {
     repoPath: resolve(values.repo),
-    topCount: parseInt(values.top, 10),
+    topCount: parsedTop,
     format: values.format,
     skipLlm: values["no-llm"],
     dbPath: resolve(values.db),
@@ -92,6 +98,20 @@ function parseCliArgs(): ParsedArgs {
     model: values.model ?? process.env.LLM_EVAL_MODEL,
     baseUrl: values["base-url"] ?? process.env.LLM_EVAL_BASE_URL,
   };
+}
+
+function buildJsonOutput(profile: DebtProfile, comparison: ScanComparison | null): string {
+  const payload: Record<string, unknown> = {
+    report: JSON.parse(formatJsonReport(profile)) as unknown,
+  };
+  if (comparison) payload.comparison = JSON.parse(formatComparisonJson(comparison)) as unknown;
+  return JSON.stringify(payload, null, 2);
+}
+
+function buildMarkdownOutput(profile: DebtProfile, comparison: ScanComparison | null): string {
+  const parts = [formatMarkdownReport(profile)];
+  if (comparison) parts.push(formatComparisonMarkdown(comparison));
+  return parts.join("\n\n");
 }
 
 async function runScan(args: ParsedArgs, store: DebtStore): Promise<void> {
@@ -114,19 +134,17 @@ async function runScan(args: ParsedArgs, store: DebtStore): Promise<void> {
 
   const profile = await scan(scanOptions);
 
-  let output = args.format === "json"
-    ? formatJsonReport(profile)
-    : formatMarkdownReport(profile);
+  const comparison = args.compare && previousProfile
+    ? compareScans(previousProfile, profile)
+    : null;
 
-  if (args.compare && previousProfile) {
-    const comparison = compareScans(previousProfile, profile);
-    output += "\n\n";
-    output += args.format === "json"
-      ? formatComparisonJson(comparison)
-      : formatComparisonMarkdown(comparison);
-  } else if (args.compare) {
+  if (args.compare && !previousProfile) {
     console.error("No previous scan found for comparison.");
   }
+
+  const output = args.format === "json"
+    ? buildJsonOutput(profile, comparison)
+    : buildMarkdownOutput(profile, comparison);
 
   writeLine(output);
 }

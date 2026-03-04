@@ -27,8 +27,8 @@ function profileToSummary(profile: DebtProfile, id: string): ScanSummary {
     id,
     repoPath: profile.repoPath,
     scannedAt: profile.scannedAt,
-    totalFiles: profile.graph.nodes.size,
-    totalEdges: profile.graph.edges.length,
+    totalFiles: profile.totalFiles ?? profile.graph.nodes.size,
+    totalEdges: profile.totalEdges ?? profile.graph.edges.length,
     totalFindings: profile.findings.length,
     hotspotCount: profile.hotspots.length,
   };

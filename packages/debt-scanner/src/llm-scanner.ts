@@ -165,7 +165,9 @@ function validateRawFinding(
   if (typeof candidate.evidence !== "string" || candidate.evidence.length === 0) return null;
   if (typeof candidate.recommendation !== "string" || candidate.recommendation.length === 0) return null;
 
-  const endLine = typeof candidate.endLine === "number" ? candidate.endLine : candidate.line;
+  const rawEndLine = typeof candidate.endLine === "number" ? candidate.endLine : candidate.line;
+  if (!Number.isInteger(rawEndLine) || rawEndLine < 1 || rawEndLine < candidate.line) return null;
+  const endLine = rawEndLine;
   const patternId = typeof candidate.patternId === "string" ? candidate.patternId : "custom";
 
   return {

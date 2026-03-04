@@ -19,6 +19,7 @@ export interface ScanOptions {
 }
 
 const DEFAULT_TOP_COUNT = 20;
+const MAX_TOP_COUNT = 100;
 
 /**
  * Runs the full three-tier debt scan pipeline.
@@ -28,7 +29,7 @@ const DEFAULT_TOP_COUNT = 20;
  */
 export async function scan(options: ScanOptions): Promise<DebtProfile> {
   const { repoPath, onProgress } = options;
-  const topCount = options.topCount ?? DEFAULT_TOP_COUNT;
+  const topCount = Math.min(options.topCount ?? DEFAULT_TOP_COUNT, MAX_TOP_COUNT);
 
   onProgress?.("collect", "Collecting files...");
   const filePaths = await collectFiles(repoPath);

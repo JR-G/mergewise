@@ -46,6 +46,8 @@ export interface DebtProfile {
   readonly graph: DebtGraph;
   readonly findings: readonly DebtFinding[];
   readonly hotspots: readonly HotspotEntry[];
+  readonly totalFiles?: number;
+  readonly totalEdges?: number;
 }
 
 export interface ScanSummary {

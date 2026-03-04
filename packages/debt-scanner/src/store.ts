@@ -136,6 +136,8 @@ function reconstructProfile(
     graph: { nodes: new Map(), edges: [] },
     findings: findingRows.map(toFinding),
     hotspots: hotspotRows.map(toHotspot),
+    totalFiles: scanRow.total_files,
+    totalEdges: scanRow.total_edges,
   };
 }
 
@@ -164,6 +166,7 @@ interface Statements {
   queryScans: ReturnType<Database["prepare"]>;
   queryScansByRepo: ReturnType<Database["prepare"]>;
   queryScanById: ReturnType<Database["prepare"]>;
+  queryLatestByRepo: ReturnType<Database["prepare"]>;
   queryHotspots: ReturnType<Database["prepare"]>;
   queryFindings: ReturnType<Database["prepare"]>;
 }
@@ -182,9 +185,10 @@ function prepareStatements(database: Database): Statements {
       `INSERT INTO findings (scan_id, node_id, pattern_id, category, title, recommendation, confidence, line_start, line_end)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
-    queryScans: database.prepare("SELECT * FROM scans ORDER BY scanned_at DESC"),
-    queryScansByRepo: database.prepare("SELECT * FROM scans WHERE repo_path = ? ORDER BY scanned_at DESC"),
+    queryScans: database.prepare("SELECT * FROM scans ORDER BY scanned_at DESC LIMIT 100"),
+    queryScansByRepo: database.prepare("SELECT * FROM scans WHERE repo_path = ? ORDER BY scanned_at DESC LIMIT 100"),
     queryScanById: database.prepare("SELECT * FROM scans WHERE id = ?"),
+    queryLatestByRepo: database.prepare("SELECT * FROM scans WHERE repo_path = ? ORDER BY scanned_at DESC LIMIT 1"),
     queryHotspots: database.prepare(
       "SELECT node_id, file_path, score, centrality, signal_density, line_count FROM hotspots WHERE scan_id = ? ORDER BY score DESC",
     ),
@@ -237,8 +241,7 @@ function executeLoad(stmts: Statements, scanId: string): DebtProfile | null {
 }
 
 function executeLatest(stmts: Statements, repoPath: string): DebtProfile | null {
-  const rows = stmts.queryScansByRepo.all(repoPath) as ScanRow[];
-  const firstRow = rows[0];
-  if (!firstRow) return null;
-  return reconstructProfile(firstRow, stmts.queryHotspots, stmts.queryFindings);
+  const scanRow = stmts.queryLatestByRepo.get(repoPath) as ScanRow | undefined;
+  if (!scanRow) return null;
+  return reconstructProfile(scanRow, stmts.queryHotspots, stmts.queryFindings);
 }

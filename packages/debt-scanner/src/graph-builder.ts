@@ -1,5 +1,4 @@
 import { dirname, resolve, relative } from "node:path";
-import { existsSync } from "node:fs";
 import ts from "typescript";
 import type { DebtEdge, DebtGraph, DebtNode } from "./graph-types.ts";
 
@@ -89,13 +88,6 @@ function resolveImport(
 
   const exactRelative = relative(repoPath, resolved);
   if (knownPaths.has(exactRelative)) return exactRelative;
-
-  for (const extension of TS_EXTENSIONS) {
-    const candidate = resolved + extension;
-    if (existsSync(candidate)) {
-      return relative(repoPath, candidate);
-    }
-  }
 
   return null;
 }

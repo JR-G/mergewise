@@ -25,10 +25,10 @@ pre-commit:
         fi
     colocated-tests:
       run: |
-        if git diff --cached --name-only | grep -q '/__tests__/'; then
+        if git diff --cached --name-only | grep -qE '(^|/)__tests__/'; then
           echo "Tests must be colocated with source files, not in __tests__/ directories."
           echo "Place test.ts files next to the source they test (e.g. foo.test.ts beside foo.ts)."
-          git diff --cached --name-only | grep '/__tests__/'
+          git diff --cached --name-only | grep -E '(^|/)__tests__/'
           exit 1
         fi
     no-console-log:
