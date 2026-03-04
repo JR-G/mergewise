@@ -103,7 +103,7 @@ function buildFileContextSection(
 
   const windowedLineCount = windows.reduce((sum, window) => sum + (window.end - window.start + 1), 0);
 
-  if (windowedLineCount >= totalLines * WINDOWED_COVERAGE_THRESHOLD) {
+  if (windowedLineCount >= totalLines * WINDOWED_COVERAGE_THRESHOLD || windowedLineCount > MAX_FULL_FILE_LINES) {
     return fullFileSection;
   }
 

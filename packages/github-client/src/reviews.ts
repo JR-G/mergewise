@@ -123,7 +123,7 @@ export async function createPullRequestReview(
       })),
   };
   if (options.body !== undefined) {
-    requestBody.body = options.body;
+    requestBody.body = options.body.slice(0, MAX_COMMENT_BODY_LENGTH);
   }
   const response = await fetch(endpointUrl, {
     method: "POST",
