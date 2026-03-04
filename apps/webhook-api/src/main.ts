@@ -1,7 +1,8 @@
-import { enqueueAnalyzePullRequestJob } from "@mergewise/job-store";
+import { enqueueAnalyzePullRequestJob, enqueueCollectFeedbackJob } from "@mergewise/job-store";
 
 import {
   buildAnalyzePullRequestJob,
+  buildCollectFeedbackJob,
   cancelOrphanedCheckRun,
   createPendingCheckRun,
   createWebhookErrorResponse,
@@ -117,6 +118,45 @@ Bun.serve({
         "unsupported_pull_request_payload",
         "Unsupported pull_request payload",
         400,
+        requestId,
+      );
+    }
+
+    if (payload.action === "closed") {
+      const feedbackJob = buildCollectFeedbackJob(payload, requestId);
+      try {
+        enqueueCollectFeedbackJob(feedbackJob);
+      } catch (error) {
+        const cause = error instanceof Error ? error.stack ?? error.message : String(error);
+        logWebhookFailure({
+          event: "webhook_request_failed",
+          request_id: requestId,
+          http_status: 503,
+          error_code: "queue_enqueue_failed",
+          message: "Failed to queue feedback collection job",
+          github_event: eventName,
+          repository_full_name: feedbackJob.repo_full_name,
+          pull_request_number: feedbackJob.pr_number,
+          job_id: feedbackJob.job_id,
+          cause,
+        });
+        return createWebhookErrorResponse(
+          "queue_enqueue_failed",
+          "Failed to queue feedback collection job",
+          503,
+          requestId,
+        );
+      }
+
+      return createWebhookJsonResponse(
+        {
+          status: "queued",
+          request_id: requestId,
+          job_id: feedbackJob.job_id,
+          repo: feedbackJob.repo_full_name,
+          pr_number: feedbackJob.pr_number,
+        },
+        200,
         requestId,
       );
     }

@@ -3,6 +3,7 @@ import type {
   CodebaseAwareRule,
   CodebaseContext,
   Finding,
+  RepoLearnings,
 } from "@mergewise/shared-types";
 import { createReviewClient, type ReviewClientConfig } from "./client";
 import { selectFilesForReview } from "./file-selection";
@@ -51,6 +52,10 @@ export interface LlmReviewerConfig {
    * are kept. Defaults to 1 (single-shot).
    */
   readonly consistencySamples?: number;
+  /**
+   * Repository-level learnings to inject as review preferences.
+   */
+  readonly repoLearnings?: RepoLearnings;
   readonly onFileReviewError?: (filePath: string, error: unknown) => void;
   readonly onFileReviewComplete?: (filePath: string, findingCount: number, promptTokens: number, completionTokens: number) => void;
 }
@@ -76,6 +81,7 @@ export function createLlmReviewerRule(
   const userSkipPatterns = config.userSkipPatterns;
   const confidenceThreshold = config.confidenceThreshold;
   const consistencySamples = config.consistencySamples;
+  const repoLearnings = config.repoLearnings;
   const onFileReviewError = config.onFileReviewError ?? noop;
 
   return {
@@ -109,6 +115,7 @@ export function createLlmReviewerRule(
             client,
             confidenceThreshold,
             consistencySamples,
+            repoLearnings,
           });
           allFindings.push(...result.findings);
           config.onFileReviewComplete?.(

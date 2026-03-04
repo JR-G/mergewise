@@ -3,6 +3,7 @@ import type {
   FileDiff,
   Finding,
   PullRequestMetadata,
+  RepoLearnings,
 } from "@mergewise/shared-types";
 import { ANTI_PATTERNS } from "./anti-patterns";
 import type { CompletionUsage, ReviewClient } from "./client";
@@ -30,6 +31,10 @@ export interface ReviewFileOptions {
    * are kept. Defaults to 1 (single-shot, current behaviour).
    */
   readonly consistencySamples?: number;
+  /**
+   * Repository-level learnings injected into the user message as preferences.
+   */
+  readonly repoLearnings?: RepoLearnings;
 }
 
 /**
@@ -105,7 +110,7 @@ export async function reviewFile(options: ReviewFileOptions): Promise<FileReview
   const fullContent = await codebaseContext.readFile(fileDiff.filePath);
   const signals = extractStructuralSignals(fileDiff);
   const systemPrompt = buildSystemPrompt(ANTI_PATTERNS, options.confidenceThreshold);
-  const userPrompt = buildFileReviewPrompt(fileDiff, fullContent, signals);
+  const userPrompt = buildFileReviewPrompt(fileDiff, fullContent, signals, options.repoLearnings);
 
   if (consistencySamples <= 1) {
     const { content, usage } = await client.complete(

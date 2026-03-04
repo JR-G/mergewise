@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   buildAnalyzePullRequestJob,
+  buildCollectFeedbackJob,
   cancelOrphanedCheckRun,
   computeGitHubSignature,
   createPendingCheckRun,
@@ -128,6 +129,37 @@ describe("buildAnalyzePullRequestJob", () => {
   test("handles null installation_id", () => {
     const { installation: _, ...noInstall } = payload;
     const job = buildAnalyzePullRequestJob(noInstall, "trace-123");
+    expect(job.installation_id).toBeNull();
+  });
+});
+
+describe("buildCollectFeedbackJob", () => {
+  const payload: GitHubPullRequestWebhookEvent = {
+    action: "closed",
+    repository: { full_name: "acme/widget" },
+    pull_request: { number: 5, head: { sha: "def456" } },
+    installation: { id: 99 },
+  };
+
+  test("maps fields from webhook event", () => {
+    const job = buildCollectFeedbackJob(payload, "trace-456");
+    expect(job.type).toBe("collect-feedback");
+    expect(job.repo_full_name).toBe("acme/widget");
+    expect(job.pr_number).toBe(5);
+    expect(job.installation_id).toBe(99);
+    expect(job.trace_id).toBe("trace-456");
+  });
+
+  test("produces valid UUID for job_id", () => {
+    const job = buildCollectFeedbackJob(payload);
+    expect(job.job_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+  });
+
+  test("handles null installation_id", () => {
+    const { installation: _, ...noInstall } = payload;
+    const job = buildCollectFeedbackJob(noInstall);
     expect(job.installation_id).toBeNull();
   });
 });

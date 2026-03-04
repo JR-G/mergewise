@@ -1,10 +1,11 @@
 import {
   DEFAULT_JOB_FILE_PATH,
-  readAllAnalyzePullRequestJobs,
+  isCollectFeedbackJob,
+  readAllQueueJobs,
 } from "@mergewise/job-store";
 import { loadMergewiseConfig } from "@mergewise/config-loader";
 import { openFeedbackStore, type FeedbackStore } from "@mergewise/feedback-store";
-import type { AnalyzePullRequestJob } from "@mergewise/shared-types";
+import type { CollectFeedbackJob, QueueJob } from "@mergewise/shared-types";
 
 import {
   buildIdempotencyKey,
@@ -20,6 +21,7 @@ import {
   type WorkerFindingDeliveryOptions,
   type WorkerGitHubFetchOptions,
 } from "./index";
+import { processCollectFeedbackJob } from "./process-feedback-job";
 
 /**
  * Supported shutdown signals for graceful worker termination.
@@ -63,11 +65,15 @@ export interface StartWorkerProcessDependencies {
   /**
    * Queue reader implementation.
    */
-  readonly readAllAnalyzePullRequestJobsFn?: typeof readAllAnalyzePullRequestJobs;
+  readonly readAllQueueJobsFn?: typeof readAllQueueJobs;
   /**
-   * Job processing implementation.
+   * Analysis job processing implementation.
    */
   readonly processAnalyzePullRequestJobFn?: typeof processAnalyzePullRequestJob;
+  /**
+   * Feedback job processing implementation.
+   */
+  readonly processCollectFeedbackJobFn?: typeof processCollectFeedbackJob;
   /**
    * Polling loop constructor.
    */
@@ -155,10 +161,11 @@ export function startWorkerProcess(
 ): StartedWorkerProcess {
   const loadConfigFn = dependencies.loadConfigFn ?? loadConfig;
   const loadMergewiseConfigFn = dependencies.loadMergewiseConfigFn ?? loadMergewiseConfig;
-  const readAllAnalyzePullRequestJobsFn =
-    dependencies.readAllAnalyzePullRequestJobsFn ?? readAllAnalyzePullRequestJobs;
+  const readAllQueueJobsFn = dependencies.readAllQueueJobsFn ?? readAllQueueJobs;
   const processAnalyzePullRequestJobFn =
     dependencies.processAnalyzePullRequestJobFn ?? processAnalyzePullRequestJob;
+  const processCollectFeedbackJobFn =
+    dependencies.processCollectFeedbackJobFn ?? processCollectFeedbackJob;
   const createPollingLoopControllerFn =
     dependencies.createPollingLoopControllerFn ?? createPollingLoopController;
   const registerSignalHandlerFn =
@@ -182,9 +189,9 @@ export function startWorkerProcess(
 
   const pollAndProcessJobs = async (): Promise<void> => {
     const didRun = await runPollCycleWithInFlightGuard(pollCycleState, async () => {
-      let queuedJobs: AnalyzePullRequestJob[];
+      let queuedJobs: QueueJob[];
       try {
-        queuedJobs = readAllAnalyzePullRequestJobsFn();
+        queuedJobs = readAllQueueJobsFn();
       } catch (error) {
         const details = error instanceof Error ? error.stack ?? error.message : String(error);
         errorLogger(`[worker] failed to read queued jobs: ${details}`);
@@ -205,6 +212,15 @@ export function startWorkerProcess(
       };
 
       for (const queuedJob of queuedJobs) {
+        if (isCollectFeedbackJob(queuedJob)) {
+          await processFeedbackJobEntry(
+            queuedJob, processedKeyState, config.maxProcessedKeys,
+            processCollectFeedbackJobFn, feedbackStore, githubFetchOptions,
+            infoLogger, errorLogger,
+          );
+          continue;
+        }
+
         const idempotencyKey = buildIdempotencyKey(queuedJob);
         if (processedKeyState.keys.has(idempotencyKey)) {
           continue;
@@ -269,6 +285,37 @@ export function startWorkerProcess(
     },
     handleSignal: shutdownSignalHandler,
   };
+}
+
+async function processFeedbackJobEntry(
+  queuedJob: CollectFeedbackJob,
+  processedKeyState: ReturnType<typeof createProcessedKeyState>,
+  maxProcessedKeys: number,
+  processCollectFeedbackJobFn: typeof processCollectFeedbackJob,
+  feedbackStore: FeedbackStore | undefined,
+  githubFetchOptions: WorkerGitHubFetchOptions,
+  infoLogger: (message: string) => void,
+  errorLogger: (message: string) => void,
+): Promise<void> {
+  const feedbackIdempotencyKey = `feedback:${queuedJob.repo_full_name}#${queuedJob.pr_number}`;
+  if (processedKeyState.keys.has(feedbackIdempotencyKey)) {
+    return;
+  }
+
+  try {
+    await processCollectFeedbackJobFn(queuedJob, {
+      feedbackStore,
+      githubFetchOptions,
+      logInfo: infoLogger,
+      logError: errorLogger,
+    });
+    trackProcessedKey(feedbackIdempotencyKey, processedKeyState, maxProcessedKeys);
+  } catch (error) {
+    const details = error instanceof Error ? error.stack ?? error.message : String(error);
+    errorLogger(
+      `[worker] failed to process feedback job=${queuedJob.job_id}: ${details}`,
+    );
+  }
 }
 
 if (import.meta.main) {

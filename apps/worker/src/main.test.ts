@@ -103,7 +103,7 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllAnalyzePullRequestJobsFn: () => [],
+      readAllQueueJobsFn: () => [],
       processAnalyzePullRequestJobFn: async () => {
         throw new Error("should not run");
       },
@@ -183,7 +183,7 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllAnalyzePullRequestJobsFn: () => queuedJobs,
+      readAllQueueJobsFn: () => queuedJobs,
       processAnalyzePullRequestJobFn: async (job) => {
         processedJobIds.push(job.job_id);
         return {
@@ -263,7 +263,7 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllAnalyzePullRequestJobsFn: () => {
+      readAllQueueJobsFn: () => {
         throw new Error("queue read failed");
       },
       processAnalyzePullRequestJobFn: async () => {
@@ -344,7 +344,7 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllAnalyzePullRequestJobsFn: () => [queuedJob],
+      readAllQueueJobsFn: () => [queuedJob],
       processAnalyzePullRequestJobFn: async () => {
         await processingGate;
         throw new Error("processing failed");
@@ -439,7 +439,7 @@ describe("startWorkerProcess", () => {
             consistencySamples: 1,
           },
         }),
-        readAllAnalyzePullRequestJobsFn: () => [],
+        readAllQueueJobsFn: () => [],
         processAnalyzePullRequestJobFn: async () => {
           throw new Error("should not run");
         },

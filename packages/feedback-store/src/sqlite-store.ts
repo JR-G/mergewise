@@ -1,7 +1,13 @@
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { FeedbackRecord, FeedbackStore } from "./types";
+import type {
+  CategorySentiment,
+  FeedbackRecord,
+  FeedbackStore,
+  RepoInstruction,
+  RuleSentiment,
+} from "./types";
 
 const DEFAULT_DATABASE_PATH = ".mergewise-runtime/feedback.db";
 
@@ -22,15 +28,123 @@ CREATE TABLE IF NOT EXISTS comment_feedback (
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_repo_pr
   ON comment_feedback (repo_full_name, pr_number);
+CREATE INDEX IF NOT EXISTS idx_feedback_repo
+  ON comment_feedback (repo_full_name);
+
+CREATE TABLE IF NOT EXISTS repo_instructions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_full_name TEXT NOT NULL,
+  instruction TEXT NOT NULL,
+  rule_id TEXT,
+  category TEXT,
+  source_pr_number INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_instructions_repo
+  ON repo_instructions (repo_full_name);
 `;
 
-const INSERT_SQL = `
+const INSERT_FEEDBACK_SQL = `
 INSERT INTO comment_feedback (
   finding_id, rule_id, category, confidence,
   thumbs_up, thumbs_down, other_reactions,
   repo_full_name, pr_number, trace_id, recorded_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `;
+
+const INSERT_INSTRUCTION_SQL = `
+INSERT INTO repo_instructions (
+  repo_full_name, instruction, rule_id, category,
+  source_pr_number, created_at
+) VALUES (?, ?, ?, ?, ?, ?)
+`;
+
+const QUERY_INSTRUCTIONS_SQL = `
+SELECT repo_full_name, instruction, rule_id, category, source_pr_number, created_at
+FROM repo_instructions
+WHERE repo_full_name = ?
+ORDER BY created_at DESC
+LIMIT 30
+`;
+
+const QUERY_RULE_SENTIMENT_SQL = `
+SELECT
+  rule_id,
+  SUM(thumbs_up) AS thumbs_up,
+  SUM(thumbs_down) AS thumbs_down,
+  COUNT(*) AS total_records
+FROM comment_feedback
+WHERE repo_full_name = ?
+GROUP BY rule_id
+HAVING COUNT(*) >= 3
+ORDER BY thumbs_down DESC
+LIMIT 50
+`;
+
+const QUERY_DISLIKED_CATEGORIES_SQL = `
+SELECT
+  category,
+  SUM(thumbs_up) AS thumbs_up,
+  SUM(thumbs_down) AS thumbs_down,
+  COUNT(*) AS total_records
+FROM comment_feedback
+WHERE repo_full_name = ?
+GROUP BY category
+HAVING COUNT(*) >= 5
+LIMIT 20
+`;
+
+interface InstructionRow {
+  repo_full_name: string;
+  instruction: string;
+  rule_id: string | null;
+  category: string | null;
+  source_pr_number: number;
+  created_at: string;
+}
+
+interface SentimentRow {
+  rule_id: string;
+  thumbs_up: number;
+  thumbs_down: number;
+  total_records: number;
+}
+
+interface CategoryRow {
+  category: string;
+  thumbs_up: number;
+  thumbs_down: number;
+  total_records: number;
+}
+
+function mapInstructionRow(row: InstructionRow): RepoInstruction {
+  return {
+    repoFullName: row.repo_full_name,
+    instruction: row.instruction,
+    ruleId: row.rule_id,
+    category: row.category,
+    sourcePrNumber: row.source_pr_number,
+    createdAt: row.created_at,
+  };
+}
+
+function mapSentimentRow(row: SentimentRow): RuleSentiment {
+  return {
+    ruleId: row.rule_id,
+    thumbsUp: row.thumbs_up,
+    thumbsDown: row.thumbs_down,
+    totalRecords: row.total_records,
+  };
+}
+
+function mapCategoryRow(row: CategoryRow): CategorySentiment {
+  return {
+    category: row.category,
+    thumbsUp: row.thumbs_up,
+    thumbsDown: row.thumbs_down,
+    totalRecords: row.total_records,
+  };
+}
 
 /**
  * Opens a SQLite-backed feedback store, creating the database and schema if needed.
@@ -47,34 +161,48 @@ export function openFeedbackStore(databasePath = DEFAULT_DATABASE_PATH): Feedbac
   database.run("PRAGMA journal_mode = WAL;");
   database.run(SCHEMA_SQL);
 
-  const insertStatement = database.prepare(INSERT_SQL);
-  const insertMany = database.transaction((records: readonly FeedbackRecord[]) => {
+  const insertFeedbackStatement = database.prepare(INSERT_FEEDBACK_SQL);
+  const insertManyFeedback = database.transaction((records: readonly FeedbackRecord[]) => {
     for (const record of records) {
-      insertStatement.run(
-        record.findingId,
-        record.ruleId,
-        record.category,
-        record.confidence,
-        record.thumbsUp,
-        record.thumbsDown,
-        record.otherReactions,
-        record.repoFullName,
-        record.prNumber,
-        record.traceId,
-        record.recordedAt,
+      insertFeedbackStatement.run(
+        record.findingId, record.ruleId, record.category, record.confidence,
+        record.thumbsUp, record.thumbsDown, record.otherReactions,
+        record.repoFullName, record.prNumber, record.traceId, record.recordedAt,
       );
     }
   });
 
-  return {
-    saveFeedback(records: readonly FeedbackRecord[]): void {
-      if (records.length === 0) {
-        return;
-      }
-      insertMany(records);
-    },
+  const insertInstructionStatement = database.prepare(INSERT_INSTRUCTION_SQL);
+  const insertManyInstructions = database.transaction((instructions: readonly RepoInstruction[]) => {
+    for (const instruction of instructions) {
+      insertInstructionStatement.run(
+        instruction.repoFullName, instruction.instruction, instruction.ruleId,
+        instruction.category, instruction.sourcePrNumber, instruction.createdAt,
+      );
+    }
+  });
 
-    close(): void {
+  const queryInstructionsStmt = database.prepare(QUERY_INSTRUCTIONS_SQL);
+  const queryRuleSentimentStmt = database.prepare(QUERY_RULE_SENTIMENT_SQL);
+  const queryDislikedCategoriesStmt = database.prepare(QUERY_DISLIKED_CATEGORIES_SQL);
+
+  return {
+    saveFeedback(records) {
+      if (records.length > 0) insertManyFeedback(records);
+    },
+    saveInstructions(instructions) {
+      if (instructions.length > 0) insertManyInstructions(instructions);
+    },
+    queryInstructions(repoFullName) {
+      return (queryInstructionsStmt.all(repoFullName) as InstructionRow[]).map(mapInstructionRow);
+    },
+    queryRuleSentiment(repoFullName) {
+      return (queryRuleSentimentStmt.all(repoFullName) as SentimentRow[]).map(mapSentimentRow);
+    },
+    queryDislikedCategories(repoFullName) {
+      return (queryDislikedCategoriesStmt.all(repoFullName) as CategoryRow[]).map(mapCategoryRow);
+    },
+    close() {
       database.close();
     },
   };

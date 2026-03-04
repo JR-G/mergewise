@@ -4,11 +4,14 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { AnalyzePullRequestJob } from "@mergewise/shared-types";
+import type { AnalyzePullRequestJob, CollectFeedbackJob } from "@mergewise/shared-types";
 
 import {
   enqueueAnalyzePullRequestJob,
+  enqueueCollectFeedbackJob,
+  isCollectFeedbackJob,
   readAllAnalyzePullRequestJobs,
+  readAllQueueJobs,
 } from "./index";
 import type { OnSkippedLine } from "./index";
 
@@ -145,5 +148,128 @@ describe("job-store", () => {
     const jobs = readAllAnalyzePullRequestJobs(filePath);
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toEqual(job);
+  });
+});
+
+function makeFeedbackJob(overrides: Partial<CollectFeedbackJob> = {}): CollectFeedbackJob {
+  return {
+    type: "collect-feedback",
+    job_id: randomUUID(),
+    installation_id: 42,
+    repo_full_name: "acme/widget",
+    pr_number: 7,
+    queued_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+describe("isCollectFeedbackJob", () => {
+  test("returns true for valid collect-feedback job", () => {
+    expect(isCollectFeedbackJob(makeFeedbackJob())).toBe(true);
+  });
+
+  test("returns false for null", () => {
+    expect(isCollectFeedbackJob(null)).toBe(false);
+  });
+
+  test("returns false for analyze job (wrong type)", () => {
+    expect(isCollectFeedbackJob(makeJob())).toBe(false);
+  });
+
+  test("returns false when required fields are missing", () => {
+    expect(isCollectFeedbackJob({ type: "collect-feedback" })).toBe(false);
+  });
+
+  test("returns true with null installation_id", () => {
+    expect(isCollectFeedbackJob(makeFeedbackJob({ installation_id: null }))).toBe(true);
+  });
+
+  test("returns true with optional trace_id", () => {
+    expect(isCollectFeedbackJob(makeFeedbackJob({ trace_id: "abc" }))).toBe(true);
+  });
+});
+
+describe("enqueueCollectFeedbackJob", () => {
+  let tempDir: string;
+  let filePath: string;
+
+  beforeEach(() => {
+    tempDir = makeTempDir();
+    filePath = join(tempDir, "nested", "jobs.ndjson");
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test("round-trips enqueue then read via readAllQueueJobs", () => {
+    const feedbackJob = makeFeedbackJob();
+    enqueueCollectFeedbackJob(feedbackJob, filePath);
+
+    const jobs = readAllQueueJobs(filePath);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toEqual(feedbackJob);
+  });
+});
+
+describe("readAllQueueJobs", () => {
+  let tempDir: string;
+  let filePath: string;
+
+  beforeEach(() => {
+    tempDir = makeTempDir();
+    filePath = join(tempDir, "nested", "jobs.ndjson");
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test("returns empty array when file is missing", () => {
+    const missing = join(tempDir, "does-not-exist.ndjson");
+    expect(readAllQueueJobs(missing)).toEqual([]);
+  });
+
+  test("reads mixed analyze and feedback jobs", () => {
+    const analyzeJob = makeJob({ job_id: "analyze-1" });
+    const feedbackJob = makeFeedbackJob({ job_id: "feedback-1" });
+
+    enqueueAnalyzePullRequestJob(analyzeJob, filePath);
+    enqueueCollectFeedbackJob(feedbackJob, filePath);
+
+    const jobs = readAllQueueJobs(filePath);
+    expect(jobs).toHaveLength(2);
+    expect(jobs[0]!.job_id).toBe("analyze-1");
+    expect(jobs[1]!.job_id).toBe("feedback-1");
+  });
+
+  test("treats legacy lines without type field as analyze jobs", () => {
+    const legacyJob = {
+      job_id: "legacy-1",
+      installation_id: 42,
+      repo_full_name: "acme/widget",
+      pr_number: 7,
+      head_sha: "abc123",
+      queued_at: new Date().toISOString(),
+    };
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, `${JSON.stringify(legacyJob)}\n`, "utf8");
+
+    const jobs = readAllQueueJobs(filePath);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]!.job_id).toBe("legacy-1");
+  });
+
+  test("skips malformed lines", () => {
+    const feedbackJob = makeFeedbackJob({ job_id: "good" });
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, `not-json\n${JSON.stringify(feedbackJob)}\n`, "utf8");
+
+    const { callback, skips } = collectSkips();
+    const jobs = readAllQueueJobs(filePath, callback);
+
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]!.job_id).toBe("good");
+    expect(skips).toHaveLength(1);
   });
 });

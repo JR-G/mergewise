@@ -15,6 +15,7 @@ import {
   GitHubGraphQlError,
   listPullRequestInlineComments,
   listPullRequestReviewThreads,
+  listPullRequestReviewThreadsWithReplies,
   listPullRequestSummaryComments,
   minimizeComment,
   postPullRequestInlineComment,
@@ -932,6 +933,124 @@ describe("github-client", () => {
 
     expect(thrownError).toBeInstanceOf(GitHubGraphQlError);
     expect((thrownError as GitHubGraphQlError).message).toContain("Could not resolve");
+  });
+
+  test("listPullRequestReviewThreadsWithReplies fetches threads with full comment history", async () => {
+    const calls: FetchCall[] = [];
+    const fetchMock: FetchMock = async (input, init) => {
+      calls.push({ input, init });
+      return makeJsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: "PRT_kwDO1",
+                    comments: {
+                      nodes: [
+                        { body: "<!-- mergewise-meta -->", author: { login: "mergewise[bot]", id: "BOT_1" } },
+                        { body: "we don't care about this in tests", author: { login: "alice" } },
+                        { body: "agreed", author: { login: "bob" } },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+    };
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const threads = await listPullRequestReviewThreadsWithReplies({
+      owner: "acme",
+      repository: "widget",
+      pullRequestNumber: 3,
+      installationAccessToken: "ghs_token",
+      apiBaseUrl: "https://api.github.com",
+      traceId: "trace-replies-1",
+    });
+
+    expect(threads).toHaveLength(1);
+    expect(threads[0]!.id).toBe("PRT_kwDO1");
+    expect(threads[0]!.firstCommentBody).toContain("mergewise-meta");
+    expect(threads[0]!.comments).toHaveLength(3);
+    expect(threads[0]!.comments[0]!.authorIsBot).toBe(true);
+    expect(threads[0]!.comments[0]!.authorLogin).toBe("mergewise[bot]");
+    expect(threads[0]!.comments[1]!.authorIsBot).toBe(false);
+    expect(threads[0]!.comments[1]!.body).toBe("we don't care about this in tests");
+    expect(calls).toHaveLength(1);
+    const requestBody = JSON.parse(calls[0]!.init!.body as string) as {
+      query: string;
+      variables: Record<string, unknown>;
+    };
+    expect(requestBody.query).toContain("comments(first: 20)");
+    expect(requestBody.query).toContain("... on Bot");
+  });
+
+  test("listPullRequestReviewThreadsWithReplies handles threads with no comments", async () => {
+    const fetchMock: FetchMock = async () =>
+      makeJsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [{ id: "PRT_empty", comments: { nodes: [] } }],
+              },
+            },
+          },
+        },
+      });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const threads = await listPullRequestReviewThreadsWithReplies({
+      owner: "acme",
+      repository: "widget",
+      pullRequestNumber: 1,
+      installationAccessToken: "ghs_token",
+    });
+
+    expect(threads).toHaveLength(1);
+    expect(threads[0]!.comments).toHaveLength(0);
+    expect(threads[0]!.firstCommentBody).toBe("");
+  });
+
+  test("listPullRequestReviewThreadsWithReplies handles null author gracefully", async () => {
+    const fetchMock: FetchMock = async () =>
+      makeJsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: "PRT_null_author",
+                    comments: {
+                      nodes: [{ body: "ghost comment", author: null }],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const threads = await listPullRequestReviewThreadsWithReplies({
+      owner: "acme",
+      repository: "widget",
+      pullRequestNumber: 1,
+      installationAccessToken: "ghs_token",
+    });
+
+    expect(threads[0]!.comments[0]!.authorLogin).toBe("");
+    expect(threads[0]!.comments[0]!.authorIsBot).toBe(false);
   });
 
   test("updateIssueComment PATCHes the correct endpoint and returns updated comment", async () => {
