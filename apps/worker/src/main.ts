@@ -3,6 +3,7 @@ import {
   readAllAnalyzePullRequestJobs,
 } from "@mergewise/job-store";
 import { loadMergewiseConfig } from "@mergewise/config-loader";
+import { openFeedbackStore, type FeedbackStore } from "@mergewise/feedback-store";
 import type { AnalyzePullRequestJob } from "@mergewise/shared-types";
 
 import {
@@ -82,6 +83,10 @@ export interface StartWorkerProcessDependencies {
     signal: WorkerShutdownSignal,
     listener: (signal: WorkerShutdownSignal) => void,
   ) => void;
+  /**
+   * Feedback store factory override for testing.
+   */
+  readonly openFeedbackStoreFn?: () => FeedbackStore;
   /**
    * Info logger for startup and lifecycle events.
    */
@@ -164,6 +169,14 @@ export function startWorkerProcess(
 
   const config = loadConfigFn();
   const mergewiseConfig = loadMergewiseConfigFn();
+  const openFeedbackStoreFn = dependencies.openFeedbackStoreFn ?? openFeedbackStore;
+  let feedbackStore: FeedbackStore | undefined;
+  try {
+    feedbackStore = openFeedbackStoreFn();
+  } catch (storeError) {
+    const details = storeError instanceof Error ? storeError.message : String(storeError);
+    errorLogger(`[worker] feedback_store_open_failed: ${details}`);
+  }
   const processedKeyState = createProcessedKeyState();
   const pollCycleState = { isPollInFlight: false };
 
@@ -203,6 +216,7 @@ export function startWorkerProcess(
             findingDeliveryOptions,
             mergewiseConfig,
             githubFetchOptions,
+            feedbackStore,
           });
           trackProcessedKey(idempotencyKey, processedKeyState, config.maxProcessedKeys);
         } catch (error) {
@@ -223,8 +237,20 @@ export function startWorkerProcess(
   const pollingLoop = createPollingLoopControllerFn(config.pollIntervalMs, pollAndProcessJobs, {
     logError: errorLogger,
   });
+  const closeFeedbackStore = (): void => {
+    try {
+      feedbackStore?.close();
+    } catch (closeError) {
+      const details = closeError instanceof Error ? closeError.message : String(closeError);
+      errorLogger(`[worker] feedback_store_close_failed: ${details}`);
+    }
+  };
+
   const shutdownSignalHandler = createShutdownSignalHandler({
-    shutdown: () => pollingLoop.stop(),
+    shutdown: async () => {
+      await pollingLoop.stop();
+      closeFeedbackStore();
+    },
     logInfo: infoLogger,
     logError: errorLogger,
   });
@@ -237,7 +263,10 @@ export function startWorkerProcess(
   registerSignalHandlerFn("SIGINT", shutdownSignalHandler);
 
   return {
-    shutdown: () => pollingLoop.stop(),
+    shutdown: async () => {
+      await pollingLoop.stop();
+      closeFeedbackStore();
+    },
     handleSignal: shutdownSignalHandler,
   };
 }
