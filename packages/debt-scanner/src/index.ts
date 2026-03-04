@@ -17,6 +17,7 @@ export { scan, type ScanOptions } from "./scanner.ts";
 export { formatJsonReport, formatMarkdownReport, formatComparisonMarkdown, formatComparisonJson } from "./report.ts";
 export { openStore, type DebtStore } from "./store.ts";
 export { compareScans, type ScanComparison, type HotspotChange, type TrendDirection } from "./compare.ts";
+export { buildPrGraphContext, formatGraphContextPrompt, type FileGraphContext, type PrGraphContext } from "./graph-context.ts";
 
 import { resolve, dirname } from "node:path";
 import { mkdirSync } from "node:fs";
