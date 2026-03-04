@@ -109,20 +109,14 @@ export async function createPullRequestReview(
   const requestBody: Record<string, unknown> = {
     commit_id: options.commitId,
     event: options.event,
-    comments: options.comments.map((comment) => {
-      const clampedLine = Math.max(1, Math.floor(comment.line));
-      if (clampedLine !== comment.line) {
-        console.warn(
-          `[github-client] clamped review comment line: path=${comment.path} original=${comment.line} clamped=${clampedLine}`,
-        );
-      }
-      return {
+    comments: options.comments
+      .filter((comment) => Number.isInteger(comment.line) && comment.line >= 1)
+      .map((comment) => ({
         path: comment.path,
-        line: clampedLine,
+        line: comment.line,
         side: comment.side ?? "RIGHT",
         body: comment.body,
-      };
-    }),
+      })),
   };
   if (options.body !== undefined) {
     requestBody.body = options.body;

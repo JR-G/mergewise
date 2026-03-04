@@ -296,6 +296,11 @@ export function parseLlmResponse(
       continue;
     }
 
+    const firstLineInfo = rawFinding.line === 1 ? addedLineMap.get(1) : undefined;
+    if (firstLineInfo && !hasEvidenceLineOverlap(rawFinding.evidence, firstLineInfo.content)) {
+      continue;
+    }
+
     const sanitised = sanitiseSuggestedRewrite(rawFinding, addedLines, addedLineMap);
     const lineInfo = addedLineMap.get(sanitised.line);
 
@@ -315,7 +320,7 @@ export function parseLlmResponse(
       filePath: diff.filePath,
       line: rawFinding.line,
       evidence: rawFinding.evidence.slice(0, 200),
-      recommendation: rawFinding.recommendation.slice(0, 500),
+      recommendation: rawFinding.recommendation.slice(0, 600),
       ...(patchPreview ? { patchPreview } : {}),
       confidence: rawFinding.confidence,
       status: "posted",
@@ -325,9 +330,32 @@ export function parseLlmResponse(
   return deduplicateByProximity(findings);
 }
 
+/**
+ * Checks whether evidence text shares at least one identifier with the
+ * content of a code line. Used to detect misanchored findings where the
+ * LLM defaults to line 1 but describes code elsewhere in the file.
+ *
+ * @param evidence - Short code quote from the LLM finding.
+ * @param lineContent - Source code at the referenced line.
+ * @returns True when at least one identifier token overlaps.
+ */
+export function hasEvidenceLineOverlap(
+  evidence: string,
+  lineContent: string,
+): boolean {
+  const evidenceTokens = extractTokens(evidence);
+  const lineTokens = extractTokens(lineContent);
+
+  if (evidenceTokens.size === 0 || lineTokens.size === 0) return true;
+
+  for (const token of evidenceTokens) {
+    if (lineTokens.has(token)) return true;
+  }
+  return false;
+}
+
 const PROXIMITY_THRESHOLD = 5;
 const MAX_FINDINGS_PER_FILE = 8;
-
 
 /**
  * Collapses nearby findings of the same category into a single
