@@ -159,7 +159,7 @@ function validateRawFinding(
 
   const candidate = raw as RawDebtFinding;
 
-  if (typeof candidate.line !== "number" || !Number.isInteger(candidate.line)) return null;
+  if (typeof candidate.line !== "number" || !Number.isInteger(candidate.line) || candidate.line < 1) return null;
   if (typeof candidate.confidence !== "number" || candidate.confidence < 0.7 || candidate.confidence > 1) return null;
   if (typeof candidate.category !== "string" || candidate.category.length === 0) return null;
   if (typeof candidate.evidence !== "string" || candidate.evidence.length === 0) return null;

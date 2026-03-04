@@ -190,10 +190,10 @@ function prepareStatements(database: Database): Statements {
     queryScanById: database.prepare("SELECT * FROM scans WHERE id = ?"),
     queryLatestByRepo: database.prepare("SELECT * FROM scans WHERE repo_path = ? ORDER BY scanned_at DESC LIMIT 1"),
     queryHotspots: database.prepare(
-      "SELECT node_id, file_path, score, centrality, signal_density, line_count FROM hotspots WHERE scan_id = ? ORDER BY score DESC",
+      "SELECT node_id, file_path, score, centrality, signal_density, line_count FROM hotspots WHERE scan_id = ? ORDER BY score DESC LIMIT 500",
     ),
     queryFindings: database.prepare(
-      "SELECT node_id, pattern_id, category, title, recommendation, confidence, line_start, line_end FROM findings WHERE scan_id = ?",
+      "SELECT node_id, pattern_id, category, title, recommendation, confidence, line_start, line_end FROM findings WHERE scan_id = ? LIMIT 2000",
     ),
   };
 }
