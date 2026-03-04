@@ -1,4 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import {
   createGitHubAppJwt,
@@ -102,13 +103,48 @@ export function loadConfig(): WebhookApiConfig {
 
   const appIdRaw = process.env.GITHUB_APP_ID;
   const githubAppId = appIdRaw ? Number.parseInt(appIdRaw, 10) : undefined;
-  const rawPrivateKey = process.env.GITHUB_APP_PRIVATE_KEY;
-  const normalizedPrivateKey = rawPrivateKey !== undefined
-    ? rawPrivateKey.replace(/\\n/g, "\n").trim()
-    : undefined;
-  const githubAppPrivateKeyPem = normalizedPrivateKey !== "" ? normalizedPrivateKey : undefined;
+  const githubAppPrivateKeyPem = resolvePrivateKeyPem();
 
   return { port, webhookSecret, githubAppId, githubAppPrivateKeyPem };
+}
+
+/**
+ * Resolves the GitHub App private key PEM from environment variables.
+ *
+ * Checks `GITHUB_APP_PRIVATE_KEY` (inline PEM) first, then falls back to
+ * `GITHUB_APP_PRIVATE_KEY_PATH` (file path) to match the worker's resolution
+ * order.
+ *
+ * @returns Normalised PEM string, or `undefined` when no key is configured.
+ */
+function resolvePrivateKeyPem(): string | undefined {
+  const inlineKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY;
+  if (inlineKeyRaw !== undefined) {
+    const normalised = inlineKeyRaw.replace(/\\n/g, "\n").trim();
+    return normalised !== "" ? normalised : undefined;
+  }
+
+  const keyPathRaw = process.env.GITHUB_APP_PRIVATE_KEY_PATH;
+  const keyPath = keyPathRaw?.trim();
+  if (!keyPath) {
+    return undefined;
+  }
+
+  try {
+    const fileContent = readFileSync(keyPath, "utf8");
+    const normalised = fileContent.replace(/\\n/g, "\n").trim();
+    return normalised !== "" ? normalised : undefined;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(
+      JSON.stringify({
+        event: "private_key_file_read_failed",
+        path: keyPath,
+        error: detail,
+      }),
+    );
+    return undefined;
+  }
 }
 
 /**
@@ -224,11 +260,29 @@ export async function createPendingCheckRun(
   dependencies: CreatePendingCheckRunDependencies = {},
 ): Promise<number | null> {
   if (!config.githubAppId || !config.githubAppPrivateKeyPem) {
+    console.error(
+      JSON.stringify({
+        event: "pending_check_run_skipped",
+        reason: "missing_app_credentials",
+        repository_full_name: payload.repository.full_name,
+        pull_request_number: payload.pull_request.number,
+        has_app_id: config.githubAppId !== undefined,
+        has_private_key: config.githubAppPrivateKeyPem !== undefined,
+      }),
+    );
     return null;
   }
 
   const installationId = payload.installation?.id;
   if (installationId === undefined) {
+    console.error(
+      JSON.stringify({
+        event: "pending_check_run_skipped",
+        reason: "missing_installation_id",
+        repository_full_name: payload.repository.full_name,
+        pull_request_number: payload.pull_request.number,
+      }),
+    );
     return null;
   }
 
@@ -259,7 +313,12 @@ export async function createPendingCheckRun(
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error(
-      `[webhook-api] failed to create pending check run: ${detail}`,
+      JSON.stringify({
+        event: "pending_check_run_failed",
+        repository_full_name: payload.repository.full_name,
+        pull_request_number: payload.pull_request.number,
+        error: detail,
+      }),
     );
     return null;
   }

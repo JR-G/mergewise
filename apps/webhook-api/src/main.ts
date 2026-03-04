@@ -186,6 +186,7 @@ Bun.serve({
         repo_full_name: job.repo_full_name,
         pr_number: job.pr_number,
         head_sha: job.head_sha,
+        check_run_id: checkRunId,
       }),
     );
 
@@ -204,5 +205,5 @@ Bun.serve({
 });
 
 console.log(
-  `[webhook-api] listening on :${config.port} (signature verification: ${config.webhookSecret ? "enabled" : "disabled"})`,
+  `[webhook-api] listening on :${config.port} (signature verification: ${config.webhookSecret ? "enabled" : "disabled"}, pending check runs: ${config.githubAppId && config.githubAppPrivateKeyPem ? "enabled" : "disabled"})`,
 );

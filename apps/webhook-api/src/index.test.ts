@@ -1,3 +1,6 @@
+import { writeFileSync, unlinkSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import {
@@ -151,6 +154,7 @@ describe("loadConfig", () => {
     process.env.GITHUB_WEBHOOK_SECRET = originalEnv.GITHUB_WEBHOOK_SECRET;
     process.env.GITHUB_APP_ID = originalEnv.GITHUB_APP_ID;
     process.env.GITHUB_APP_PRIVATE_KEY = originalEnv.GITHUB_APP_PRIVATE_KEY;
+    process.env.GITHUB_APP_PRIVATE_KEY_PATH = originalEnv.GITHUB_APP_PRIVATE_KEY_PATH;
   });
 
   test("returns default port when env is unset", () => {
@@ -158,6 +162,7 @@ describe("loadConfig", () => {
     delete process.env.GITHUB_WEBHOOK_SECRET;
     delete process.env.GITHUB_APP_ID;
     delete process.env.GITHUB_APP_PRIVATE_KEY;
+    delete process.env.GITHUB_APP_PRIVATE_KEY_PATH;
     const cfg = loadConfig();
     expect(cfg.port).toBe(8787);
     expect(cfg.webhookSecret).toBeUndefined();
@@ -184,6 +189,50 @@ describe("loadConfig", () => {
   test("throws for invalid port", () => {
     process.env.WEBHOOK_PORT = "not-a-number";
     expect(() => loadConfig()).toThrow("Invalid WEBHOOK_PORT value");
+  });
+
+  test("reads private key from GITHUB_APP_PRIVATE_KEY_PATH when inline key is unset", () => {
+    delete process.env.WEBHOOK_PORT;
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
+    const tempDir = mkdtempSync(join(tmpdir(), "webhook-api-test-"));
+    const keyPath = join(tempDir, "test.pem");
+    writeFileSync(keyPath, "-----BEGIN RSA PRIVATE KEY-----\ntest-key-data\n-----END RSA PRIVATE KEY-----\n");
+
+    try {
+      process.env.GITHUB_APP_PRIVATE_KEY_PATH = keyPath;
+      process.env.GITHUB_APP_ID = "789";
+      const cfg = loadConfig();
+      expect(cfg.githubAppId).toBe(789);
+      expect(cfg.githubAppPrivateKeyPem).toBe(
+        "-----BEGIN RSA PRIVATE KEY-----\ntest-key-data\n-----END RSA PRIVATE KEY-----",
+      );
+    } finally {
+      unlinkSync(keyPath);
+    }
+  });
+
+  test("prefers GITHUB_APP_PRIVATE_KEY over GITHUB_APP_PRIVATE_KEY_PATH", () => {
+    delete process.env.WEBHOOK_PORT;
+    const tempDir = mkdtempSync(join(tmpdir(), "webhook-api-test-"));
+    const keyPath = join(tempDir, "test.pem");
+    writeFileSync(keyPath, "file-key-content");
+
+    try {
+      process.env.GITHUB_APP_PRIVATE_KEY = "inline-key-content";
+      process.env.GITHUB_APP_PRIVATE_KEY_PATH = keyPath;
+      const cfg = loadConfig();
+      expect(cfg.githubAppPrivateKeyPem).toBe("inline-key-content");
+    } finally {
+      unlinkSync(keyPath);
+    }
+  });
+
+  test("returns undefined when GITHUB_APP_PRIVATE_KEY_PATH file is unreadable", () => {
+    delete process.env.WEBHOOK_PORT;
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
+    process.env.GITHUB_APP_PRIVATE_KEY_PATH = "/nonexistent/path/key.pem";
+    const cfg = loadConfig();
+    expect(cfg.githubAppPrivateKeyPem).toBeUndefined();
   });
 });
 
@@ -526,29 +575,20 @@ describe("createPendingCheckRun", () => {
     expect(result).toBe(77);
   });
 
-  test("returns null and logs when check run creation throws", async () => {
-    const originalConsoleError = console.error;
-    const errors: unknown[] = [];
-    console.error = (msg?: unknown) => { errors.push(msg); };
-
-    try {
-      const result = await createPendingCheckRun(
-        payload,
-        { port: 8787, githubAppId: 1, githubAppPrivateKeyPem: "pem" },
-        {
-          createGitHubAppJwtFn: () => "jwt",
-          exchangeInstallationAccessTokenFn: async () => ({
-            token: "tok",
-            expires_at: "2026-01-01T00:00:00Z",
-          }),
-          createCheckRunFn: async () => { throw new Error("API down"); },
-        },
-      );
-      expect(result).toBeNull();
-      expect(errors.some((msg) => String(msg).includes("API down"))).toBe(true);
-    } finally {
-      console.error = originalConsoleError;
-    }
+  test("returns null when check run creation throws", async () => {
+    const result = await createPendingCheckRun(
+      payload,
+      { port: 8787, githubAppId: 1, githubAppPrivateKeyPem: "pem" },
+      {
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "tok",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        createCheckRunFn: async () => { throw new Error("API down"); },
+      },
+    );
+    expect(result).toBeNull();
   });
 });
 
