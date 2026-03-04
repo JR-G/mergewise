@@ -20,6 +20,7 @@ import {
   createReviewClient,
   isCommentLine,
   sanitiseSuggestedRewrite,
+  hasEvidenceLineOverlap,
 } from "./index";
 import type { AntiPattern, RawLlmFinding } from "./index";
 import { reviewFile } from "./review-file";
@@ -548,6 +549,64 @@ describe("parseLlmResponse", () => {
     expect(result[0]!.patchPreview?.removedLines).toEqual(["const result = items.reduce((acc, item) => acc + item.value, 0)"]);
   });
 
+  test("drops line-1 finding when evidence does not match line content", () => {
+    const importDiff = makeDiff("src/service.ts", [
+      makeHunk("@@ -1,1 +1,1 @@", [
+        '+import { Database } from "bun:sqlite"',
+      ]),
+    ]);
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 1,
+          category: "clean",
+          confidence: 0.9,
+          evidence: "executeSave mixing transaction logic",
+          recommendation: "Extract transaction into a helper.",
+        },
+      ],
+    });
+    const result = parseLlmResponse(raw, importDiff, PULL_REQUEST_METADATA);
+    expect(result).toHaveLength(0);
+  });
+
+  test("keeps line-1 finding when evidence matches line content", () => {
+    const importDiff = makeDiff("src/service.ts", [
+      makeHunk("@@ -1,1 +1,1 @@", [
+        '+import { Database } from "bun:sqlite"',
+      ]),
+    ]);
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 1,
+          category: "clean",
+          confidence: 0.9,
+          evidence: "Database import from bun:sqlite",
+          recommendation: "Use a shared database module.",
+        },
+      ],
+    });
+    const result = parseLlmResponse(raw, importDiff, PULL_REQUEST_METADATA);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.line).toBe(1);
+  });
+
+});
+
+describe("hasEvidenceLineOverlap", () => {
+  test("returns true when tokens overlap", () => {
+    expect(hasEvidenceLineOverlap("function processOrder", "function processOrder(order: Order) {")).toBe(true);
+  });
+
+  test("returns false when no tokens overlap", () => {
+    expect(hasEvidenceLineOverlap("executeSave mixing transactions", 'import { Database } from "bun:sqlite"')).toBe(false);
+  });
+
+  test("returns true when either side has no tokens", () => {
+    expect(hasEvidenceLineOverlap("", "some code")).toBe(true);
+    expect(hasEvidenceLineOverlap("some evidence", "")).toBe(true);
+  });
 });
 
 describe("sanitiseSuggestedRewrite", () => {
@@ -909,15 +968,15 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("Complexity");
   });
 
-  test("frames findings as refactoring suggestions", () => {
+  test("requires concrete engineering cost before naming a principle", () => {
     const prompt = buildSystemPrompt();
-    expect(prompt).toContain("refactoring suggestions");
-    expect(prompt).toContain("Name the principle");
+    expect(prompt).toContain("concrete engineering cost");
+    expect(prompt).toContain("explain the cost first");
   });
 
-  test("sets recommendation max to 500 chars", () => {
+  test("sets recommendation max to 600 chars", () => {
     const prompt = buildSystemPrompt();
-    expect(prompt).toContain("Max 500 chars");
+    expect(prompt).toContain("Max 600 chars");
   });
 
   test("excludes lint/formatting concerns", () => {
@@ -1514,8 +1573,8 @@ describe("createLlmReviewerRule", () => {
         const userMessage = body.messages?.find((message) => message.content?.includes("## File:"))?.content ?? "";
         const isFileA = userMessage.includes("## File: src/a.ts");
         const findingsForFile = isFileA
-          ? [{ line: 1, category: "idiomatic", confidence: 0.8, evidence: "a", recommendation: "fix a" }]
-          : [{ line: 1, category: "safety", confidence: 0.9, evidence: "b", recommendation: "fix b" }];
+          ? [{ line: 1, category: "idiomatic", confidence: 0.8, evidence: "const aa", recommendation: "fix a" }]
+          : [{ line: 1, category: "safety", confidence: 0.9, evidence: "const bb", recommendation: "fix b" }];
         return new Response(buildCompletionResponse(JSON.stringify({ findings: findingsForFile })), {
           headers: { "Content-Type": "application/json" },
         });
@@ -1580,7 +1639,7 @@ describe("createLlmReviewerRule", () => {
           buildCompletionResponse(
             JSON.stringify({
               findings: [
-                { line: 1, category: "clean", confidence: 0.9, evidence: "ok", recommendation: "keep" },
+                { line: 1, category: "clean", confidence: 0.9, evidence: "const y", recommendation: "keep" },
               ],
             }),
           ),
