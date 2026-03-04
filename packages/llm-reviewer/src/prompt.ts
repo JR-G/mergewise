@@ -5,6 +5,7 @@ import type { StructuralSignals } from "./signals";
 
 const CONTEXT_PADDING = 50;
 const WINDOWED_COVERAGE_THRESHOLD = 0.9;
+const MAX_FULL_FILE_LINES = 2000;
 
 interface LineRange {
   readonly start: number;
@@ -81,7 +82,9 @@ function buildFileContextSection(
   const totalLines = fileLines.length;
   const windows = computeContextWindows(hunks, totalLines);
 
-  const numberedFullContent = fileLines
+  const cappedLines = fileLines.slice(0, MAX_FULL_FILE_LINES);
+  const truncated = fileLines.length > MAX_FULL_FILE_LINES;
+  const numberedFullContent = cappedLines
     .map((line, index) => `// line ${index + 1}: ${line}`)
     .join("\n");
 
@@ -90,6 +93,7 @@ function buildFileContextSection(
     "## Full file content (for context only — only comment on changed lines)",
     "```typescript",
     numberedFullContent,
+    ...(truncated ? [`// ...[truncated ${fileLines.length - MAX_FULL_FILE_LINES} lines]`] : []),
     "```",
   ];
 

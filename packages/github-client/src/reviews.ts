@@ -6,6 +6,9 @@ import {
   parseResponse,
 } from "./http";
 
+const MAX_REVIEW_COMMENTS = 50;
+const MAX_COMMENT_BODY_LENGTH = 10_000;
+
 /**
  * Inline comment included in a batch pull request review.
  */
@@ -111,11 +114,12 @@ export async function createPullRequestReview(
     event: options.event,
     comments: options.comments
       .filter((comment) => Number.isInteger(comment.line) && comment.line >= 1)
+      .slice(0, MAX_REVIEW_COMMENTS)
       .map((comment) => ({
         path: comment.path,
         line: comment.line,
         side: comment.side ?? "RIGHT",
-        body: comment.body,
+        body: comment.body.slice(0, MAX_COMMENT_BODY_LENGTH),
       })),
   };
   if (options.body !== undefined) {
