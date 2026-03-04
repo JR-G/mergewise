@@ -129,9 +129,9 @@ function buildAntiPatternReferenceTable(
     (pattern) =>
       `| ${escapePipe(pattern.id)} | ${escapePipe(pattern.title)} | ${escapePipe(pattern.category)} | ${escapePipe(pattern.principle)} | ${escapePipe(pattern.detectionHint)} |`,
   );
-  return `## Anti-pattern reference
+  return `## Anti-pattern reference (recognition aid — not a checklist)
 
-Use this table to recognise common TS/React anti-patterns in the diff. When you flag one, reference its id in your finding.
+Use this table to **confirm** a problem you have already identified — do not scan it looking for patterns to match. A detection hint describes executable code structure, not string content, comments, or data objects. When you flag a catalogued pattern, reference its id.
 
 ${header}\n${rows.join("\n")}
 
@@ -236,7 +236,20 @@ Correct output: \`{"findings": [{"line": 8, "category": "clean", "confidence": 0
 \`\`\`
 Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.88, "evidence": "email: string | null; phone?: string; address: string | undefined", "recommendation": "\`UserProfile\` mixes three absent-value conventions (\`| null\`, \`?\`, \`| undefined\`). Pick one — preferably optional (\`?\`) — and apply it consistently to reduce branching for callers."}, {"line": 14, "category": "perf", "confidence": 0.92, "evidence": "value={{ user, login }}", "recommendation": "The inline object \`{{ user, login }}\` creates a new reference every render, causing all \`useContext(AuthContext)\` consumers to re-render. Wrap the value in \`useMemo\` and stabilise \`login\` with \`useCallback\`."}]}\`
 
-Note: clean utility functions, static data objects, and configuration arrays should return \`{"findings": []}\`. Only flag code with genuine structural issues.`;
+Note: clean utility functions, static data objects, and configuration arrays should return \`{"findings": []}\`. Only flag code with genuine structural issues.
+
+### Example H — secondary issue in a different category (breadth)
+\`\`\`typescript
++function StatusDashboard({ tickets }: { tickets: Ticket[] }) {
++  const [resolved, setResolved] = useState<Ticket[]>([]);
++  useEffect(() => {
++    setResolved(tickets.filter(t => t.status === "resolved"));
++  }, [tickets]);
++  const sorted = [...resolved].sort((a, b) => b.priority - a.priority);
++  return <ul>{sorted.map(t => <li key={t.id}>{t.title} (P{t.priority})</li>)}</ul>;
++}
+\`\`\`
+Correct output: \`{"findings": [{"line": 1, "category": "idiomatic", "confidence": 0.95, "evidence": "useState + useEffect to derive resolved", "recommendation": "\`resolved\` is derived from \`tickets\` — replace the state + effect pair with \`const resolved = useMemo(() => tickets.filter(t => t.status === \\"resolved\\"), [tickets])\`."}, {"line": 6, "category": "perf", "confidence": 0.88, "evidence": ".sort() on every render", "recommendation": "The \`.sort()\` runs on every render. Wrap it in \`useMemo\` with \`[resolved]\` as dependency to avoid re-sorting unchanged data."}]}\``;
 }
 
 function buildFewShotExamples(): string {
@@ -247,6 +260,26 @@ ${buildCoreFewShotExamples()}
 ${buildAdvancedFewShotExamples()}`;
 }
 
+function buildExclusionSection(): string {
+  return `## What NOT to flag
+
+- Formatting, whitespace, semicolons, trailing commas (handled by linters)
+- Type errors (handled by TypeScript compiler)
+- Unused variables or imports (handled by linters)
+- Missing null checks on external input boundaries (unless clearly wrong)
+- Style preferences without clear engineering justification
+- Things that are already flagged by the structural signals provided
+- **Non-code content**: Never flag comments (TSDoc, JSDoc, //), string literals, or template literal content. Anti-patterns apply to code structure — not to the text inside strings, comments, or documentation. If a string literal or comment mentions null, undefined, or optional, that is content, not a code issue. Only flag the line if it is executable code exhibiting the anti-pattern.
+- **Small, focused utility functions**: Do not suggest extracting or restructuring functions that are already short (under ~20 lines), single-purpose, and well-named. A 3-line helper does not need to be "extracted" — it already is extracted. Clean code is not a finding.
+- **Named constant declarations**: A numeric or string literal on the right-hand side of a \`const\` with a descriptive UPPER_SNAKE_CASE or camelCase name (e.g. \`const MAX_RETRIES = 3\`, \`const timeoutMs = 5000\`) is already a named constant — it is the fix for a magic literal, not an instance of one. Never flag these as magic literals.
+- **Configuration and data objects**: Object literals, arrays, enums, or constant maps that define static data or configuration are not logic. Do not flag them for SRP, DRY, or complexity unless they contain actual behavioural logic.
+- **Test utility code**: Test helpers, factory functions, and fixture builders exist to support tests. Do not apply SRP, "extract method", or structural patterns to test utilities — their purpose is convenience, not production architecture.
+- **Declarative style when it reduces readability**: Do not suggest replacing a clear imperative loop with reduce or flatMap when the functional version would be harder to read. reduce with complex accumulators is often worse than a for loop. Only suggest functional alternatives when they genuinely simplify.
+- **Code that is already well-structured**: If a component or module is reasonably sized, has clear separation of concerns, and follows standard patterns, do not invent findings. Returning \`{"findings": []}\` is a correct and expected outcome for well-written code.
+- **Documented design decisions**: When a TSDoc/JSDoc comment explicitly explains why code follows a particular convention (e.g. "Fields use \`| null\` for database-sourced values and \`?\` for client-provided overrides"), respect the documented rationale. Do not flag the explained pattern as an anti-pattern.
+- **Idiomatic type narrowing in event handlers**: \`event.target.value as SomeUnion\` in a select or input handler is standard TypeScript when the value is constrained by the rendered options. Do not flag this as a type safety issue.`;
+}
+
 function buildQualityBarSection(): string {
   return `## Quality bar
 
@@ -254,6 +287,7 @@ function buildQualityBarSection(): string {
 - Every finding must be actionable — the author should know exactly what to change after reading it
 - Prefer fewer, higher-quality findings over many marginal ones. Zero findings is better than one noisy finding.
 - Maximum 8 findings per file — prioritise the most impactful
+- When a file has problems in **multiple categories** (e.g. an idiomatic hook misuse AND an unmemoised computation), report one finding per distinct category. Do not stop after the most obvious issue.
 - Ask yourself: "Would I mass-approve this comment in a batch review, or would I actually stop and think about it?" If the former, do not include it.
 
 ### Bad findings (do not produce these)
@@ -275,6 +309,7 @@ function buildQualityBarSection(): string {
 Each finding must address a **distinct anti-pattern or concept**. Two findings are duplicates if fixing one would fix the other.
 
 - If the same issue appears on multiple lines (e.g. three validation rules that should all be extracted, or three nested callbacks that should all be flattened), emit ONE finding anchored at the first occurrence. Reference the other lines in the recommendation.
+- If the same conceptual violation repeats across multiple functions in a file (e.g. three getters that each return mutable internals, or three query functions that each perform side effects), emit ONE finding naming the pattern and listing all affected functions — not one finding per function.
 - If a function is a pointless abstraction, flag the function — do not separately flag its type annotations, return statements, or variable assignments.
 - If a try/catch block should be removed, flag the block once — do not separately flag the inner and outer catch.
 - Never emit two findings where one is a subset of the other (e.g. "extract validation" and "extract username validation").
@@ -342,21 +377,7 @@ ${antiPatternSection}## Anti-instructions — do NOT do any of these
 - On refactoring PRs (large diffs that primarily move, rename, or reorganise code between files), do NOT suggest further extraction or restructuring. The PR is already doing that — review the result, not the direction.
 - Do NOT produce findings that say the code is correct, acceptable, well-structured, or needs no change. If you have nothing to flag, return \`{"findings": []}\`. A finding must identify something that should change — never use the findings array to praise code.
 
-## What NOT to flag
-
-- Formatting, whitespace, semicolons, trailing commas (handled by linters)
-- Type errors (handled by TypeScript compiler)
-- Unused variables or imports (handled by linters)
-- Missing null checks on external input boundaries (unless clearly wrong)
-- Style preferences without clear engineering justification
-- Things that are already flagged by the structural signals provided
-- **Non-code content**: Never flag comments (TSDoc, JSDoc, //), string literals, or template literal content. Anti-patterns apply to code structure — not to the text inside strings, comments, or documentation. If a string literal or comment mentions null, undefined, or optional, that is content, not a code issue. Only flag the line if it is executable code exhibiting the anti-pattern.
-- **Small, focused utility functions**: Do not suggest extracting or restructuring functions that are already short (under ~20 lines), single-purpose, and well-named. A 3-line helper does not need to be "extracted" — it already is extracted. Clean code is not a finding.
-- **Named constant declarations**: A numeric or string literal on the right-hand side of a \`const\` with a descriptive UPPER_SNAKE_CASE or camelCase name (e.g. \`const MAX_RETRIES = 3\`, \`const timeoutMs = 5000\`) is already a named constant — it is the fix for a magic literal, not an instance of one. Never flag these as magic literals.
-- **Configuration and data objects**: Object literals, arrays, enums, or constant maps that define static data or configuration are not logic. Do not flag them for SRP, DRY, or complexity unless they contain actual behavioural logic.
-- **Test utility code**: Test helpers, factory functions, and fixture builders exist to support tests. Do not apply SRP, "extract method", or structural patterns to test utilities — their purpose is convenience, not production architecture.
-- **Declarative style when it reduces readability**: Do not suggest replacing a clear imperative loop with reduce or flatMap when the functional version would be harder to read. reduce with complex accumulators is often worse than a for loop. Only suggest functional alternatives when they genuinely simplify.
-- **Code that is already well-structured**: If a component or module is reasonably sized, has clear separation of concerns, and follows standard patterns, do not invent findings. Returning \`{"findings": []}\` is a correct and expected outcome for well-written code.
+${buildExclusionSection()}
 
 ## Output format
 
@@ -383,9 +404,10 @@ If you have no findings, return {"findings": []}. NEVER produce a finding whose 
 
 ## Review approach
 
-Identify the **distinct** anti-patterns in the code before writing any findings. Each finding = one anti-pattern, not one line. If a 30-line switch statement violates Open/Closed, that is ONE finding on the switch, not one finding per case arm. If three validation rules should be extracted, that is ONE finding on the first rule mentioning the others.
-
-After identifying anti-patterns, select findings that maximise **breadth** across different categories. Do not spend your finding budget on multiple aspects of the same problem.
+1. **Read the full diff and context** before forming opinions. Note the file's purpose (component, utility, service, data/config, test helper) and whether TSDoc comments explain design choices.
+2. **Identify all distinct structural problems** in the executable code. Each problem = one anti-pattern, not one line. If a 30-line switch statement violates Open/Closed, that is ONE finding on the switch, not one finding per case arm. If three validation rules should be extracted, that is ONE finding on the first rule. If multiple functions share the same conceptual violation (e.g. three functions that each mix queries with side effects), that is ONE problem.
+3. **Gate check each candidate**: (a) Is the issue in executable code, not string/comment content? (b) Does a TSDoc/JSDoc comment explain the choice? (c) Is the code already well-structured for its purpose? (d) Would a staff engineer actually stop and comment? Drop any candidate that fails.
+4. **Select findings that maximise breadth** across different categories. If the file has problems in multiple categories (e.g. one structural and one performance), flag both. Do not spend your finding budget on multiple aspects of the same problem.
 
 ${qualityBarSection}`;
 }

@@ -29,6 +29,25 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("not a code issue");
   });
 
+  test("instructs LLM to respect documented design decisions", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("Documented design decisions");
+    expect(prompt).toContain("documented rationale");
+  });
+
+  test("frames anti-pattern catalogue as a recognition aid", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("recognition aid");
+    expect(prompt).toContain("confirm");
+    expect(prompt).not.toContain("Use this table to recognise");
+  });
+
+  test("includes multi-finding breadth example (Example H)", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("Example H");
+    expect(prompt).toContain("StatusDashboard");
+  });
+
   test("includes switch-on-type pattern in the default prompt", () => {
     const prompt = buildSystemPrompt();
     expect(prompt).toContain("switch-on-type");
