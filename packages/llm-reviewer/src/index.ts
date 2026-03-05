@@ -40,6 +40,7 @@ export type {
   TriagePriority,
   CriticResult,
   FilteredFinding,
+  FileReviewFailure,
   ReviewPipelineConfig,
   ReviewPipelineResult,
   ReviewToolkit,
@@ -149,6 +150,10 @@ export function createLlmReviewerRule(
         return [];
       }
 
+      if (config.usePipeline && config.consistencySamples !== undefined && config.consistencySamples > 1) {
+        throw new Error("consistencySamples is not supported with usePipeline");
+      }
+
       if (config.usePipeline) {
         return analysePipeline(config, selectedFiles, context, codebaseContext);
       }
@@ -179,8 +184,16 @@ async function analysePipeline(
       baseUrl: config.clientConfig.baseUrl,
     });
 
+    if (onError) {
+      for (const failure of result.failedFiles) {
+        onError(failure.filePath, new Error(failure.error));
+      }
+    }
+
     if (onComplete) {
+      const failedPaths = new Set(result.failedFiles.map((failure) => failure.filePath));
       for (const file of selectedFiles) {
+        if (failedPaths.has(file.filePath)) continue;
         const count = result.findings.filter((finding) => finding.filePath === file.filePath).length;
         onComplete(file.filePath, count, 0, 0);
       }

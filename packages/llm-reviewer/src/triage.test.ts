@@ -99,7 +99,7 @@ describe("parseTriageResponse", () => {
     expect(results[0]!.classifications).toEqual(["valid", "also-valid"]);
   });
 
-  test("handles response with files array not matching input paths", () => {
+  test("remaps unrecognised filePaths to positional fallback", () => {
     const raw = JSON.stringify({
       files: [
         { filePath: "src/unknown.ts", classifications: ["error-handling"], priority: "high", reasoning: "Unknown file" },
@@ -107,8 +107,12 @@ describe("parseTriageResponse", () => {
     });
 
     const results = parseTriageResponse(raw, FILE_PATHS);
-    for (const result of results) {
-      expect(result.priority).toBe("medium");
-    }
+    const indexResult = results.find((result) => result.filePath === "src/index.ts");
+    expect(indexResult).toBeDefined();
+    expect(indexResult!.priority).toBe("high");
+    expect(indexResult!.reasoning).toBe("Unknown file");
+
+    const utilsResult = results.find((result) => result.filePath === "src/utils.ts");
+    expect(utilsResult!.priority).toBe("medium");
   });
 });

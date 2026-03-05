@@ -134,6 +134,14 @@ export interface ReviewPipelineConfig {
 }
 
 /**
+ * A file that failed during the review stage.
+ */
+export interface FileReviewFailure {
+  readonly filePath: string;
+  readonly error: string;
+}
+
+/**
  * Full result of a pipeline run including findings and audit trail.
  */
 export interface ReviewPipelineResult {
@@ -141,4 +149,5 @@ export interface ReviewPipelineResult {
   readonly triageResults: readonly TriageResult[];
   readonly criticReport: CriticResult;
   readonly tokenUsage: TokenUsageSummary;
+  readonly failedFiles: readonly FileReviewFailure[];
 }

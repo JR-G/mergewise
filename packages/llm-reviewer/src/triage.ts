@@ -89,11 +89,13 @@ export function parseTriageResponse(
 
   const rawFiles = Array.isArray(parsed.files) ? parsed.files : [];
   const results = new Map<string, TriageResult>();
+  const filePathSet = new Set(filePaths);
 
   for (let index = 0; index < rawFiles.length && index < filePaths.length; index++) {
     const fallbackPath = filePaths[index] ?? "unknown";
     const normalised = normaliseTriageEntry(rawFiles[index] as RawTriageEntry, fallbackPath);
-    results.set(normalised.filePath, normalised);
+    const effectivePath = filePathSet.has(normalised.filePath) ? normalised.filePath : fallbackPath;
+    results.set(effectivePath, { ...normalised, filePath: effectivePath });
   }
 
   return filePaths.map((filePath) =>

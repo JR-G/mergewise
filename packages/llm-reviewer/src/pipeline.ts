@@ -7,6 +7,7 @@ import type {
 import { createReviewClient, type CompletionUsage, type ReviewClient } from "./client";
 import type {
   CriticResult,
+  FileReviewFailure,
   ReviewPipelineConfig,
   ReviewPipelineResult,
   TokenUsageSummary,
@@ -141,11 +142,12 @@ interface ReviewStageInput {
  */
 async function runReviewStage(
   input: ReviewStageInput,
-): Promise<{ findings: Finding[]; usage: CompletionUsage | undefined }> {
+): Promise<{ findings: Finding[]; failedFiles: FileReviewFailure[]; usage: CompletionUsage | undefined }> {
   const { diffs, triageResults, pullRequest, codebaseContext, client, config } = input;
   const triageMap = new Map(triageResults.map((result) => [result.filePath, result]));
   const systemPrompt = buildSlimSystemPrompt();
   const allFindings: Finding[] = [];
+  const failedFiles: FileReviewFailure[] = [];
   let combinedUsage: CompletionUsage | undefined;
 
   for (const diff of diffs) {
@@ -173,12 +175,14 @@ async function runReviewStage(
       const findings = parseLlmResponse(content, diff, pullRequest);
       allFindings.push(...findings);
       combinedUsage = mergeUsage(combinedUsage, usage);
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      failedFiles.push({ filePath: diff.filePath, error: message });
       continue;
     }
   }
 
-  return { findings: allFindings, usage: combinedUsage };
+  return { findings: allFindings, failedFiles, usage: combinedUsage };
 }
 
 /**
@@ -249,5 +253,6 @@ export async function runReviewPipeline(
     triageResults: triageOutput.results,
     criticReport: criticOutput.result,
     tokenUsage: buildTokenUsage(triageOutput.usage, reviewOutput.usage, criticOutput.usage),
+    failedFiles: reviewOutput.failedFiles,
   };
 }

@@ -64,7 +64,7 @@ export function formatKnowledgeSection(
   for (const document of documents) {
     const section = formatDocument(document);
 
-    const separatorLength = 1;
+    const separatorLength = 2;
     if (totalLength + section.length + separatorLength > MAX_KNOWLEDGE_CHARS) break;
 
     parts.push(section);

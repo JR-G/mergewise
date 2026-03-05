@@ -46,6 +46,7 @@ describe("runReviewPipeline", () => {
     expect(result.triageResults).toEqual([]);
     expect(result.criticReport.findings).toEqual([]);
     expect(result.criticReport.filtered).toEqual([]);
+    expect(result.failedFiles).toEqual([]);
   });
 
   test("degrades gracefully when triage API is unreachable", async () => {
@@ -57,6 +58,7 @@ describe("runReviewPipeline", () => {
     expect(result.triageResults.length).toBe(1);
     expect(result.triageResults[0]!.priority).toBe("high");
     expect(result.triageResults[0]!.reasoning).toContain("Triage unavailable");
+    expect(result.failedFiles.some((failure) => failure.filePath === "src/index.ts")).toBe(true);
   });
 
   test("returns valid token usage summary even when all stages fail", async () => {

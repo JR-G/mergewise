@@ -180,18 +180,21 @@ async function criticBatch(
   fileContents: ReadonlyMap<string, string>,
   client: ReviewClient,
 ): Promise<{ verdicts: readonly CriticVerdict[]; usage: CompletionUsage | undefined }> {
+  const SEPARATOR = "\n\n";
+  const PREFIX_RESERVE = 50;
   const formattedFindings: string[] = [];
-  let promptLength = 0;
+  let promptLength = PREFIX_RESERVE;
   for (let index = 0; index < findings.length; index++) {
     const finding = findings[index];
     if (!finding) continue;
     const formatted = formatFindingForCritic(finding, index, fileContents);
-    if (promptLength + formatted.length > MAX_CRITIC_PROMPT_CHARS) break;
+    const separatorCost = formattedFindings.length > 0 ? SEPARATOR.length : 0;
+    if (promptLength + separatorCost + formatted.length > MAX_CRITIC_PROMPT_CHARS) break;
     formattedFindings.push(formatted);
-    promptLength += formatted.length;
+    promptLength += separatorCost + formatted.length;
   }
 
-  const summaries = formattedFindings.join("\n\n");
+  const summaries = formattedFindings.join(SEPARATOR);
   const userPrompt = `Review these ${formattedFindings.length} findings:\n\n${summaries}`;
 
   const { content, usage } = await client.complete(
