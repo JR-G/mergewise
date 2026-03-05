@@ -73,6 +73,22 @@ export interface MergewiseLlmConfigV1 {
    * (single-shot, no consensus filtering).
    */
   consistencySamples: number;
+  /**
+   * Model identifier for the triage pass (file classification).
+   *
+   * @remarks
+   * Should be a fast, cheap model. Only used when the review pipeline
+   * is enabled.
+   */
+  triageModel: string;
+  /**
+   * Model identifier for the critic pass (finding quality filter).
+   *
+   * @remarks
+   * Should be a fast, cheap model. Only used when the review pipeline
+   * is enabled.
+   */
+  criticModel: string;
 }
 
 /**
@@ -249,6 +265,8 @@ export const DEFAULT_MERGEWISE_CONFIG: MergewiseConfig = {
     tokenBudget: 30_000,
     baseUrl: "https://api.openai.com/v1",
     consistencySamples: 1,
+    triageModel: "gpt-4o-mini",
+    criticModel: "gpt-4o-mini",
   },
 };
 
@@ -270,6 +288,8 @@ interface RawMergewiseConfig {
     tokenBudget?: unknown;
     baseUrl?: unknown;
     consistencySamples?: unknown;
+    triageModel?: unknown;
+    criticModel?: unknown;
   };
 }
 
@@ -409,75 +429,73 @@ function applyReview(
   }
 }
 
+function applyLlmCoreFields(
+  rawLlm: NonNullable<RawMergewiseConfig["llm"]>,
+  normalizedConfig: MergewiseConfig,
+  filePath: string,
+): void {
+  const enabled = rawLlm.enabled;
+  if (enabled !== undefined && typeof enabled !== "boolean") {
+    throw new MergewiseConfigValidationError(filePath, "llm.enabled must be a boolean");
+  }
+  if (enabled !== undefined) normalizedConfig.llm.enabled = enabled;
+
+  const model = rawLlm.model;
+  if (model !== undefined && (typeof model !== "string" || !model.trim())) {
+    throw new MergewiseConfigValidationError(filePath, "llm.model must be a non-empty string");
+  }
+  if (typeof model === "string") normalizedConfig.llm.model = model.trim();
+
+  const tokenBudget = rawLlm.tokenBudget;
+  if (tokenBudget !== undefined && (typeof tokenBudget !== "number" || !Number.isInteger(tokenBudget) || tokenBudget < 1000)) {
+    throw new MergewiseConfigValidationError(filePath, "llm.tokenBudget must be an integer greater than or equal to 1000");
+  }
+  if (typeof tokenBudget === "number") normalizedConfig.llm.tokenBudget = tokenBudget;
+
+  const baseUrl = rawLlm.baseUrl;
+  if (baseUrl !== undefined && (typeof baseUrl !== "string" || !baseUrl.trim())) {
+    throw new MergewiseConfigValidationError(filePath, "llm.baseUrl must be a non-empty string");
+  }
+  if (typeof baseUrl === "string") normalizedConfig.llm.baseUrl = baseUrl.trim();
+}
+
+function applyLlmModelFields(
+  rawLlm: NonNullable<RawMergewiseConfig["llm"]>,
+  normalizedConfig: MergewiseConfig,
+  filePath: string,
+): void {
+  const consistencySamples = rawLlm.consistencySamples;
+  if (consistencySamples !== undefined && (typeof consistencySamples !== "number" || !Number.isInteger(consistencySamples) || consistencySamples < 1 || consistencySamples > 10)) {
+    throw new MergewiseConfigValidationError(filePath, "llm.consistencySamples must be an integer between 1 and 10");
+  }
+  if (typeof consistencySamples === "number") normalizedConfig.llm.consistencySamples = consistencySamples;
+
+  const triageModel = rawLlm.triageModel;
+  if (triageModel !== undefined && (typeof triageModel !== "string" || !triageModel.trim())) {
+    throw new MergewiseConfigValidationError(filePath, "llm.triageModel must be a non-empty string");
+  }
+  if (typeof triageModel === "string") normalizedConfig.llm.triageModel = triageModel.trim();
+
+  const criticModel = rawLlm.criticModel;
+  if (criticModel !== undefined && (typeof criticModel !== "string" || !criticModel.trim())) {
+    throw new MergewiseConfigValidationError(filePath, "llm.criticModel must be a non-empty string");
+  }
+  if (typeof criticModel === "string") normalizedConfig.llm.criticModel = criticModel.trim();
+}
+
 function applyLlm(
   rawConfig: RawMergewiseConfig,
   normalizedConfig: MergewiseConfig,
   filePath: string,
 ): void {
-  if (rawConfig.llm === undefined) {
-    return;
-  }
+  if (rawConfig.llm === undefined) return;
 
   if (!isPlainObject(rawConfig.llm)) {
     throw new MergewiseConfigValidationError(filePath, "llm must be an object");
   }
 
-  const enabled = rawConfig.llm.enabled;
-  const hasEnabled = enabled !== undefined;
-  if (hasEnabled && typeof enabled !== "boolean") {
-    throw new MergewiseConfigValidationError(filePath, "llm.enabled must be a boolean");
-  }
-  if (hasEnabled) {
-    normalizedConfig.llm.enabled = enabled;
-  }
-
-  const model = rawConfig.llm.model;
-  const hasModel = model !== undefined;
-  if (hasModel && (typeof model !== "string" || !model.trim())) {
-    throw new MergewiseConfigValidationError(filePath, "llm.model must be a non-empty string");
-  }
-  if (hasModel) {
-    normalizedConfig.llm.model = model.trim();
-  }
-
-  const tokenBudget = rawConfig.llm.tokenBudget;
-  const hasTokenBudget = tokenBudget !== undefined;
-  if (
-    hasTokenBudget &&
-    (typeof tokenBudget !== "number" || !Number.isInteger(tokenBudget) || tokenBudget < 1000)
-  ) {
-    throw new MergewiseConfigValidationError(
-      filePath,
-      "llm.tokenBudget must be an integer greater than or equal to 1000",
-    );
-  }
-  if (hasTokenBudget) {
-    normalizedConfig.llm.tokenBudget = tokenBudget;
-  }
-
-  const baseUrl = rawConfig.llm.baseUrl;
-  const hasBaseUrl = baseUrl !== undefined;
-  if (hasBaseUrl && (typeof baseUrl !== "string" || !baseUrl.trim())) {
-    throw new MergewiseConfigValidationError(filePath, "llm.baseUrl must be a non-empty string");
-  }
-  if (hasBaseUrl) {
-    normalizedConfig.llm.baseUrl = baseUrl.trim();
-  }
-
-  const consistencySamples = rawConfig.llm.consistencySamples;
-  const hasConsistencySamples = consistencySamples !== undefined;
-  if (
-    hasConsistencySamples &&
-    (typeof consistencySamples !== "number" || !Number.isInteger(consistencySamples) || consistencySamples < 1 || consistencySamples > 10)
-  ) {
-    throw new MergewiseConfigValidationError(
-      filePath,
-      "llm.consistencySamples must be an integer between 1 and 10",
-    );
-  }
-  if (hasConsistencySamples) {
-    normalizedConfig.llm.consistencySamples = consistencySamples;
-  }
+  applyLlmCoreFields(rawConfig.llm, normalizedConfig, filePath);
+  applyLlmModelFields(rawConfig.llm, normalizedConfig, filePath);
 }
 
 function parseRawConfig(filePath: string): unknown {

@@ -7,6 +7,8 @@ import type {
 import { createReviewClient, type ReviewClientConfig } from "./client";
 import { selectFilesForReview } from "./file-selection";
 import { reviewFile } from "./review-file";
+import { runReviewPipeline } from "./pipeline";
+import type { ReviewToolkit } from "./pipeline-types";
 
 export type { AntiPattern } from "./anti-patterns";
 export { ANTI_PATTERNS } from "./anti-patterns";
@@ -20,6 +22,31 @@ export { extractStructuralSignals, type StructuralSignals } from "./signals";
 export { reviewFile } from "./review-file";
 export { createReviewClient, ReviewClient } from "./client";
 export { applyConsensusFilter, extractWordTokens, jaccardSimilarity } from "./consensus";
+
+export { runReviewPipeline } from "./pipeline";
+export { triageFiles } from "./triage";
+export { criticFindings } from "./critic";
+export { retrieveKnowledge } from "./knowledge/retrieve";
+export { deriveSignalTags } from "./knowledge/signal-tags";
+export { buildSlimSystemPrompt, buildDynamicFilePrompt } from "./prompt-slim";
+export { formatKnowledgeSection } from "./knowledge/format";
+export { KNOWLEDGE_REGISTRY } from "./knowledge/registry";
+
+export type {
+  KnowledgeDocument,
+  KnowledgeExample,
+  SignalTag,
+  TriageResult,
+  TriagePriority,
+  CriticResult,
+  FilteredFinding,
+  ReviewPipelineConfig,
+  ReviewPipelineResult,
+  ReviewToolkit,
+  FileGraphContext,
+  ReviewLearnings,
+  TokenUsageSummary,
+} from "./pipeline-types";
 
 const DEFAULT_TOKEN_BUDGET = 30_000;
 
@@ -51,6 +78,32 @@ export interface LlmReviewerConfig {
    * are kept. Defaults to 1 (single-shot).
    */
   readonly consistencySamples?: number;
+  /**
+   * When true, uses the three-stage pipeline (triage → review → critic)
+   * instead of the single-shot per-file review.
+   */
+  readonly usePipeline?: boolean;
+  /**
+   * Model identifier for the triage and critic stages.
+   *
+   * @remarks
+   * Should be a fast, cheap model. Only used when `usePipeline` is true.
+   */
+  readonly triageModel?: string;
+  /**
+   * Model identifier for the critic stage.
+   *
+   * @remarks
+   * Defaults to `triageModel` if omitted. Only used when `usePipeline` is true.
+   */
+  readonly criticModel?: string;
+  /**
+   * Optional tools for enriching review context (graph, learnings).
+   *
+   * @remarks
+   * Only used when `usePipeline` is true.
+   */
+  readonly toolkit?: ReviewToolkit;
   readonly onFileReviewError?: (filePath: string, error: unknown) => void;
   readonly onFileReviewComplete?: (filePath: string, findingCount: number, promptTokens: number, completionTokens: number) => void;
 }
@@ -74,8 +127,6 @@ export function createLlmReviewerRule(
   const client = createReviewClient(config.clientConfig);
   const tokenBudget = config.tokenBudget ?? DEFAULT_TOKEN_BUDGET;
   const userSkipPatterns = config.userSkipPatterns;
-  const confidenceThreshold = config.confidenceThreshold;
-  const consistencySamples = config.consistencySamples;
   const onFileReviewError = config.onFileReviewError ?? noop;
 
   return {
@@ -98,32 +149,69 @@ export function createLlmReviewerRule(
         return [];
       }
 
-      const allFindings: Finding[] = [];
-
-      for (const fileDiff of selectedFiles) {
-        try {
-          const result = await reviewFile({
-            fileDiff,
-            pullRequest: context.pullRequest,
-            codebaseContext,
-            client,
-            confidenceThreshold,
-            consistencySamples,
-          });
-          allFindings.push(...result.findings);
-          config.onFileReviewComplete?.(
-            fileDiff.filePath,
-            result.findings.length,
-            result.usage?.promptTokens ?? 0,
-            result.usage?.completionTokens ?? 0,
-          );
-        } catch (error) {
-          onFileReviewError(fileDiff.filePath, error);
-          continue;
-        }
+      if (config.usePipeline) {
+        return analysePipeline(config, selectedFiles, context, codebaseContext);
       }
 
-      return allFindings;
+      return analysePerFile({ selectedFiles, context, codebaseContext, client, config, onFileReviewError });
     },
   };
+}
+
+async function analysePipeline(
+  config: LlmReviewerConfig,
+  selectedFiles: readonly import("@mergewise/shared-types").FileDiff[],
+  context: AnalysisContext,
+  codebaseContext: CodebaseContext,
+): Promise<readonly Finding[]> {
+  const result = await runReviewPipeline(selectedFiles, context.pullRequest, codebaseContext, {
+    triageModel: config.triageModel,
+    reviewModel: config.clientConfig.model ?? "gpt-4o",
+    criticModel: config.criticModel,
+    tokenBudget: config.tokenBudget,
+    toolkit: config.toolkit,
+    confidenceThreshold: config.confidenceThreshold,
+    apiKey: config.clientConfig.apiKey,
+    baseUrl: config.clientConfig.baseUrl,
+  });
+  return result.findings;
+}
+
+interface PerFileAnalysisOptions {
+  readonly selectedFiles: readonly import("@mergewise/shared-types").FileDiff[];
+  readonly context: AnalysisContext;
+  readonly codebaseContext: CodebaseContext;
+  readonly client: import("./client").ReviewClient;
+  readonly config: LlmReviewerConfig;
+  readonly onFileReviewError: (filePath: string, error: unknown) => void;
+}
+
+async function analysePerFile(options: PerFileAnalysisOptions): Promise<readonly Finding[]> {
+  const { selectedFiles, context, codebaseContext, client, config, onFileReviewError } = options;
+  const allFindings: Finding[] = [];
+
+  for (const fileDiff of selectedFiles) {
+    try {
+      const result = await reviewFile({
+        fileDiff,
+        pullRequest: context.pullRequest,
+        codebaseContext,
+        client,
+        confidenceThreshold: config.confidenceThreshold,
+        consistencySamples: config.consistencySamples,
+      });
+      allFindings.push(...result.findings);
+      config.onFileReviewComplete?.(
+        fileDiff.filePath,
+        result.findings.length,
+        result.usage?.promptTokens ?? 0,
+        result.usage?.completionTokens ?? 0,
+      );
+    } catch (error) {
+      onFileReviewError(fileDiff.filePath, error);
+      continue;
+    }
+  }
+
+  return allFindings;
 }

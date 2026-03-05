@@ -36,6 +36,8 @@ describe("applyFindingGates", () => {
       llm: {
         enabled: false,
         model: "gpt-4o",
+        triageModel: "gpt-4o-mini",
+        criticModel: "gpt-4o-mini",
         tokenBudget: 30_000,
         baseUrl: "https://api.openai.com/v1",
         consistencySamples: 1,
@@ -70,6 +72,8 @@ describe("applyFindingGates", () => {
       llm: {
         enabled: false,
         model: "gpt-4o",
+        triageModel: "gpt-4o-mini",
+        criticModel: "gpt-4o-mini",
         tokenBudget: 30_000,
         baseUrl: "https://api.openai.com/v1",
         consistencySamples: 1,
@@ -105,6 +109,8 @@ describe("applyFindingGates", () => {
       llm: {
         enabled: false,
         model: "gpt-4o",
+        triageModel: "gpt-4o-mini",
+        criticModel: "gpt-4o-mini",
         tokenBudget: 30_000,
         baseUrl: "https://api.openai.com/v1",
         consistencySamples: 1,
