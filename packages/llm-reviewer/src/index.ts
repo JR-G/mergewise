@@ -164,17 +164,37 @@ async function analysePipeline(
   context: AnalysisContext,
   codebaseContext: CodebaseContext,
 ): Promise<readonly Finding[]> {
-  const result = await runReviewPipeline(selectedFiles, context.pullRequest, codebaseContext, {
-    triageModel: config.triageModel,
-    reviewModel: config.clientConfig.model ?? "gpt-4o",
-    criticModel: config.criticModel,
-    tokenBudget: config.tokenBudget,
-    toolkit: config.toolkit,
-    confidenceThreshold: config.confidenceThreshold,
-    apiKey: config.clientConfig.apiKey,
-    baseUrl: config.clientConfig.baseUrl,
-  });
-  return result.findings;
+  const onError = config.onFileReviewError;
+  const onComplete = config.onFileReviewComplete;
+
+  try {
+    const result = await runReviewPipeline(selectedFiles, context.pullRequest, codebaseContext, {
+      triageModel: config.triageModel,
+      reviewModel: config.clientConfig.model ?? "gpt-4o",
+      criticModel: config.criticModel,
+      tokenBudget: config.tokenBudget,
+      toolkit: config.toolkit,
+      confidenceThreshold: config.confidenceThreshold,
+      apiKey: config.clientConfig.apiKey,
+      baseUrl: config.clientConfig.baseUrl,
+    });
+
+    if (onComplete) {
+      for (const file of selectedFiles) {
+        const count = result.findings.filter((finding) => finding.filePath === file.filePath).length;
+        onComplete(file.filePath, count, 0, 0);
+      }
+    }
+
+    return result.findings;
+  } catch (error) {
+    if (onError) {
+      for (const file of selectedFiles) {
+        onError(file.filePath, error);
+      }
+    }
+    return [];
+  }
 }
 
 interface PerFileAnalysisOptions {

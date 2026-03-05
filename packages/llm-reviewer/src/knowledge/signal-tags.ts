@@ -7,7 +7,6 @@ const HIGH_FUNCTION_COUNT_THRESHOLD = 5;
 const LARGE_FUNCTION_LINE_THRESHOLD = 40;
 const HIGH_NESTING_THRESHOLD = 3;
 const HIGH_PARAM_THRESHOLD = 3;
-const TYPE_ASSERTION_THRESHOLD = 2;
 const HIGH_IMPORT_THRESHOLD = 10;
 const LARGE_COMPONENT_LINE_THRESHOLD = 50;
 
@@ -28,7 +27,7 @@ export function deriveSignalTags(signals: StructuralSignals): readonly SignalTag
   if (signals.maxFunctionLineCount > LARGE_FUNCTION_LINE_THRESHOLD) tags.push("large_function");
   if (signals.maxNestingDepth > HIGH_NESTING_THRESHOLD) tags.push("high_nesting");
   if (signals.maxParameterCount > HIGH_PARAM_THRESHOLD) tags.push("high_param_count");
-  if (signals.typeAssertionCount > TYPE_ASSERTION_THRESHOLD) tags.push("has_type_assertions");
+  if (signals.typeAssertionCount > 0) tags.push("has_type_assertions");
   if (signals.importCount > HIGH_IMPORT_THRESHOLD) tags.push("high_import_count");
   if (signals.componentLineCount > LARGE_COMPONENT_LINE_THRESHOLD) tags.push("large_component");
 

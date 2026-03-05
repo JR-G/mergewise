@@ -82,16 +82,17 @@ export function parseTriageResponse(
     return filePaths.map((filePath) => ({
       filePath,
       classifications: [],
-      priority: "medium" as const,
-      reasoning: "Triage response was not valid JSON",
+      priority: "high" as const,
+      reasoning: "Triage response was not valid JSON — defaulting to high priority",
     }));
   }
 
   const rawFiles = Array.isArray(parsed.files) ? parsed.files : [];
   const results = new Map<string, TriageResult>();
 
-  for (const entry of rawFiles.slice(0, filePaths.length)) {
-    const normalised = normaliseTriageEntry(entry as RawTriageEntry, "unknown");
+  for (let index = 0; index < rawFiles.length && index < filePaths.length; index++) {
+    const fallbackPath = filePaths[index] ?? "unknown";
+    const normalised = normaliseTriageEntry(rawFiles[index] as RawTriageEntry, fallbackPath);
     results.set(normalised.filePath, normalised);
   }
 

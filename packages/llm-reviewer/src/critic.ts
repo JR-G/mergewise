@@ -6,6 +6,8 @@ const MAX_FINDINGS_PER_CRITIC_BATCH = 50;
 const MAX_CRITIC_RESPONSE_TOKENS = 2048;
 const CRITIC_TEMPERATURE = 0.1;
 const MAX_FILE_PATHS_FOR_CONTENT = 30;
+const MAX_FIELD_CHARS = 300;
+const MAX_CRITIC_PROMPT_CHARS = 30_000;
 
 const CRITIC_SYSTEM_PROMPT = `You are a code review quality filter. You receive findings from a code reviewer and must decide which to keep and which to discard.
 
@@ -43,6 +45,14 @@ export interface CriticVerdict {
 }
 
 /**
+ * Truncates a string to a maximum character length with an ellipsis indicator.
+ */
+function truncateField(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}…`;
+}
+
+/**
  * Extracts the source code at a specific line from file contents.
  */
 function extractLineContent(
@@ -68,11 +78,11 @@ function formatFindingForCritic(
   const parts = [
     `[${index}] File: ${finding.filePath} Line: ${finding.line}`,
     `  Category: ${finding.category} Confidence: ${finding.confidence}`,
-    `  Evidence: ${finding.evidence}`,
-    `  Recommendation: ${finding.recommendation}`,
+    `  Evidence: ${truncateField(finding.evidence, MAX_FIELD_CHARS)}`,
+    `  Recommendation: ${truncateField(finding.recommendation, MAX_FIELD_CHARS)}`,
   ];
   if (lineContent) {
-    parts.push(`  Actual code at line: ${lineContent}`);
+    parts.push(`  Actual code at line: ${truncateField(lineContent, MAX_FIELD_CHARS)}`);
   }
   return parts.join("\n");
 }
@@ -170,11 +180,19 @@ async function criticBatch(
   fileContents: ReadonlyMap<string, string>,
   client: ReviewClient,
 ): Promise<{ verdicts: readonly CriticVerdict[]; usage: CompletionUsage | undefined }> {
-  const summaries = findings
-    .map((finding, index) => formatFindingForCritic(finding, index, fileContents))
-    .join("\n\n");
+  const formattedFindings: string[] = [];
+  let promptLength = 0;
+  for (let index = 0; index < findings.length; index++) {
+    const finding = findings[index];
+    if (!finding) continue;
+    const formatted = formatFindingForCritic(finding, index, fileContents);
+    if (promptLength + formatted.length > MAX_CRITIC_PROMPT_CHARS) break;
+    formattedFindings.push(formatted);
+    promptLength += formatted.length;
+  }
 
-  const userPrompt = `Review these ${findings.length} findings:\n\n${summaries}`;
+  const summaries = formattedFindings.join("\n\n");
+  const userPrompt = `Review these ${formattedFindings.length} findings:\n\n${summaries}`;
 
   const { content, usage } = await client.complete(
     CRITIC_SYSTEM_PROMPT,

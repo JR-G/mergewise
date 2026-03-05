@@ -222,7 +222,10 @@ export async function runReviewPipeline(
   config: ReviewPipelineConfig,
 ): Promise<ReviewPipelineResult> {
   const clients = createPipelineClients(config);
-  const maxFiles = config.maxFilesPerReview ?? DEFAULT_MAX_FILES;
+  const rawMaxFiles = config.maxFilesPerReview ?? undefined;
+  const maxFiles = typeof rawMaxFiles === "number" && Number.isFinite(rawMaxFiles) && rawMaxFiles > 0
+    ? Math.floor(rawMaxFiles)
+    : DEFAULT_MAX_FILES;
 
   const triageOutput = await runTriageStage(diffs, clients.triageClient);
 

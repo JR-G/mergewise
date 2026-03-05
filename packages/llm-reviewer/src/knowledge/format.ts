@@ -64,11 +64,12 @@ export function formatKnowledgeSection(
   for (const document of documents) {
     const section = formatDocument(document);
 
-    if (totalLength + section.length > MAX_KNOWLEDGE_CHARS) break;
+    const separatorLength = 1;
+    if (totalLength + section.length + separatorLength > MAX_KNOWLEDGE_CHARS) break;
 
     parts.push(section);
     parts.push("");
-    totalLength += section.length;
+    totalLength += section.length + separatorLength;
   }
 
   return parts.join("\n");

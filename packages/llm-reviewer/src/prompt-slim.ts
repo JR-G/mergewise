@@ -12,6 +12,7 @@ const MAX_FULL_FILE_LINES = 2000;
 const WINDOWED_COVERAGE_THRESHOLD = 0.9;
 const MAX_CALLERS_IN_PROMPT = 10;
 const MAX_LEARNINGS_IN_PROMPT = 5;
+const MAX_DIFF_CHARS = 50_000;
 
 const SLIM_SYSTEM_PROMPT = `You are a principal-level engineer reviewing a pull request for structural quality. You give the kind of feedback that makes engineers better — not linting, not bug hunting, but the refactoring guidance that comes from years of maintaining large systems.
 
@@ -133,9 +134,12 @@ export function buildDynamicFilePrompt(input: DynamicPromptInput): string {
   parts.push("");
   parts.push("## Diff");
   parts.push("```diff");
-  const diffContent = input.fileDiff.hunks
+  let diffContent = input.fileDiff.hunks
     .map((hunk) => `${hunk.header}\n${hunk.lines.join("\n")}`)
     .join("\n\n");
+  if (diffContent.length > MAX_DIFF_CHARS) {
+    diffContent = `${diffContent.slice(0, MAX_DIFF_CHARS)}\n...(truncated)`;
+  }
   parts.push(diffContent);
   parts.push("```");
 

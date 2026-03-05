@@ -51,12 +51,12 @@ describe("parseTriageResponse", () => {
     expect(results[0]!.classifications.length).toBe(5);
   });
 
-  test("returns all files as medium when JSON is invalid", () => {
+  test("returns all files as high when JSON is invalid", () => {
     const results = parseTriageResponse("not json{{{", FILE_PATHS);
 
     expect(results.length).toBe(3);
     for (const result of results) {
-      expect(result.priority).toBe("medium");
+      expect(result.priority).toBe("high");
       expect(result.reasoning).toContain("not valid JSON");
     }
   });
