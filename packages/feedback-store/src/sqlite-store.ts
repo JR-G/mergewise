@@ -89,7 +89,7 @@ FROM comment_feedback
 WHERE repo_full_name = ?
 GROUP BY category
 HAVING COUNT(*) >= 5
-ORDER BY thumbs_down DESC, thumbs_up ASC, category ASC
+ORDER BY ABS(SUM(thumbs_down) - SUM(thumbs_up)) DESC, category ASC
 LIMIT 20
 `;
 

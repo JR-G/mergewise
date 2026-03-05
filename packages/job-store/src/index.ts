@@ -216,31 +216,33 @@ export async function readAllQueueJobs(
   const reader = createInterface({ input: stream, crlfDelay: Infinity });
   let lineNumber = 0;
 
-  for await (const line of reader) {
-    lineNumber++;
-    if (!line.trim()) {
-      continue;
-    }
-
-    try {
-      const parsed = JSON.parse(line) as unknown;
-      if (isCollectFeedbackJob(parsed)) {
-        jobs.push(parsed);
-      } else if (isAnalyzePullRequestJob(parsed)) {
-        jobs.push(parsed);
-      } else {
-        onSkippedLine(lineNumber, "shape mismatch");
+  try {
+    for await (const line of reader) {
+      lineNumber++;
+      if (!line.trim()) {
+        continue;
       }
-    } catch (error) {
-      const details = error instanceof Error ? error.message : String(error);
-      onSkippedLine(lineNumber, details);
-    }
 
-    if (jobs.length >= MAX_QUEUE_SIZE) {
-      break;
+      try {
+        const parsed = JSON.parse(line) as unknown;
+        if (isCollectFeedbackJob(parsed)) {
+          jobs.push(parsed);
+        } else if (isAnalyzePullRequestJob(parsed)) {
+          jobs.push(parsed);
+        } else {
+          onSkippedLine(lineNumber, "shape mismatch");
+        }
+      } catch (error) {
+        const details = error instanceof Error ? error.message : String(error);
+        onSkippedLine(lineNumber, details);
+      }
+
+      if (jobs.length >= MAX_QUEUE_SIZE) {
+        break;
+      }
     }
+  } finally {
+    reader.close();
   }
-
-  reader.close();
   return jobs;
 }

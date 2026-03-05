@@ -132,7 +132,9 @@ function resolveProcessingConfig(
   const baseLlmRules = buildLlmRules(mergewiseConfig, traceId, loggers, repoLearnings);
   const rules = dependencies.rules ?? [...tsReactRules, ...baseLlmRules];
 
-  const blockedRuleIds = [...DEFAULT_BLOCKED_POST_RULE_IDS];
+  const baseBlockedRuleIds = dependencies.findingDeliveryOptions?.blockedRuleIds
+    ?? DEFAULT_BLOCKED_POST_RULE_IDS;
+  const blockedRuleIds = [...baseBlockedRuleIds];
   if (repoLearnings) {
     const blockedSet = new Set(blockedRuleIds);
     for (const suppressedRuleId of repoLearnings.suppressedRules) {
