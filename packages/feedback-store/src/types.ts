@@ -55,6 +55,6 @@ export interface FeedbackStore {
   saveInstructions(instructions: readonly RepoInstruction[]): void;
   queryInstructions(repoFullName: string): RepoInstruction[];
   queryRuleSentiment(repoFullName: string): RuleSentiment[];
-  queryDislikedCategories(repoFullName: string): CategorySentiment[];
+  queryCategorySentiment(repoFullName: string): CategorySentiment[];
   close(): void;
 }

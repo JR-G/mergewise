@@ -340,7 +340,7 @@ describe("queryRuleSentiment", () => {
   });
 });
 
-describe("queryDislikedCategories", () => {
+describe("queryCategorySentiment", () => {
   test("returns aggregated sentiment per category with at least 5 records", () => {
     const databasePath = tempDatabasePath();
     cleanupPaths.push(databasePath);
@@ -357,7 +357,7 @@ describe("queryDislikedCategories", () => {
       ]);
     }
 
-    const results = store.queryDislikedCategories("acme/widget");
+    const results = store.queryCategorySentiment("acme/widget");
     store.close();
 
     expect(results).toHaveLength(1);
@@ -373,7 +373,7 @@ describe("queryDislikedCategories", () => {
 
     store.saveFeedback([buildRecord()]);
 
-    const results = store.queryDislikedCategories("acme/widget");
+    const results = store.queryCategorySentiment("acme/widget");
     store.close();
 
     expect(results).toEqual([]);
@@ -396,7 +396,7 @@ describe("queryDislikedCategories", () => {
       }
     }
 
-    const results = store.queryDislikedCategories("acme/widget");
+    const results = store.queryCategorySentiment("acme/widget");
     store.close();
 
     expect(results).toHaveLength(20);

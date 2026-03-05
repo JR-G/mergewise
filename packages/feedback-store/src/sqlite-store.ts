@@ -72,14 +72,14 @@ SELECT
   SUM(thumbs_down) AS thumbs_down,
   COUNT(*) AS total_records
 FROM comment_feedback
-WHERE repo_full_name = ?
+WHERE repo_full_name = ? AND rule_id IS NOT NULL
 GROUP BY rule_id
 HAVING COALESCE(SUM(thumbs_up), 0) + COALESCE(SUM(thumbs_down), 0) >= 3
 ORDER BY thumbs_down DESC
 LIMIT 50
 `;
 
-const QUERY_DISLIKED_CATEGORIES_SQL = `
+const QUERY_CATEGORY_SENTIMENT_SQL = `
 SELECT
   category,
   SUM(thumbs_up) AS thumbs_up,
@@ -183,7 +183,7 @@ export function openFeedbackStore(databasePath = DEFAULT_DATABASE_PATH): Feedbac
 
   const queryInstructionsStmt = database.prepare(QUERY_INSTRUCTIONS_SQL);
   const queryRuleSentimentStmt = database.prepare(QUERY_RULE_SENTIMENT_SQL);
-  const queryDislikedCategoriesStmt = database.prepare(QUERY_DISLIKED_CATEGORIES_SQL);
+  const queryCategorySentimentStmt = database.prepare(QUERY_CATEGORY_SENTIMENT_SQL);
 
   const MAX_BATCH_SIZE = 500;
 
@@ -204,8 +204,8 @@ export function openFeedbackStore(databasePath = DEFAULT_DATABASE_PATH): Feedbac
     queryRuleSentiment(repoFullName) {
       return (queryRuleSentimentStmt.all(repoFullName) as SentimentRow[]).map(mapSentimentRow);
     },
-    queryDislikedCategories(repoFullName) {
-      return (queryDislikedCategoriesStmt.all(repoFullName) as CategoryRow[]).map(mapCategoryRow);
+    queryCategorySentiment(repoFullName) {
+      return (queryCategorySentimentStmt.all(repoFullName) as CategoryRow[]).map(mapCategoryRow);
     },
     close() {
       database.close();

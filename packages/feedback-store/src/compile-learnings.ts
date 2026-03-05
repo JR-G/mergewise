@@ -34,7 +34,7 @@ export function compileLearnings(
     })
     .map((sentiment) => sentiment.ruleId);
 
-  const categorySentiments = feedbackStore.queryDislikedCategories(repoFullName);
+  const categorySentiments = feedbackStore.queryCategorySentiment(repoFullName);
 
   const preferredCategories: string[] = [];
   const dislikedCategories: string[] = [];
