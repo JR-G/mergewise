@@ -36,12 +36,13 @@ export function buildPrGraphContext(
 ): PrGraphContext {
   const hotspotPaths = new Set(hotspots.map((entry) => entry.filePath));
   const reverseIndex = buildReverseImportIndex(graph);
+  const forwardIndex = buildForwardImportIndex(graph);
 
   const files: FileGraphContext[] = [];
 
   for (const filePath of changedPaths) {
     const node = graph.nodes.get(filePath);
-    const forwardImports = resolveForwardImports(filePath, graph);
+    const forwardImports = forwardIndex.get(filePath) ?? [];
     const reverseImports = (reverseIndex.get(filePath) ?? []).slice(0, MAX_REVERSE_DEPS);
 
     files.push({
@@ -121,16 +122,21 @@ function buildReverseImportIndex(graph: DebtGraph): Map<string, string[]> {
   return index;
 }
 
-function resolveForwardImports(filePath: string, graph: DebtGraph): string[] {
-  const imports: string[] = [];
+function buildForwardImportIndex(graph: DebtGraph): Map<string, string[]> {
+  const index = new Map<string, string[]>();
 
   for (const edge of graph.edges) {
-    if (edge.source === filePath && edge.kind === "imports") {
-      imports.push(edge.target);
+    if (edge.kind !== "imports") continue;
+
+    const existing = index.get(edge.source);
+    if (existing) {
+      existing.push(edge.target);
+    } else {
+      index.set(edge.source, [edge.target]);
     }
   }
 
-  return imports;
+  return index;
 }
 
 function buildImpactSummary(files: readonly FileGraphContext[]): string {
