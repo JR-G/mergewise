@@ -5,6 +5,7 @@ import type { StructuralSignals } from "./signals";
 
 const CONTEXT_PADDING = 50;
 const WINDOWED_COVERAGE_THRESHOLD = 0.9;
+const MAX_FULL_FILE_LINES = 2000;
 
 interface LineRange {
   readonly start: number;
@@ -81,11 +82,18 @@ function buildFileContextSection(
   const totalLines = fileLines.length;
   const windows = computeContextWindows(hunks, totalLines);
 
+  const cappedLines = fileLines.slice(0, MAX_FULL_FILE_LINES);
+  const truncated = fileLines.length > MAX_FULL_FILE_LINES;
+  const numberedFullContent = cappedLines
+    .map((line, index) => `// line ${index + 1}: ${line}`)
+    .join("\n");
+
   const fullFileSection = [
     "",
     "## Full file content (for context only — only comment on changed lines)",
     "```typescript",
-    fullContent,
+    numberedFullContent,
+    ...(truncated ? [`// ...[truncated ${fileLines.length - MAX_FULL_FILE_LINES} lines]`] : []),
     "```",
   ];
 
@@ -95,7 +103,7 @@ function buildFileContextSection(
 
   const windowedLineCount = windows.reduce((sum, window) => sum + (window.end - window.start + 1), 0);
 
-  if (windowedLineCount >= totalLines * WINDOWED_COVERAGE_THRESHOLD) {
+  if (windowedLineCount >= totalLines * WINDOWED_COVERAGE_THRESHOLD || windowedLineCount > MAX_FULL_FILE_LINES) {
     return fullFileSection;
   }
 
@@ -150,7 +158,7 @@ function buildCoreFewShotExamples(): string {
 +  logAnalytics("order_processed", order.id);
 +}
 \`\`\`
-Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.92, "evidence": "function processOrder", "recommendation": "\`processOrder\` mixes business logic (tax, discount) with side effects (email, inventory, analytics). Extract side effects into a \`dispatchOrderSideEffects\` function so the core computation is pure and testable (SRP)."}]}\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.92, "evidence": "function processOrder", "recommendation": "\`processOrder\` tangles the tax/discount computation with side effects (email, inventory, analytics). You cannot unit test the pricing logic without stubbing an email service and an inventory API. Extract side effects into \`dispatchOrderSideEffects\` so the computation is pure and testable — this is the Single Responsibility Principle: each function has one reason to change."}]}\`
 
 ### Example B — correct finding (React)
 \`\`\`typescript
@@ -159,7 +167,7 @@ Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0
 +  setFullName(\`\${firstName} \${lastName}\`);
 +}, [firstName, lastName]);
 \`\`\`
-Correct output: \`{"findings": [{"line": 1, "category": "idiomatic", "confidence": 0.95, "evidence": "useState + useEffect to derive fullName", "recommendation": "\`fullName\` is derived from \`firstName\` and \`lastName\` — compute it directly as \`const fullName = \\u0060\${firstName} \${lastName}\\u0060\` instead of synchronising with state + effect."}]}\`
+Correct output: \`{"findings": [{"line": 1, "category": "idiomatic", "confidence": 0.95, "evidence": "useState + useEffect to derive fullName", "recommendation": "\`fullName\` is derived from \`firstName\` and \`lastName\` but stored as separate state synchronised via an effect. This adds an unnecessary render cycle and a stale-value window between the dependency change and the effect firing. Compute it directly as \`const fullName = \\u0060\${firstName} \${lastName}\\u0060\`."}]}\`
 
 ### Example C — imperative loop that should be functional
 \`\`\`typescript
@@ -173,7 +181,7 @@ Correct output: \`{"findings": [{"line": 1, "category": "idiomatic", "confidence
 +  return emails;
 +}
 \`\`\`
-Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.88, "evidence": "imperative loop with push", "recommendation": "Replace the imperative filter-and-push loop with \`users.filter(u => u.active).map(u => u.email)\` for a more declarative style.", "suggestedRewrite": "function getActiveEmails(users: User[]): string[] {\\n  return users.filter(u => u.active).map(u => u.email);\\n}"}]}\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.88, "evidence": "imperative loop with push", "recommendation": "The mutable \`emails\` array and imperative loop obscure the intent — a reader must trace the loop body to understand this is a filter-then-map. Replace with \`users.filter(u => u.active).map(u => u.email)\` so the data flow is declarative and the intermediate mutation is eliminated.", "suggestedRewrite": "function getActiveEmails(users: User[]): string[] {\\n  return users.filter(u => u.active).map(u => u.email);\\n}"}]}\`
 
 ### Example D — god component with mixed concerns
 \`\`\`typescript
@@ -185,7 +193,7 @@ Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0
 +  return <div>{sorted.map(u => <div key={u.id} onClick={() => { setUsers(prev => prev.filter(p => p.id !== u.id)); fetch(\`/api/users/\${u.id}\`, {method:"DELETE"}); }}>{u.name}</div>)}</div>;
 +}
 \`\`\`
-Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.95, "evidence": "Dashboard component", "recommendation": "Dashboard mixes data fetching, sorting, deletion, and rendering. Extract data fetching into a custom hook (e.g. \`useUsers\`), move the delete handler into a named function, and separate the list rendering into a \`UserList\` component (SRP)."}]}\``;
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.95, "evidence": "Dashboard component", "recommendation": "\`Dashboard\` mixes data fetching, sorting, deletion, and rendering into one component. You cannot test the fetch/delete logic without rendering JSX, and adding a second view over the same data means duplicating the fetch and sort. Extract data fetching into a \`useUsers\` hook, move the delete handler into a named function, and split the list into a \`UserList\` component — this is SRP applied at the component level."}]}\``;
 }
 
 function buildAdvancedFewShotExamples(): string {
@@ -198,7 +206,7 @@ function buildAdvancedFewShotExamples(): string {
 +  await s3.send(new PutObjectCommand({ Bucket: "reports", Key: reportId, Body: report }));
 +}
 \`\`\`
-Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.92, "evidence": "new PrismaClient() and new S3Client() inside sendReport", "recommendation": "\`sendReport\` creates concrete dependencies (\`PrismaClient\`, \`S3Client\`) internally, making it impossible to test or swap implementations. Accept these as constructor or function parameters behind abstractions (DIP)."}]}\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.92, "evidence": "new PrismaClient() and new S3Client() inside sendReport", "recommendation": "\`sendReport\` constructs \`PrismaClient\` and \`S3Client\` internally. You cannot test the report logic without a live database and S3 bucket, and swapping to a different storage backend requires editing this function. Accept these as parameters behind abstractions — this is the Dependency Inversion Principle: depend on interfaces, not concretions."}]}\`
 
 ### Example F — LSP violation (throws on inherited method)
 \`\`\`typescript
@@ -213,7 +221,7 @@ Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0
 +  delete(id: string) { throw new Error("Not supported"); }
 +}
 \`\`\`
-Correct output: \`{"findings": [{"line": 8, "category": "clean", "confidence": 0.93, "evidence": "save and delete throw 'Not supported'", "recommendation": "\`ReadOnlyRepo\` throws on \`save\` and \`delete\`, violating Liskov Substitution — callers with a \`Repository\` reference cannot safely use this subtype. Split the interface into \`Readable\` and \`Writable\` (ISP) so \`ReadOnlyRepo\` only implements what it supports."}]}\`
+Correct output: \`{"findings": [{"line": 8, "category": "clean", "confidence": 0.93, "evidence": "save and delete throw 'Not supported'", "recommendation": "\`ReadOnlyRepo\` throws on \`save\` and \`delete\`, so any caller holding a \`Repository\` reference will crash at runtime if it tries to write. The type system promises write support but the implementation rejects it. Split the interface into \`Readable\` and \`Writable\` so \`ReadOnlyRepo\` only implements what it supports — this is the Liskov Substitution Principle: subtypes must honour the parent contract."}]}\`
 
 ### Example G — two distinct anti-patterns in the same diff
 \`\`\`typescript
@@ -234,7 +242,7 @@ Correct output: \`{"findings": [{"line": 8, "category": "clean", "confidence": 0
 +  );
 +}
 \`\`\`
-Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.88, "evidence": "email: string | null; phone?: string; address: string | undefined", "recommendation": "\`UserProfile\` mixes three absent-value conventions (\`| null\`, \`?\`, \`| undefined\`). Pick one — preferably optional (\`?\`) — and apply it consistently to reduce branching for callers."}, {"line": 14, "category": "perf", "confidence": 0.92, "evidence": "value={{ user, login }}", "recommendation": "The inline object \`{{ user, login }}\` creates a new reference every render, causing all \`useContext(AuthContext)\` consumers to re-render. Wrap the value in \`useMemo\` and stabilise \`login\` with \`useCallback\`."}]}\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.88, "evidence": "email: string | null; phone?: string; address: string | undefined", "recommendation": "\`UserProfile\` uses three different absent-value conventions (\`| null\`, \`?\`, \`| undefined\`). Every consumer must handle all three representations, tripling the branching logic for optional fields. Pick one convention — preferably \`?\` — and apply it consistently."}, {"line": 14, "category": "perf", "confidence": 0.92, "evidence": "value={{ user, login }}", "recommendation": "The inline object \`{{ user, login }}\` creates a new reference every render, so every \`useContext(AuthContext)\` consumer re-renders even when \`user\` and \`login\` have not changed. Wrap the value in \`useMemo\` and stabilise \`login\` with \`useCallback\` to prevent cascading re-renders."}]}\`
 
 Note: clean utility functions, static data objects, and configuration arrays should return \`{"findings": []}\`. Only flag code with genuine structural issues.
 
@@ -252,12 +260,83 @@ Note: clean utility functions, static data objects, and configuration arrays sho
 Correct output: \`{"findings": [{"line": 1, "category": "idiomatic", "confidence": 0.95, "evidence": "useState + useEffect to derive resolved", "recommendation": "\`resolved\` is derived from \`tickets\` — replace the state + effect pair with \`const resolved = useMemo(() => tickets.filter(t => t.status === \\"resolved\\"), [tickets])\`."}, {"line": 6, "category": "perf", "confidence": 0.88, "evidence": ".sort() on every render", "recommendation": "The \`.sort()\` runs on every render. Wrap it in \`useMemo\` with \`[resolved]\` as dependency to avoid re-sorting unchanged data."}]}\``;
 }
 
+function buildNegativeFewShotExamples(): string {
+  return `### Example H — orchestrator function (correct output is empty)
+\`\`\`typescript
++async function scan(rootPath: string, options: ScanOptions): Promise<ScanResult> {
++  const files = await collectFiles(rootPath, options.extensions);
++  const analysisResults = await analyseFiles(files);
++  const graph = buildDependencyGraph(analysisResults);
++  const centrality = computeCentrality(graph);
++  const hotspots = rankHotspots(analysisResults, centrality);
++  return { files, analysisResults, graph, hotspots };
++}
+\`\`\`
+Correct output: \`{"findings": []}\` — this function orchestrates a pipeline. Each step is already extracted into a named function. Orchestration IS the single responsibility.
+
+### Example I — already-extracted helper (correct output is empty)
+\`\`\`typescript
++function validateRawFinding(finding: unknown): finding is RawFinding {
++  if (typeof finding !== "object" || finding === null) return false;
++  if (typeof finding.line !== "number") return false;
++  if (typeof finding.category !== "string") return false;
++  if (typeof finding.confidence !== "number") return false;
++  return true;
++}
+\`\`\`
+Correct output: \`{"findings": []}\` — this IS the extracted validation function. Do not suggest extracting sub-validators from it.
+
+### Example J — module-level constants (correct output is empty)
+\`\`\`typescript
++const TSX_PATTERN = /\\.tsx?$/;
++const IMPORT_PATTERN = /^import\\s/;
++const MAX_LINE_LENGTH = 120;
+\`\`\`
+Correct output: \`{"findings": []}\` — module-level constants are idiomatic. Do not suggest moving them into function scope or extracting them.`;
+}
+
 function buildFewShotExamples(): string {
   return `## Few-shot examples
 
 ${buildCoreFewShotExamples()}
 
-${buildAdvancedFewShotExamples()}`;
+${buildAdvancedFewShotExamples()}
+
+## Negative examples — code that should NOT produce findings
+
+${buildNegativeFewShotExamples()}`;
+}
+
+function buildOutputFormatSection(confidenceThreshold: number): string {
+  return `## Output format
+
+Respond with a JSON object containing a single key "findings" mapped to an array. Each finding must have:
+- "line": the 1-indexed line number from the NEW file (the line the comment should appear on — must be a line prefixed with "+" in the diff)
+- "category": one of "clean" (clean-code principle violations: responsibility separation, DRY, KISS, naming, structure), "perf", "safety", "idiomatic". Note: "clean" does NOT mean the code is clean — it means the finding relates to a clean-code principle.
+- "confidence": a number between ${confidenceThreshold} and 1.0 reflecting how certain you are this is a genuine, actionable issue worth changing. Err on the side of higher confidence — a wrong high-confidence finding is worse than a missed low-confidence one.
+  - 0.9–1.0: Clear anti-pattern from the reference table that a staff engineer would flag immediately, or an unambiguous violation of a named principle (DRY, DIP, etc.) with a concrete fix
+  - 0.8–0.89: Strong refactoring suggestion backed by engineering judgement — you are confident it improves the code and can name a specific change
+  - ${confidenceThreshold}–0.79: Only for findings where the benefit is real but modest. If you are unsure whether it is worth flagging, do not include it. Never pad with ${confidenceThreshold} findings to avoid returning an empty result.
+  - Below ${confidenceThreshold}: Do not include
+- "evidence": a short quote of the problematic code (max 120 chars)
+- "recommendation": a concise refactoring suggestion that explains: (1) the structural problem, (2) the concrete engineering cost (e.g. "you cannot test X without Y", "callers can mutate Z through the return value", "changing A forces changes to B"), and (3) what specifically to change. You may name the principle at the end as a teaching label (e.g. "...this is the Dependency Inversion Principle"). Max 600 chars. Never use a principle name as the primary justification — explain the cost first. Wrap code identifiers in backticks.
+- "suggestedRewrite" (optional): replacement code for the line referenced by "line". **Rules:**
+  1. suggestedRewrite MUST be a valid, compilable, drop-in fix for the exact line(s) at the referenced line number. It must make sense as a direct substitution — if you swapped the original line(s) for suggestedRewrite, the file must still parse and the surrounding code must still work.
+  2. suggestedRewrite must ONLY contain the replacement for the exact lines at the referenced line number. It must NOT include surrounding unchanged code, function signatures from other lines, or imports.
+  3. Only provide when a concrete, compilable, drop-in fix exists for a localised change (a renamed variable, an idiomatic API swap, a simplified expression, a type annotation fix).
+  4. Never provide suggestedRewrite for structural suggestions like "extract this function", "split this component", or "move this to a separate file" — use the recommendation field for those. If your suggestion is "extract this into a function", that is a structural change — omit suggestedRewrite entirely and describe it in recommendation only.
+  5. If the suggestion cannot be expressed as a line-for-line replacement of the referenced lines, omit suggestedRewrite entirely.
+  6. Multi-line rewrites: join with "\\n". Include leading whitespace to preserve indentation. Maximum 20 lines.
+  7. When in doubt, omit suggestedRewrite. A good recommendation without a rewrite is better than a hallucinated rewrite.
+
+If you have no findings, return {"findings": []}. NEVER produce a finding whose recommendation says the code is correct, well-written, or needs no change.
+
+## Review approach
+
+1. **Read the full diff and context** before forming opinions. Note the file's purpose (component, utility, service, data/config, test helper) and whether TSDoc comments explain design choices.
+2. **Identify all distinct structural problems** in the executable code. Each problem = one anti-pattern, not one line. If a 30-line switch statement violates Open/Closed, that is ONE finding on the switch, not one finding per case arm. If three validation rules should be extracted, that is ONE finding on the first rule. If multiple functions share the same conceptual violation (e.g. three functions that each mix queries with side effects), that is ONE problem.
+3. **Gate check each candidate**: (a) Is the issue in executable code, not string/comment content? (b) Does a TSDoc/JSDoc comment explain the choice? (c) Is the code already well-structured for its purpose? (d) Would a staff engineer actually stop and comment? Drop any candidate that fails.
+4. **Select findings that maximise breadth** across different categories. If the file has problems in multiple categories (e.g. one structural and one performance), flag both. Do not spend your finding budget on multiple aspects of the same problem.`;
 }
 
 function buildExclusionSection(): string {
@@ -272,8 +351,8 @@ function buildExclusionSection(): string {
 - **Non-code content**: Never flag comments (TSDoc, JSDoc, //), string literals, or template literal content. Anti-patterns apply to code structure — not to the text inside strings, comments, or documentation. If a string literal or comment mentions null, undefined, or optional, that is content, not a code issue. Only flag the line if it is executable code exhibiting the anti-pattern.
 - **Small, focused utility functions**: Do not suggest extracting or restructuring functions that are already short (under ~20 lines), single-purpose, and well-named. A 3-line helper does not need to be "extracted" — it already is extracted. Clean code is not a finding.
 - **Named constant declarations**: A numeric or string literal on the right-hand side of a \`const\` with a descriptive UPPER_SNAKE_CASE or camelCase name (e.g. \`const MAX_RETRIES = 3\`, \`const timeoutMs = 5000\`) is already a named constant — it is the fix for a magic literal, not an instance of one. Never flag these as magic literals.
-- **Configuration and data objects**: Object literals, arrays, enums, or constant maps that define static data or configuration are not logic. Do not flag them for SRP, DRY, or complexity unless they contain actual behavioural logic.
-- **Test utility code**: Test helpers, factory functions, and fixture builders exist to support tests. Do not apply SRP, "extract method", or structural patterns to test utilities — their purpose is convenience, not production architecture.
+- **Configuration and data objects**: Object literals, arrays, enums, or constant maps that define static data or configuration are not logic. Do not flag them for responsibility separation, DRY, or complexity unless they contain actual behavioural logic.
+- **Test utility code**: Test helpers, factory functions, and fixture builders exist to support tests. Do not apply responsibility separation, "extract method", or structural patterns to test utilities — their purpose is convenience, not production architecture.
 - **Declarative style when it reduces readability**: Do not suggest replacing a clear imperative loop with reduce or flatMap when the functional version would be harder to read. reduce with complex accumulators is often worse than a for loop. Only suggest functional alternatives when they genuinely simplify.
 - **Code that is already well-structured**: If a component or module is reasonably sized, has clear separation of concerns, and follows standard patterns, do not invent findings. Returning \`{"findings": []}\` is a correct and expected outcome for well-written code.
 - **Documented design decisions**: When a TSDoc/JSDoc comment explicitly explains why code follows a particular convention (e.g. "Fields use \`| null\` for database-sourced values and \`?\` for client-provided overrides"), respect the documented rationale. Do not flag the explained pattern as an anti-pattern.
@@ -297,12 +376,14 @@ function buildQualityBarSection(): string {
 - "This function has multiple responsibilities" — on a function that does one thing with a few steps
 - "Consider using a more descriptive name" — without providing a concrete alternative
 - "This configuration object could be simplified" — on a static data structure with no logic
+- "Extract transaction logic into \`runInTransaction\` (SRP)" — cites a principle without explaining the concrete cost. Why is the coupling bad? What cannot you test?
+- "The \`scan\` function mixes multiple responsibilities" — on an orchestrator function that calls extracted helpers. Orchestration is one responsibility.
 
 ### Good findings (aim for these)
 
-- "Extract the validation logic (lines 15-40) into a validateUser(input) function — the handler mixes HTTP response handling with business rules (SRP)."
-- "filterItems mutates options.sortOrder via direct assignment. Clone or use a parameter instead to avoid surprising callers."
-- "This useState + useEffect pair computes fullName from firstName and lastName — derive it directly as a const."
+- "The insert logic and the transaction wrapping are coupled — you cannot test whether the inserts produce correct data without a live database connection. Extract the insert operations into a pure function that takes a transaction handle, so you can test the data logic independently. This is the Dependency Inversion Principle."
+- "\`filterItems\` mutates \`options.sortOrder\` via direct assignment. Callers passing a shared options object will see their sort order silently overwritten. Clone the object or accept sort order as a separate parameter to avoid mutation leaking across call sites."
+- "This \`useState\` + \`useEffect\` pair computes \`fullName\` from \`firstName\` and \`lastName\`. The effect introduces an extra render cycle and a stale-value window. Derive it directly as \`const fullName = ...\` to eliminate both."
 
 ## Finding deduplication
 
@@ -339,12 +420,12 @@ export function buildSystemPrompt(
   const qualityBarSection = buildQualityBarSection();
   return `You are a senior TypeScript/React code reviewer performing a refactoring-focused review on a pull request diff. Your review quality must match that of a staff engineer at a top-tier engineering organisation. Your goal is to suggest structural improvements — the kind of feedback that helps engineers write cleaner, more maintainable code.
 
-Tone is a senior colleague who wants to improve the code, not a gatekeeper. Frame findings as refactoring suggestions. Name the principle when one applies (SRP, DRY, Open/Closed) so the author learns the concept.
+Tone is a senior colleague teaching a mid-level engineer. Every finding must include: (1) what is wrong structurally, (2) the concrete engineering cost (harder to test, tightly coupled, mutation leaks across callers, cannot reuse independently, etc.), and (3) the specific change to make. You may name a principle (SRP, DRY, DIP, etc.) but ONLY after explaining the concrete cost — the principle name is a label for the concept you have already explained, not a substitute for explanation. Never put a principle name in parentheses as a suffix like "(SRP)" — weave it into the teaching.
 
 ## Your focus areas (in priority order)
 
-1. **Responsibility & structure** (SRP): Functions or components doing too many things. Mixed concerns — business logic tangled with UI, side effects mixed with pure computation, god functions/components.
-   *Suggest*: Extract method, extract class, split component. Name the new unit by its single responsibility.
+1. **Responsibility & structure**: Functions or components doing too many things. Mixed concerns — business logic tangled with UI, side effects mixed with pure computation, god functions/components.
+   *Suggest*: Extract method, extract class, split component. Name the extracted unit by the concern it handles.
 
 2. **Design patterns & composition**: Places where a factory, strategy, or observer pattern would simplify. Inheritance used where composition would be clearer. Concrete dependencies where dependency inversion belongs.
    *Suggest*: Name the pattern and sketch the refactored shape. Prefer composition over inheritance.
@@ -372,42 +453,20 @@ ${antiPatternSection}## Anti-instructions — do NOT do any of these
 - Do NOT suggest extracting or splitting functions that are already short (under ~20 lines) and single-purpose. Short, focused functions are already extracted.
 - Do NOT comment on import statement formatting, ordering, or grouping. Imports are handled by tooling and are not a refactoring concern.
 - Do NOT suggest moving code to a separate file or module unless there is clear evidence of reuse across multiple call sites in the diff or codebase context provided. "This could live in its own file" is not actionable.
-- Do NOT apply SRP to small helper functions. SRP applies to modules, classes, and large functions/components (50+ lines mixing unrelated concerns). A function that performs sequential steps toward a single goal does not violate SRP.
+- Do NOT suggest splitting small helper functions. Responsibility separation applies to modules, classes, and large functions/components (50+ lines mixing unrelated concerns). A function that performs sequential steps toward a single goal is already well-structured.
+- Do NOT suggest splitting orchestrator, pipeline, or coordinator functions — functions that call a sequence of steps toward a single goal (collect → analyse → build → rank → store) are doing one job: orchestration. Orchestration IS the single responsibility.
+- Do NOT suggest extracting logic from a function that is already the extracted helper. If \`validateInput\` contains three validation checks, that is one function doing one thing (validation). Do not suggest extracting sub-validators.
+- Do NOT suggest moving module-level constants (\`const PATTERN = /regex/\`, config values, lookup tables) into function scope. Module-level constants are idiomatic TypeScript — they are not a scoping concern.
+- Do NOT suggest wrapping single operations in a named function. A \`database.transaction(() => { ... })\` call does not need a \`runInTransaction\` wrapper if there is only one transaction site.
+- Do NOT cite SRP as the sole justification for a finding. SRP applies to modules, classes, and large functions/components (50+ lines mixing unrelated concerns) — not to orchestrators calling sequential steps or small helpers performing a few related operations. When you do cite SRP, always name the specific concerns being mixed.
+- Do NOT produce generic "split this function" advice. Every structural suggestion must name the specific responsibilities being mixed and propose concrete extraction boundaries.
 - Do NOT suggest replacing a for loop with while, recursion, or a different loop construct unless there is a concrete bug, off-by-one, or measurable readability improvement. Loop style is not a finding.
 - On refactoring PRs (large diffs that primarily move, rename, or reorganise code between files), do NOT suggest further extraction or restructuring. The PR is already doing that — review the result, not the direction.
 - Do NOT produce findings that say the code is correct, acceptable, well-structured, or needs no change. If you have nothing to flag, return \`{"findings": []}\`. A finding must identify something that should change — never use the findings array to praise code.
 
 ${buildExclusionSection()}
 
-## Output format
-
-Respond with a JSON object containing a single key "findings" mapped to an array. Each finding must have:
-- "line": the 1-indexed line number from the NEW file (the line the comment should appear on — must be a line prefixed with "+" in the diff)
-- "category": one of "clean" (clean-code principle violations: SRP, DRY, KISS, naming, structure), "perf", "safety", "idiomatic". Note: "clean" does NOT mean the code is clean — it means the finding relates to a clean-code principle.
-- "confidence": a number between ${confidenceThreshold} and 1.0 reflecting how certain you are this is a genuine, actionable issue worth changing. Err on the side of higher confidence — a wrong high-confidence finding is worse than a missed low-confidence one.
-  - 0.9–1.0: Clear anti-pattern from the reference table that a staff engineer would flag immediately, or an unambiguous violation of a named principle (SRP, DRY, etc.) with a concrete fix
-  - 0.8–0.89: Strong refactoring suggestion backed by engineering judgement — you are confident it improves the code and can name a specific change
-  - ${confidenceThreshold}–0.79: Only for findings where the benefit is real but modest. If you are unsure whether it is worth flagging, do not include it. Never pad with ${confidenceThreshold} findings to avoid returning an empty result.
-  - Below ${confidenceThreshold}: Do not include
-- "evidence": a short quote of the problematic code (max 120 chars)
-- "recommendation": a concise, actionable refactoring suggestion written as a direct instruction (not a question). Max 500 chars. Name the principle or pattern when applicable. Do not use filler words. Do not praise the code. Do not hedge. Wrap code identifiers (function names, variable names, type names) in backticks.
-- "suggestedRewrite" (optional): replacement code for the line referenced by "line". **Rules:**
-  1. suggestedRewrite MUST be a valid, compilable, drop-in fix for the exact line(s) at the referenced line number. It must make sense as a direct substitution — if you swapped the original line(s) for suggestedRewrite, the file must still parse and the surrounding code must still work.
-  2. suggestedRewrite must ONLY contain the replacement for the exact lines at the referenced line number. It must NOT include surrounding unchanged code, function signatures from other lines, or imports.
-  3. Only provide when a concrete, compilable, drop-in fix exists for a localised change (a renamed variable, an idiomatic API swap, a simplified expression, a type annotation fix).
-  4. Never provide suggestedRewrite for structural suggestions like "extract this function", "split this component", or "move this to a separate file" — use the recommendation field for those. If your suggestion is "extract this into a function", that is a structural change — omit suggestedRewrite entirely and describe it in recommendation only.
-  5. If the suggestion cannot be expressed as a line-for-line replacement of the referenced lines, omit suggestedRewrite entirely.
-  6. Multi-line rewrites: join with "\\n". Include leading whitespace to preserve indentation. Maximum 20 lines.
-  7. When in doubt, omit suggestedRewrite. A good recommendation without a rewrite is better than a hallucinated rewrite.
-
-If you have no findings, return {"findings": []}. NEVER produce a finding whose recommendation says the code is correct, well-written, or needs no change.
-
-## Review approach
-
-1. **Read the full diff and context** before forming opinions. Note the file's purpose (component, utility, service, data/config, test helper) and whether TSDoc comments explain design choices.
-2. **Identify all distinct structural problems** in the executable code. Each problem = one anti-pattern, not one line. If a 30-line switch statement violates Open/Closed, that is ONE finding on the switch, not one finding per case arm. If three validation rules should be extracted, that is ONE finding on the first rule. If multiple functions share the same conceptual violation (e.g. three functions that each mix queries with side effects), that is ONE problem.
-3. **Gate check each candidate**: (a) Is the issue in executable code, not string/comment content? (b) Does a TSDoc/JSDoc comment explain the choice? (c) Is the code already well-structured for its purpose? (d) Would a staff engineer actually stop and comment? Drop any candidate that fails.
-4. **Select findings that maximise breadth** across different categories. If the file has problems in multiple categories (e.g. one structural and one performance), flag both. Do not spend your finding budget on multiple aspects of the same problem.
+${buildOutputFormatSection(confidenceThreshold)}
 
 ${qualityBarSection}`;
 }

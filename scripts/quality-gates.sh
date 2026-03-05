@@ -119,4 +119,12 @@ if rg -n --glob '**/*.ts' --glob '**/*.tsx' --glob '!node_modules/**' --glob '!d
   fail "inject processedAt timestamp via dependency/time source"
 fi
 
+if rg -n --glob '**/*.ts' --glob '**/*.tsx' --glob '!node_modules/**' --glob '!dist/**' --glob '!.mergewise-runtime/**' --glob '!**/*.test.ts' --glob '!**/*.test.tsx' 'SELECT .+ FROM' apps packages 2>/dev/null | grep -iv 'LIMIT\|CREATE\|INSERT\|SCHEMA\|PRIMARY KEY' >/tmp/mergewise-quality-unbounded-sql.txt; then
+  if [ -s /tmp/mergewise-quality-unbounded-sql.txt ]; then
+    echo "SQL query without LIMIT found:" >&2
+    cat /tmp/mergewise-quality-unbounded-sql.txt >&2
+    fail "add LIMIT to SELECT queries that return variable-length results"
+  fi
+fi
+
 echo "quality-gates passed"
