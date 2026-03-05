@@ -15,6 +15,7 @@
     ".mergewise-runtime",
     "**/*.test.ts",
     "tests/**",
-    "packages/eval/fixtures/**"
+    "packages/eval/fixtures/**",
+    "packages/debt-scanner/**"
   ]
 }

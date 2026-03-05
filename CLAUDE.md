@@ -31,6 +31,11 @@ Run all four before opening a PR. If any fail, fix before proceeding.
 
 ## Testing
 
+Test the failure mode, not just the happy path. Every new feature must include tests for:
+- What happens with duplicate/malformed input (e.g. duplicate DB keys, invalid JSON from LLM)
+- What happens when the process restarts mid-operation (e.g. in-memory state is lost)
+- What happens when a new code path is added alongside an existing one (e.g. callbacks, hooks, telemetry registered on the old path must be exercised on the new path too)
+
 Test behaviour, not implementation.
 
 Bad — breaks when internals change:
