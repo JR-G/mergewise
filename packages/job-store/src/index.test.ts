@@ -207,6 +207,22 @@ describe("isCollectFeedbackJob", () => {
   test("returns true for MAX_SAFE_INTEGER pr_number", () => {
     expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: Number.MAX_SAFE_INTEGER }))).toBe(true);
   });
+
+  test("returns false for negative installation_id", () => {
+    expect(isCollectFeedbackJob(makeFeedbackJob({ installation_id: -1 as number }))).toBe(false);
+  });
+
+  test("returns false for NaN installation_id", () => {
+    expect(isCollectFeedbackJob(makeFeedbackJob({ installation_id: Number.NaN }))).toBe(false);
+  });
+
+  test("returns false for Infinity installation_id", () => {
+    expect(isCollectFeedbackJob(makeFeedbackJob({ installation_id: Number.POSITIVE_INFINITY }))).toBe(false);
+  });
+
+  test("returns false for non-integer installation_id", () => {
+    expect(isCollectFeedbackJob(makeFeedbackJob({ installation_id: 1.5 as number }))).toBe(false);
+  });
 });
 
 describe("enqueueCollectFeedbackJob", () => {

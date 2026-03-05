@@ -169,7 +169,11 @@ export interface ReviewThreadComment {
 }
 
 /**
- * Review thread data with full comment history for feedback extraction.
+ * Review thread data with up to 20 replies per thread for feedback extraction.
+ *
+ * @remarks
+ * The underlying GraphQL query fetches `comments(first: 20)` per thread,
+ * so threads with more than 20 replies will have their oldest replies truncated.
  */
 export interface ReviewThreadWithReplies {
   readonly id: string;
@@ -333,7 +337,7 @@ function extractReviewThreadPage(data: unknown): ReviewThreadPageResult {
  * with author metadata for conversational learning extraction.
  *
  * @param options - Review thread listing options.
- * @returns Review threads with full comment history.
+ * @returns Review threads with up to 20 replies each.
  * @throws {@link GitHubApiError} when the HTTP request fails.
  * @throws {@link GitHubGraphQlError} when the GraphQL response contains errors.
  */

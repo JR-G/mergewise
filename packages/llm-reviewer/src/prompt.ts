@@ -477,6 +477,7 @@ export function buildFileReviewPrompt(
 function hasLearnings(learnings: RepoLearnings): boolean {
   return (
     learnings.instructions.length > 0 ||
+    learnings.suppressedRules.length > 0 ||
     learnings.preferredCategories.length > 0 ||
     learnings.dislikedCategories.length > 0
   );

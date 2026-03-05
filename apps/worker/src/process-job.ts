@@ -134,8 +134,9 @@ function resolveProcessingConfig(
 
   const blockedRuleIds = [...DEFAULT_BLOCKED_POST_RULE_IDS];
   if (repoLearnings) {
+    const blockedSet = new Set(blockedRuleIds);
     for (const suppressedRuleId of repoLearnings.suppressedRules) {
-      if (!blockedRuleIds.includes(suppressedRuleId)) {
+      if (!blockedSet.has(suppressedRuleId)) {
         blockedRuleIds.push(suppressedRuleId);
       }
     }

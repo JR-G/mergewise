@@ -159,6 +159,9 @@ export function isCollectFeedbackJob(value: unknown): value is CollectFeedbackJo
   if (candidate.installation_id !== null && typeof candidate.installation_id !== "number") {
     return false;
   }
+  if (typeof candidate.installation_id === "number" && (!Number.isFinite(candidate.installation_id) || !Number.isInteger(candidate.installation_id) || candidate.installation_id < 0)) {
+    return false;
+  }
   if (candidate.trace_id !== undefined && typeof candidate.trace_id !== "string") {
     return false;
   }
