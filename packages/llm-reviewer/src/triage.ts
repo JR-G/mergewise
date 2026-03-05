@@ -1,5 +1,5 @@
 import type { FileDiff } from "@mergewise/shared-types";
-import type { CompletionUsage, ReviewClient } from "./client";
+import { mergeUsage, type CompletionUsage, type ReviewClient } from "./client";
 import type { TriagePriority, TriageResult } from "./pipeline-types";
 
 const MAX_FILES_PER_TRIAGE_BATCH = 30;
@@ -106,22 +106,6 @@ export function parseTriageResponse(
       reasoning: "Not classified by triage",
     },
   );
-}
-
-/**
- * Merges two optional usage values into one.
- */
-function mergeUsage(
-  left: CompletionUsage | undefined,
-  right: CompletionUsage | undefined,
-): CompletionUsage | undefined {
-  if (!left) return right;
-  if (!right) return left;
-  return {
-    promptTokens: left.promptTokens + right.promptTokens,
-    completionTokens: left.completionTokens + right.completionTokens,
-    totalTokens: left.totalTokens + right.totalTokens,
-  };
 }
 
 /**

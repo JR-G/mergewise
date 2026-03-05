@@ -1,5 +1,5 @@
 import type { Finding } from "@mergewise/shared-types";
-import type { CompletionUsage, ReviewClient } from "./client";
+import { mergeUsage, type CompletionUsage, type ReviewClient } from "./client";
 import type { CriticResult, FilteredFinding } from "./pipeline-types";
 
 const MAX_FINDINGS_PER_CRITIC_BATCH = 50;
@@ -126,22 +126,6 @@ function defaultVerdicts(count: number): CriticVerdict[] {
     keep: true,
     reason: "Critic response could not be parsed — defaulting to keep",
   }));
-}
-
-/**
- * Merges two optional usage values into one.
- */
-function mergeUsage(
-  left: CompletionUsage | undefined,
-  right: CompletionUsage | undefined,
-): CompletionUsage | undefined {
-  if (!left) return right;
-  if (!right) return left;
-  return {
-    promptTokens: left.promptTokens + right.promptTokens,
-    completionTokens: left.completionTokens + right.completionTokens,
-    totalTokens: left.totalTokens + right.totalTokens,
-  };
 }
 
 /**

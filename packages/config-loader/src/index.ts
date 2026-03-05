@@ -89,6 +89,13 @@ export interface MergewiseLlmConfigV1 {
    * is enabled.
    */
   criticModel: string;
+  /**
+   * Whether to use the three-stage review pipeline (triage, review, critic).
+   *
+   * @remarks
+   * When false, falls back to single-shot per-file review. Defaults to `true`.
+   */
+  usePipeline: boolean;
 }
 
 /**
@@ -267,6 +274,7 @@ export const DEFAULT_MERGEWISE_CONFIG: MergewiseConfig = {
     consistencySamples: 1,
     triageModel: "gpt-4o-mini",
     criticModel: "gpt-4o-mini",
+    usePipeline: true,
   },
 };
 
@@ -290,6 +298,7 @@ interface RawMergewiseConfig {
     consistencySamples?: unknown;
     triageModel?: unknown;
     criticModel?: unknown;
+    usePipeline?: unknown;
   };
 }
 
@@ -481,6 +490,12 @@ function applyLlmModelFields(
     throw new MergewiseConfigValidationError(filePath, "llm.criticModel must be a non-empty string");
   }
   if (typeof criticModel === "string") normalizedConfig.llm.criticModel = criticModel.trim();
+
+  const usePipeline = rawLlm.usePipeline;
+  if (usePipeline !== undefined && typeof usePipeline !== "boolean") {
+    throw new MergewiseConfigValidationError(filePath, "llm.usePipeline must be a boolean");
+  }
+  if (typeof usePipeline === "boolean") normalizedConfig.llm.usePipeline = usePipeline;
 }
 
 function applyLlm(

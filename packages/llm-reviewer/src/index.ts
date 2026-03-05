@@ -20,7 +20,7 @@ export { parseLlmResponse, extractAddedLineNumbers, extractAddedLineMap, dedupli
 export type { AddedLineInfo, RawLlmFinding } from "./schema";
 export { extractStructuralSignals, type StructuralSignals } from "./signals";
 export { reviewFile } from "./review-file";
-export { createReviewClient, ReviewClient } from "./client";
+export { createReviewClient, ReviewClient, mergeUsage } from "./client";
 export { applyConsensusFilter, extractWordTokens, jaccardSimilarity } from "./consensus";
 
 export { runReviewPipeline } from "./pipeline";

@@ -4,7 +4,7 @@ import type {
   Finding,
   PullRequestMetadata,
 } from "@mergewise/shared-types";
-import { createReviewClient, type CompletionUsage, type ReviewClient } from "./client";
+import { createReviewClient, mergeUsage, type CompletionUsage, type ReviewClient } from "./client";
 import type {
   CriticResult,
   FileReviewFailure,
@@ -46,22 +46,6 @@ function createPipelineClients(config: ReviewPipelineConfig): PipelineClients {
     triageClient: createReviewClient({ ...baseConfig, model: config.triageModel ?? "gpt-4o-mini" }),
     reviewClient: createReviewClient({ ...baseConfig, model: config.reviewModel }),
     criticClient: createReviewClient({ ...baseConfig, model: config.criticModel ?? config.triageModel ?? "gpt-4o-mini" }),
-  };
-}
-
-/**
- * Merges two optional usage values into one.
- */
-function mergeUsage(
-  left: CompletionUsage | undefined,
-  right: CompletionUsage | undefined,
-): CompletionUsage | undefined {
-  if (!left) return right;
-  if (!right) return left;
-  return {
-    promptTokens: left.promptTokens + right.promptTokens,
-    completionTokens: left.completionTokens + right.completionTokens,
-    totalTokens: left.totalTokens + right.totalTokens,
   };
 }
 

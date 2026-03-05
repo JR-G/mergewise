@@ -6,7 +6,7 @@ import {
   type WorkerShutdownSignal,
 } from "./main";
 
-const DEFAULT_LLM_MODELS = { triageModel: "gpt-4o-mini", criticModel: "gpt-4o-mini" };
+const DEFAULT_LLM_MODELS = { triageModel: "gpt-4o-mini", criticModel: "gpt-4o-mini", usePipeline: true };
 
 function invokeSignalHandler(
   handler: (signal: WorkerShutdownSignal) => void,
