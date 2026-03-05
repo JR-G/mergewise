@@ -182,7 +182,7 @@ function prepareStatements(database: Database): Statements {
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ),
     insertFinding: database.prepare(
-      `INSERT INTO findings (scan_id, node_id, pattern_id, category, title, recommendation, confidence, line_start, line_end)
+      `INSERT OR IGNORE INTO findings (scan_id, node_id, pattern_id, category, title, recommendation, confidence, line_start, line_end)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
     queryScans: database.prepare("SELECT * FROM scans ORDER BY scanned_at DESC LIMIT 100"),

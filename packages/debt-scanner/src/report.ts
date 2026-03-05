@@ -63,10 +63,14 @@ export function formatMarkdownReport(profile: DebtProfile): string {
     parts.push("## Findings");
     parts.push("");
 
-    const groupedByFile = new Map<string, typeof profile.findings>();
+    const groupedByFile = new Map<string, DebtFinding[]>();
     for (const finding of profile.findings) {
-      const existing = groupedByFile.get(finding.nodeId) ?? [];
-      groupedByFile.set(finding.nodeId, [...existing, finding]);
+      const existing = groupedByFile.get(finding.nodeId);
+      if (existing) {
+        existing.push(finding);
+      } else {
+        groupedByFile.set(finding.nodeId, [finding]);
+      }
     }
 
     for (const [nodeId, fileFindings] of groupedByFile) {

@@ -7,7 +7,7 @@ const EXCLUDED_DIRS = new Set(["node_modules", "dist", ".git", "coverage", "__sn
  * Collects TypeScript/TSX files from a repository, respecting `.gitignore`.
  *
  * @param repoPath - Absolute path to the repository root.
- * @returns Absolute paths of all tracked `.ts`/`.tsx` files.
+ * @returns Absolute paths of all non-ignored `.ts`/`.tsx` files.
  */
 export async function collectFiles(repoPath: string): Promise<readonly string[]> {
   const absoluteRoot = resolve(repoPath);
