@@ -76,7 +76,7 @@ SELECT
 FROM comment_feedback
 WHERE repo_full_name = ?
 GROUP BY rule_id
-HAVING COUNT(*) >= 3
+HAVING COALESCE(SUM(thumbs_up), 0) + COALESCE(SUM(thumbs_down), 0) >= 3
 ORDER BY thumbs_down DESC
 LIMIT 50
 `;
@@ -91,6 +91,7 @@ FROM comment_feedback
 WHERE repo_full_name = ?
 GROUP BY category
 HAVING COUNT(*) >= 5
+ORDER BY thumbs_down DESC, thumbs_up ASC, category ASC
 LIMIT 20
 `;
 
@@ -186,12 +187,18 @@ export function openFeedbackStore(databasePath = DEFAULT_DATABASE_PATH): Feedbac
   const queryRuleSentimentStmt = database.prepare(QUERY_RULE_SENTIMENT_SQL);
   const queryDislikedCategoriesStmt = database.prepare(QUERY_DISLIKED_CATEGORIES_SQL);
 
+  const MAX_BATCH_SIZE = 500;
+
   return {
     saveFeedback(records) {
-      if (records.length > 0) insertManyFeedback(records);
+      for (let offset = 0; offset < records.length; offset += MAX_BATCH_SIZE) {
+        insertManyFeedback(records.slice(offset, offset + MAX_BATCH_SIZE));
+      }
     },
     saveInstructions(instructions) {
-      if (instructions.length > 0) insertManyInstructions(instructions);
+      for (let offset = 0; offset < instructions.length; offset += MAX_BATCH_SIZE) {
+        insertManyInstructions(instructions.slice(offset, offset + MAX_BATCH_SIZE));
+      }
     },
     queryInstructions(repoFullName) {
       return (queryInstructionsStmt.all(repoFullName) as InstructionRow[]).map(mapInstructionRow);

@@ -187,6 +187,26 @@ describe("isCollectFeedbackJob", () => {
   test("returns true with optional trace_id", () => {
     expect(isCollectFeedbackJob(makeFeedbackJob({ trace_id: "abc" }))).toBe(true);
   });
+
+  test("returns false for negative pr_number", () => {
+    expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: -1 as number }))).toBe(false);
+  });
+
+  test("returns true for pr_number zero", () => {
+    expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: 0 }))).toBe(true);
+  });
+
+  test("returns false for NaN pr_number", () => {
+    expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: Number.NaN }))).toBe(false);
+  });
+
+  test("returns false for non-integer float pr_number", () => {
+    expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: 1.5 as number }))).toBe(false);
+  });
+
+  test("returns true for MAX_SAFE_INTEGER pr_number", () => {
+    expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: Number.MAX_SAFE_INTEGER }))).toBe(true);
+  });
 });
 
 describe("enqueueCollectFeedbackJob", () => {
@@ -202,11 +222,11 @@ describe("enqueueCollectFeedbackJob", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test("round-trips enqueue then read via readAllQueueJobs", () => {
+  test("round-trips enqueue then read via readAllQueueJobs", async () => {
     const feedbackJob = makeFeedbackJob();
     enqueueCollectFeedbackJob(feedbackJob, filePath);
 
-    const jobs = readAllQueueJobs(filePath);
+    const jobs = await readAllQueueJobs(filePath);
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toEqual(feedbackJob);
   });
@@ -225,25 +245,25 @@ describe("readAllQueueJobs", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test("returns empty array when file is missing", () => {
+  test("returns empty array when file is missing", async () => {
     const missing = join(tempDir, "does-not-exist.ndjson");
-    expect(readAllQueueJobs(missing)).toEqual([]);
+    expect(await readAllQueueJobs(missing)).toEqual([]);
   });
 
-  test("reads mixed analyze and feedback jobs", () => {
+  test("reads mixed analyze and feedback jobs", async () => {
     const analyzeJob = makeJob({ job_id: "analyze-1" });
     const feedbackJob = makeFeedbackJob({ job_id: "feedback-1" });
 
     enqueueAnalyzePullRequestJob(analyzeJob, filePath);
     enqueueCollectFeedbackJob(feedbackJob, filePath);
 
-    const jobs = readAllQueueJobs(filePath);
+    const jobs = await readAllQueueJobs(filePath);
     expect(jobs).toHaveLength(2);
     expect(jobs[0]!.job_id).toBe("analyze-1");
     expect(jobs[1]!.job_id).toBe("feedback-1");
   });
 
-  test("treats legacy lines without type field as analyze jobs", () => {
+  test("treats legacy lines without type field as analyze jobs", async () => {
     const legacyJob = {
       job_id: "legacy-1",
       installation_id: 42,
@@ -255,18 +275,18 @@ describe("readAllQueueJobs", () => {
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, `${JSON.stringify(legacyJob)}\n`, "utf8");
 
-    const jobs = readAllQueueJobs(filePath);
+    const jobs = await readAllQueueJobs(filePath);
     expect(jobs).toHaveLength(1);
     expect(jobs[0]!.job_id).toBe("legacy-1");
   });
 
-  test("skips malformed lines", () => {
+  test("skips malformed lines", async () => {
     const feedbackJob = makeFeedbackJob({ job_id: "good" });
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, `not-json\n${JSON.stringify(feedbackJob)}\n`, "utf8");
 
     const { callback, skips } = collectSkips();
-    const jobs = readAllQueueJobs(filePath, callback);
+    const jobs = await readAllQueueJobs(filePath, callback);
 
     expect(jobs).toHaveLength(1);
     expect(jobs[0]!.job_id).toBe("good");

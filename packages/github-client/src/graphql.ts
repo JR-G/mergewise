@@ -10,6 +10,65 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+interface PaginatedPage<T> {
+  readonly threads: T[];
+  readonly hasNextPage: boolean;
+  readonly endCursor: string | null;
+}
+
+async function paginateGraphqlQuery<T>(
+  options: ListPullRequestReviewThreadsOptions,
+  queryString: string,
+  pageExtractor: (data: unknown) => PaginatedPage<T>,
+): Promise<T[]> {
+  const perPage = clamp(options.perPage ?? 100, 1, 100);
+  const maxPages = clamp(options.maxPages ?? 20, 1, 50);
+  const maxTotalThreads = perPage * maxPages;
+  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
+  const apiBaseUrl = trimTrailingSlash(
+    options.apiBaseUrl ?? "https://api.github.com",
+  );
+  const endpointUrl = `${apiBaseUrl}/graphql`;
+  const collected: T[] = [];
+  let cursor: string | null = null;
+
+  for (let pageNumber = 0; pageNumber < maxPages; pageNumber += 1) {
+    const variables: Record<string, unknown> = {
+      owner: options.owner,
+      name: options.repository,
+      prNumber: options.pullRequestNumber,
+      first: perPage,
+    };
+    if (cursor !== null) {
+      variables.after = cursor;
+    }
+
+    const response = await fetch(endpointUrl, {
+      method: "POST",
+      headers: buildHeaders({
+        authorization: `Bearer ${options.installationAccessToken}`,
+        userAgent: options.userAgent,
+        contentType: "application/json",
+        traceId: options.traceId,
+      }),
+      body: JSON.stringify({ query: queryString, variables }),
+      signal: AbortSignal.timeout(requestTimeoutMs),
+    });
+
+    const page = await parseGraphQlResponse<PaginatedPage<T>>(response, endpointUrl, pageExtractor);
+    collected.push(...page.threads);
+    if (collected.length >= maxTotalThreads) {
+      break;
+    }
+    if (!page.hasNextPage || page.endCursor === null) {
+      break;
+    }
+    cursor = page.endCursor;
+  }
+
+  return collected;
+}
+
 /**
  * Request options for minimising a comment via the GitHub GraphQL API.
  */
@@ -206,59 +265,7 @@ export async function minimizeComment(
 export async function listPullRequestReviewThreads(
   options: ListPullRequestReviewThreadsOptions,
 ): Promise<ReviewThread[]> {
-  const perPage = clamp(options.perPage ?? 100, 1, 100);
-  const maxPages = clamp(options.maxPages ?? 20, 1, 50);
-  const maxTotalThreads = perPage * maxPages;
-  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
-  const apiBaseUrl = trimTrailingSlash(
-    options.apiBaseUrl ?? "https://api.github.com",
-  );
-  const endpointUrl = `${apiBaseUrl}/graphql`;
-
-  const query = buildReviewThreadsQuery();
-  const collectedThreads: ReviewThread[] = [];
-  let cursor: string | null = null;
-
-  for (let pageNumber = 0; pageNumber < maxPages; pageNumber += 1) {
-    const variables: Record<string, unknown> = {
-      owner: options.owner,
-      name: options.repository,
-      prNumber: options.pullRequestNumber,
-      first: perPage,
-    };
-    if (cursor !== null) {
-      variables.after = cursor;
-    }
-
-    const response = await fetch(endpointUrl, {
-      method: "POST",
-      headers: buildHeaders({
-        authorization: `Bearer ${options.installationAccessToken}`,
-        userAgent: options.userAgent,
-        contentType: "application/json",
-        traceId: options.traceId,
-      }),
-      body: JSON.stringify({ query, variables }),
-      signal: AbortSignal.timeout(requestTimeoutMs),
-    });
-
-    const page = await parseGraphQlResponse<{
-      threads: ReviewThread[];
-      hasNextPage: boolean;
-      endCursor: string | null;
-    }>(response, endpointUrl, extractReviewThreadPage);
-
-    collectedThreads.push(...page.threads);
-    if (collectedThreads.length >= maxTotalThreads) {
-      break;
-    }
-    if (!page.hasNextPage || page.endCursor === null) {
-      break;
-    }
-    cursor = page.endCursor;
-  }
-
-  return collectedThreads;
+  return paginateGraphqlQuery(options, buildReviewThreadsQuery(), extractReviewThreadPage);
 }
 
 function buildReviewThreadsQuery(): string {
@@ -333,59 +340,7 @@ function extractReviewThreadPage(data: unknown): ReviewThreadPageResult {
 export async function listPullRequestReviewThreadsWithReplies(
   options: ListPullRequestReviewThreadsOptions,
 ): Promise<ReviewThreadWithReplies[]> {
-  const perPage = clamp(options.perPage ?? 100, 1, 100);
-  const maxPages = clamp(options.maxPages ?? 20, 1, 50);
-  const maxTotalThreads = perPage * maxPages;
-  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
-  const apiBaseUrl = trimTrailingSlash(
-    options.apiBaseUrl ?? "https://api.github.com",
-  );
-  const endpointUrl = `${apiBaseUrl}/graphql`;
-
-  const query = buildReviewThreadsWithRepliesQuery();
-  const collectedThreads: ReviewThreadWithReplies[] = [];
-  let cursor: string | null = null;
-
-  for (let pageNumber = 0; pageNumber < maxPages; pageNumber += 1) {
-    const variables: Record<string, unknown> = {
-      owner: options.owner,
-      name: options.repository,
-      prNumber: options.pullRequestNumber,
-      first: perPage,
-    };
-    if (cursor !== null) {
-      variables.after = cursor;
-    }
-
-    const response = await fetch(endpointUrl, {
-      method: "POST",
-      headers: buildHeaders({
-        authorization: `Bearer ${options.installationAccessToken}`,
-        userAgent: options.userAgent,
-        contentType: "application/json",
-        traceId: options.traceId,
-      }),
-      body: JSON.stringify({ query, variables }),
-      signal: AbortSignal.timeout(requestTimeoutMs),
-    });
-
-    const page = await parseGraphQlResponse<{
-      threads: ReviewThreadWithReplies[];
-      hasNextPage: boolean;
-      endCursor: string | null;
-    }>(response, endpointUrl, extractReviewThreadWithRepliesPage);
-
-    collectedThreads.push(...page.threads);
-    if (collectedThreads.length >= maxTotalThreads) {
-      break;
-    }
-    if (!page.hasNextPage || page.endCursor === null) {
-      break;
-    }
-    cursor = page.endCursor;
-  }
-
-  return collectedThreads;
+  return paginateGraphqlQuery(options, buildReviewThreadsWithRepliesQuery(), extractReviewThreadWithRepliesPage);
 }
 
 function buildReviewThreadsWithRepliesQuery(): string {

@@ -103,12 +103,12 @@ function persistInstructions(
   try {
     ctx.feedbackStore.saveInstructions(instructions);
     ctx.infoLogger(`[worker] instructions_persisted trace=${ctx.traceId} count=${instructions.length}`);
+    return instructions.length;
   } catch (persistError) {
     const detail = persistError instanceof Error ? persistError.message : String(persistError);
     ctx.errorLogger(`[worker] instructions_persist_failed trace=${ctx.traceId} job=${ctx.job.job_id}: ${detail}`);
+    return 0;
   }
-
-  return instructions.length;
 }
 
 /**

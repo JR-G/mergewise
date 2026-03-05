@@ -148,6 +148,16 @@ Bun.serve({
         );
       }
 
+      process.stderr.write(`${JSON.stringify({
+        event: "webhook_feedback_job_queued",
+        request_id: requestId,
+        http_status: 200,
+        job_id: feedbackJob.job_id,
+        repository_full_name: feedbackJob.repo_full_name,
+        pull_request_number: feedbackJob.pr_number,
+        github_event: eventName,
+      })}\n`);
+
       return createWebhookJsonResponse(
         {
           status: "queued",

@@ -1,4 +1,5 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { createInterface } from "node:readline";
 import { dirname } from "node:path";
 
 import type { AnalyzePullRequestJob, CollectFeedbackJob, QueueJob } from "@mergewise/shared-types";
@@ -43,6 +44,11 @@ function ensureParentDirectory(filePath: string): void {
  */
 function isAnalyzePullRequestJob(value: unknown): value is AnalyzePullRequestJob {
   if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const rawType = (value as Record<string, unknown>).type;
+  if (rawType !== undefined && rawType !== "analyze-pull-request") {
     return false;
   }
 
@@ -142,16 +148,24 @@ export function isCollectFeedbackJob(value: unknown): value is CollectFeedbackJo
   }
 
   const candidate = value as Partial<CollectFeedbackJob>;
-  return (
-    candidate.type === "collect-feedback" &&
-    typeof candidate.job_id === "string" &&
-    (typeof candidate.installation_id === "number" ||
-      candidate.installation_id === null) &&
-    typeof candidate.repo_full_name === "string" &&
-    typeof candidate.pr_number === "number" &&
-    (candidate.trace_id === undefined || typeof candidate.trace_id === "string") &&
-    typeof candidate.queued_at === "string"
-  );
+  if (
+    candidate.type !== "collect-feedback" ||
+    typeof candidate.job_id !== "string" ||
+    typeof candidate.repo_full_name !== "string" ||
+    typeof candidate.queued_at !== "string"
+  ) {
+    return false;
+  }
+  if (candidate.installation_id !== null && typeof candidate.installation_id !== "number") {
+    return false;
+  }
+  if (candidate.trace_id !== undefined && typeof candidate.trace_id !== "string") {
+    return false;
+  }
+  if (typeof candidate.pr_number !== "number" || !Number.isFinite(candidate.pr_number) || !Number.isInteger(candidate.pr_number) || candidate.pr_number < 0) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -170,34 +184,37 @@ export function enqueueCollectFeedbackJob(
 }
 
 /**
- * Reads all queued jobs of any type from the local NDJSON queue file.
+ * Maximum number of jobs read from the queue file in a single call.
+ */
+const MAX_QUEUE_SIZE = 10_000;
+
+/**
+ * Reads queued jobs from the local NDJSON queue file using line-by-line streaming.
  *
  * @remarks
  * Lines without a `type` field are treated as `AnalyzePullRequestJob` for
  * backward compatibility with queue entries written before the discriminator
- * was introduced.
+ * was introduced. Reading stops once `MAX_QUEUE_SIZE` jobs have been collected.
  *
  * @param filePath - Optional file path override for tests/local customization.
  * @param onSkippedLine - Optional callback for skipped lines. Defaults to stderr logging.
  * @returns Parsed queue jobs in file order.
  */
-export function readAllQueueJobs(
+export async function readAllQueueJobs(
   filePath = DEFAULT_JOB_FILE_PATH,
   onSkippedLine: OnSkippedLine = defaultOnSkippedLine,
-): QueueJob[] {
+): Promise<QueueJob[]> {
   if (!existsSync(filePath)) {
     return [];
   }
 
-  const raw = readFileSync(filePath, "utf8").trim();
-  if (!raw) {
-    return [];
-  }
-
   const jobs: QueueJob[] = [];
-  const lines = raw.split("\n");
+  const stream = createReadStream(filePath, { encoding: "utf8" });
+  const reader = createInterface({ input: stream, crlfDelay: Infinity });
+  let lineNumber = 0;
 
-  for (const [index, line] of lines.entries()) {
+  for await (const line of reader) {
+    lineNumber++;
     if (!line.trim()) {
       continue;
     }
@@ -206,18 +223,21 @@ export function readAllQueueJobs(
       const parsed = JSON.parse(line) as unknown;
       if (isCollectFeedbackJob(parsed)) {
         jobs.push(parsed);
-        continue;
-      }
-      if (isAnalyzePullRequestJob(parsed)) {
+      } else if (isAnalyzePullRequestJob(parsed)) {
         jobs.push(parsed);
-        continue;
+      } else {
+        onSkippedLine(lineNumber, "shape mismatch");
       }
-      onSkippedLine(index + 1, "shape mismatch");
     } catch (error) {
       const details = error instanceof Error ? error.message : String(error);
-      onSkippedLine(index + 1, details);
+      onSkippedLine(lineNumber, details);
+    }
+
+    if (jobs.length >= MAX_QUEUE_SIZE) {
+      break;
     }
   }
 
+  stream.close();
   return jobs;
 }

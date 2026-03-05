@@ -2,13 +2,7 @@ import type { ReviewThreadWithReplies } from "@mergewise/github-client";
 import type { RepoInstruction } from "@mergewise/feedback-store";
 import { sanitiseInstruction } from "@mergewise/feedback-store";
 
-/**
- * Matches the `mergewise-meta` HTML comment marker embedded in PR review comments.
- *
- * Capture groups: (1) ruleId, (2) category.
- */
-const META_MARKER_REGEX =
-  /mergewise-meta[^>]*ruleId=(\S+)\s+category=(\S+)/;
+import { MERGEWISE_META_REGEX } from "./comment-formatter";
 
 /**
  * Extracts safe, sanitised instructions from review thread replies.
@@ -37,16 +31,16 @@ export function extractInstructionsFromThreads(
     }
 
     const firstComment = thread.comments[0];
-    if (!firstComment) {
+    if (!firstComment?.authorIsBot) {
       continue;
     }
-    const metaMatch = META_MARKER_REGEX.exec(firstComment.body);
+    const metaMatch = MERGEWISE_META_REGEX.exec(firstComment.body);
     if (!metaMatch) {
       continue;
     }
 
-    const ruleId = metaMatch[1] ?? null;
-    const category = metaMatch[2] ?? null;
+    const ruleId = metaMatch[2] ?? null;
+    const category = metaMatch[3] ?? null;
 
     for (let commentIndex = 1; commentIndex < thread.comments.length; commentIndex++) {
       const reply = thread.comments[commentIndex];

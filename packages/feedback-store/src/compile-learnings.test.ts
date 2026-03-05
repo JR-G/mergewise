@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -51,6 +51,8 @@ function cleanup(): void {
 }
 
 describe("compileLearnings", () => {
+  afterEach(cleanup);
+
   test("returns empty learnings for a repo with no data", () => {
     const databasePath = tempDatabasePath();
     cleanupPaths.push(databasePath);
@@ -58,7 +60,6 @@ describe("compileLearnings", () => {
 
     const learnings = compileLearnings("acme/widget", store);
     store.close();
-    cleanup();
 
     expect(learnings.instructions).toEqual([]);
     expect(learnings.suppressedRules).toEqual([]);
@@ -79,7 +80,6 @@ describe("compileLearnings", () => {
 
     const learnings = compileLearnings("acme/widget", store);
     store.close();
-    cleanup();
 
     expect(learnings.instructions).toHaveLength(2);
     expect(learnings.summary).toContain("2 instruction(s)");
@@ -98,7 +98,6 @@ describe("compileLearnings", () => {
 
     const learnings = compileLearnings("acme/widget", store);
     store.close();
-    cleanup();
 
     expect(learnings.suppressedRules).toContain("bad-rule");
     expect(learnings.summary).toContain("1 suppressed rule(s)");
@@ -117,9 +116,40 @@ describe("compileLearnings", () => {
 
     const learnings = compileLearnings("acme/widget", store);
     store.close();
-    cleanup();
 
     expect(learnings.suppressedRules).not.toContain("ok-rule");
+  });
+
+  test("does not suppress when dislike:like ratio == 2", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    store.saveFeedback([
+      buildRecord({ ruleId: "exact-ratio", thumbsUp: 1, thumbsDown: 2 }),
+      buildRecord({ ruleId: "exact-ratio", thumbsUp: 1, thumbsDown: 2 }),
+    ]);
+
+    const learnings = compileLearnings("acme/widget", store);
+    store.close();
+
+    expect(learnings.suppressedRules).not.toContain("exact-ratio");
+    expect(learnings.summary).not.toContain("suppressed");
+  });
+
+  test("does not suppress rules with fewer than 3 total reactions", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    store.saveFeedback([
+      buildRecord({ ruleId: "low-volume", thumbsUp: 0, thumbsDown: 2 }),
+    ]);
+
+    const learnings = compileLearnings("acme/widget", store);
+    store.close();
+
+    expect(learnings.suppressedRules).not.toContain("low-volume");
   });
 
   test("classifies category sentiment correctly", () => {
@@ -136,7 +166,6 @@ describe("compileLearnings", () => {
 
     const learnings = compileLearnings("acme/widget", store);
     store.close();
-    cleanup();
 
     expect(learnings.preferredCategories).toContain("liked-cat");
     expect(learnings.dislikedCategories).toContain("disliked-cat");
@@ -155,7 +184,6 @@ describe("compileLearnings", () => {
 
     const learnings = compileLearnings("acme/widget", store);
     store.close();
-    cleanup();
 
     expect(learnings.preferredCategories).not.toContain("neutral");
     expect(learnings.dislikedCategories).not.toContain("neutral");

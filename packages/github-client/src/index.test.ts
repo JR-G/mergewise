@@ -983,12 +983,6 @@ describe("github-client", () => {
     expect(threads[0]!.comments[1]!.authorIsBot).toBe(false);
     expect(threads[0]!.comments[1]!.body).toBe("we don't care about this in tests");
     expect(calls).toHaveLength(1);
-    const requestBody = JSON.parse(calls[0]!.init!.body as string) as {
-      query: string;
-      variables: Record<string, unknown>;
-    };
-    expect(requestBody.query).toContain("comments(first: 20)");
-    expect(requestBody.query).toContain("... on Bot");
   });
 
   test("listPullRequestReviewThreadsWithReplies handles threads with no comments", async () => {

@@ -7,6 +7,11 @@ import type { FeedbackStore } from "./types";
 const SUPPRESSION_DISLIKE_RATIO = 2;
 
 /**
+ * Minimum total reactions (thumbs-up + thumbs-down) before a rule can be suppressed.
+ */
+const MIN_REACTIONS = 3;
+
+/**
  * Compiles repository-level learnings from stored feedback and instructions.
  *
  * @param repoFullName - Full repository name (e.g. "acme/widget").
@@ -23,7 +28,10 @@ export function compileLearnings(
 
   const ruleSentiments = feedbackStore.queryRuleSentiment(repoFullName);
   const suppressedRules = ruleSentiments
-    .filter((sentiment) => sentiment.thumbsDown > sentiment.thumbsUp * SUPPRESSION_DISLIKE_RATIO)
+    .filter((sentiment) => {
+      const totalReactions = sentiment.thumbsUp + sentiment.thumbsDown;
+      return totalReactions >= MIN_REACTIONS && sentiment.thumbsDown > sentiment.thumbsUp * SUPPRESSION_DISLIKE_RATIO;
+    })
     .map((sentiment) => sentiment.ruleId);
 
   const categorySentiments = feedbackStore.queryDislikedCategories(repoFullName);
