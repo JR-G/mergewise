@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS comment_feedback (
   trace_id TEXT NOT NULL,
   recorded_at TEXT NOT NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_unique_finding
+  ON comment_feedback (repo_full_name, pr_number, finding_id);
 CREATE INDEX IF NOT EXISTS idx_feedback_repo_pr
   ON comment_feedback (repo_full_name, pr_number);
 
@@ -48,6 +50,11 @@ INSERT INTO comment_feedback (
   thumbs_up, thumbs_down, other_reactions,
   repo_full_name, pr_number, trace_id, recorded_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (repo_full_name, pr_number, finding_id) DO UPDATE SET
+  thumbs_up = excluded.thumbs_up,
+  thumbs_down = excluded.thumbs_down,
+  other_reactions = excluded.other_reactions,
+  recorded_at = excluded.recorded_at
 `;
 
 const INSERT_INSTRUCTION_SQL = `

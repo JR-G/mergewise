@@ -88,6 +88,27 @@ describe("openFeedbackStore", () => {
     expect(rows.some((row) => row.finding_id === "f2" && row.thumbs_down === 2 && row.pr_number === 99)).toBe(true);
   });
 
+  test("upserts on duplicate (repo, pr, finding) instead of inserting duplicates", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    store.saveFeedback([buildRecord({ findingId: "f1", thumbsUp: 1, thumbsDown: 0 })]);
+    store.saveFeedback([buildRecord({ findingId: "f1", thumbsUp: 3, thumbsDown: 2 })]);
+    store.close();
+
+    const database = new Database(databasePath, { readonly: true });
+    const rows = database.query("SELECT thumbs_up, thumbs_down FROM comment_feedback WHERE finding_id = 'f1'").all() as {
+      thumbs_up: number;
+      thumbs_down: number;
+    }[];
+    database.close();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.thumbs_up).toBe(3);
+    expect(rows[0]!.thumbs_down).toBe(2);
+  });
+
   test("handles empty records array without error", () => {
     const databasePath = tempDatabasePath();
     cleanupPaths.push(databasePath);
@@ -266,11 +287,11 @@ describe("queryRuleSentiment", () => {
     const store = openFeedbackStore(databasePath);
 
     store.saveFeedback([
-      buildRecord({ ruleId: "rule-a", thumbsUp: 1, thumbsDown: 0 }),
-      buildRecord({ ruleId: "rule-a", thumbsUp: 0, thumbsDown: 1 }),
-      buildRecord({ ruleId: "rule-a", thumbsUp: 0, thumbsDown: 1 }),
-      buildRecord({ ruleId: "rule-b", thumbsUp: 1, thumbsDown: 0 }),
-      buildRecord({ ruleId: "rule-b", thumbsUp: 1, thumbsDown: 0 }),
+      buildRecord({ findingId: "a1", ruleId: "rule-a", thumbsUp: 1, thumbsDown: 0 }),
+      buildRecord({ findingId: "a2", ruleId: "rule-a", thumbsUp: 0, thumbsDown: 1 }),
+      buildRecord({ findingId: "a3", ruleId: "rule-a", thumbsUp: 0, thumbsDown: 1 }),
+      buildRecord({ findingId: "b1", ruleId: "rule-b", thumbsUp: 1, thumbsDown: 0 }),
+      buildRecord({ findingId: "b2", ruleId: "rule-b", thumbsUp: 1, thumbsDown: 0 }),
     ]);
 
     const results = store.queryRuleSentiment("acme/widget");
