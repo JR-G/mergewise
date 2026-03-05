@@ -28,8 +28,6 @@ CREATE TABLE IF NOT EXISTS comment_feedback (
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_repo_pr
   ON comment_feedback (repo_full_name, pr_number);
-CREATE INDEX IF NOT EXISTS idx_feedback_repo
-  ON comment_feedback (repo_full_name);
 
 CREATE TABLE IF NOT EXISTS repo_instructions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

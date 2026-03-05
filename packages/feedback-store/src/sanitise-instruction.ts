@@ -61,11 +61,13 @@ export type SanitiseResult = SanitiseResultSafe | SanitiseResultUnsafe;
  * Validates and sanitises a candidate instruction extracted from a review thread reply.
  *
  * @remarks
- * Three defence layers are applied in order:
+ * Four defence layers are applied in order:
  *
  * 1. **Length cap** — rejects instructions exceeding {@link MAX_INSTRUCTION_LENGTH} characters.
  * 2. **Blocklist filter** — rejects instructions matching known prompt injection patterns.
- * 3. **Structural checks** — rejects instructions with excessive newlines or markdown headers
+ * 3. **XML tag filter** — rejects instructions containing angle brackets that could break
+ *    the `<repository-preferences>` block boundary in the prompt.
+ * 4. **Structural checks** — rejects instructions with excessive newlines or markdown headers
  *    that could break prompt structure.
  *
  * @param rawText - The raw instruction text from the user's reply.
@@ -91,6 +93,10 @@ export function sanitiseInstruction(rawText: string): SanitiseResult {
   const newlineCount = (trimmed.match(/\n/g) ?? []).length;
   if (newlineCount > MAX_NEWLINES) {
     return { safe: false, reason: "excessive_newlines" };
+  }
+
+  if (/[<>]/.test(trimmed)) {
+    return { safe: false, reason: "xml_tags" };
   }
 
   if (/^#{1,6}\s/m.test(trimmed)) {

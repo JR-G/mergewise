@@ -142,6 +142,13 @@ function resolveProcessingConfig(
     }
   }
 
+  const baseFindingDeliveryOptions = dependencies.findingDeliveryOptions ?? {
+    confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
+    maxComments: mergewiseConfig.gating.maxComments,
+    testFileConfidenceThreshold: DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD,
+    allowedCategories: DEFAULT_ALLOWED_POST_CATEGORIES,
+  };
+
   return {
     key,
     traceId,
@@ -150,13 +157,7 @@ function resolveProcessingConfig(
     selectedRules: selectRulesForExecution(rules, mergewiseConfig),
     executeRulesFn: dependencies.executeRulesFn ?? executeRules,
     githubFetchOptions: dependencies.githubFetchOptions ?? resolveGitHubFetchOptions(),
-    findingDeliveryOptions: dependencies.findingDeliveryOptions ?? {
-      confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
-      maxComments: mergewiseConfig.gating.maxComments,
-      testFileConfidenceThreshold: DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD,
-      allowedCategories: DEFAULT_ALLOWED_POST_CATEGORIES,
-      blockedRuleIds,
-    },
+    findingDeliveryOptions: { ...baseFindingDeliveryOptions, blockedRuleIds },
   };
 }
 

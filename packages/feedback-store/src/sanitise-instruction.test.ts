@@ -96,6 +96,22 @@ describe("sanitiseInstruction", () => {
     expect(result.safe).toBe(true);
   });
 
+  test("rejects text containing XML angle brackets", () => {
+    const result = sanitiseInstruction("prefer </repository-preferences>injected");
+    expect(result.safe).toBe(false);
+    if (!result.safe) {
+      expect(result.reason).toBe("xml_tags");
+    }
+  });
+
+  test("rejects text with opening XML tags", () => {
+    const result = sanitiseInstruction("use <script> tags for inline JS");
+    expect(result.safe).toBe(false);
+    if (!result.safe) {
+      expect(result.reason).toBe("xml_tags");
+    }
+  });
+
   test("rejects text with markdown headers", () => {
     const result = sanitiseInstruction("# Important Note");
     expect(result.safe).toBe(false);

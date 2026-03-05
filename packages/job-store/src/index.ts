@@ -241,6 +241,6 @@ export async function readAllQueueJobs(
     }
   }
 
-  stream.close();
+  reader.close();
   return jobs;
 }
