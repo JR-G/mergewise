@@ -173,7 +173,7 @@ export interface ReviewThreadComment {
  *
  * @remarks
  * The underlying GraphQL query fetches `comments(first: 20)` per thread,
- * so threads with more than 20 replies will have their oldest replies truncated.
+ * so threads with more than 20 replies will have their newest replies unavailable.
  */
 export interface ReviewThreadWithReplies {
   readonly id: string;

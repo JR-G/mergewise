@@ -58,10 +58,12 @@ INSERT INTO repo_instructions (
 `;
 
 const QUERY_INSTRUCTIONS_SQL = `
-SELECT repo_full_name, instruction, rule_id, category, source_pr_number, created_at
+SELECT repo_full_name, instruction, rule_id, category, source_pr_number,
+       MAX(created_at) AS created_at
 FROM repo_instructions
 WHERE repo_full_name = ?
-ORDER BY created_at DESC
+GROUP BY instruction
+ORDER BY MAX(created_at) DESC
 LIMIT 30
 `;
 
