@@ -252,7 +252,7 @@ function dequeueOrder(queue: Order[]): Order[] {
 }`,
     principle: "Consistency — pick one absent-value convention and apply it everywhere",
     detectionHint:
-      "Interface or type alias where some properties use `| null`, others use `| undefined`, and others use `?:` optional syntax. The same type mixes two or more ways to represent 'no value'.",
+      "A single interface or type alias where some properties use `| null`, others use `| undefined`, and others use `?:` optional syntax. The same type mixes two or more ways to represent 'no value'. Only flag property signature lines in executable code — never flag comments, TSDoc, string literals, or different interfaces that intentionally use different conventions.",
   },
 
   {

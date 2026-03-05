@@ -43,28 +43,4 @@ catch (err) {
       "Catch clause accessing .message, .code, .stack, or other properties on the error parameter without an instanceof or typeof guard.",
   },
 
-  {
-    id: "inconsistent-absent-value",
-    title: "Inconsistent absent value representation",
-    description:
-      "Mixing null and undefined to represent absence within the same interface or function, causing confusing equality checks.",
-    category: "safety",
-    languages: ["typescript"],
-    badExample: `interface User {
-  name: string;
-  email: string | null;
-  phone?: string;
-  address: string | undefined;
-}`,
-    goodExample: `interface User {
-  name: string;
-  email: string | null;
-  phone: string | null;
-  address: string | null;
-}`,
-    principle: "Consistency — pick one absent-value convention",
-    detectionHint:
-      "In an interface or type alias body, field declarations mixing both '| null' and '?' (optional) or '| undefined' for absence. Only flag actual property signature lines (name: type), never comments, TSDoc, or documentation lines.",
-  },
-
 ];
