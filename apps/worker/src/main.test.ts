@@ -6,6 +6,8 @@ import {
   type WorkerShutdownSignal,
 } from "./main";
 
+const DEFAULT_LLM_MODELS = { triageModel: "gpt-4o-mini", criticModel: "gpt-4o-mini", usePipeline: true };
+
 function invokeSignalHandler(
   handler: (signal: WorkerShutdownSignal) => void,
   signal: WorkerShutdownSignal,
@@ -98,6 +100,7 @@ describe("startWorkerProcess", () => {
         llm: {
           enabled: false,
           model: "gpt-4o",
+          ...DEFAULT_LLM_MODELS,
           tokenBudget: 30_000,
           baseUrl: "https://api.openai.com/v1",
           consistencySamples: 1,
@@ -178,6 +181,7 @@ describe("startWorkerProcess", () => {
         llm: {
           enabled: false,
           model: "gpt-4o",
+          ...DEFAULT_LLM_MODELS,
           tokenBudget: 30_000,
           baseUrl: "https://api.openai.com/v1",
           consistencySamples: 1,
@@ -258,6 +262,7 @@ describe("startWorkerProcess", () => {
         llm: {
           enabled: false,
           model: "gpt-4o",
+          ...DEFAULT_LLM_MODELS,
           tokenBudget: 30_000,
           baseUrl: "https://api.openai.com/v1",
           consistencySamples: 1,
@@ -339,6 +344,7 @@ describe("startWorkerProcess", () => {
         llm: {
           enabled: false,
           model: "gpt-4o",
+          ...DEFAULT_LLM_MODELS,
           tokenBudget: 30_000,
           baseUrl: "https://api.openai.com/v1",
           consistencySamples: 1,
@@ -434,6 +440,7 @@ describe("startWorkerProcess", () => {
           llm: {
             enabled: false,
             model: "gpt-4o",
+            ...DEFAULT_LLM_MODELS,
             tokenBudget: 30_000,
             baseUrl: "https://api.openai.com/v1",
             consistencySamples: 1,
