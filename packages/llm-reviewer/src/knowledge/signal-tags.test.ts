@@ -61,8 +61,8 @@ describe("deriveSignalTags", () => {
   });
 
   test("returns has_type_assertions when typeAssertionCount exceeds threshold", () => {
-    expect(deriveSignalTags(makeSignals({ typeAssertionCount: 2 }))).not.toContain("has_type_assertions");
-    expect(deriveSignalTags(makeSignals({ typeAssertionCount: 3 }))).toContain("has_type_assertions");
+    expect(deriveSignalTags(makeSignals({ typeAssertionCount: 0 }))).not.toContain("has_type_assertions");
+    expect(deriveSignalTags(makeSignals({ typeAssertionCount: 1 }))).toContain("has_type_assertions");
   });
 
   test("returns high_import_count when importCount exceeds threshold", () => {
@@ -87,5 +87,35 @@ describe("deriveSignalTags", () => {
     expect(tags).toContain("high_function_count");
     expect(tags).toContain("high_nesting");
     expect(tags).toContain("has_classes");
+  });
+
+  test("returns empty array for negative signal values", () => {
+    const tags = deriveSignalTags(makeSignals({ hookCount: -1, functionCount: -5 }));
+    expect(tags).toEqual([]);
+  });
+
+  test("returns high_function_count for very large functionCount", () => {
+    const tags = deriveSignalTags(makeSignals({ functionCount: Number.MAX_SAFE_INTEGER }));
+    expect(tags).toContain("high_function_count");
+  });
+
+  test("returns empty array when functionCount is NaN", () => {
+    const tags = deriveSignalTags(makeSignals({ functionCount: NaN }));
+    expect(tags).toEqual([]);
+  });
+
+  test("does not return high_function_count for non-integer float below threshold", () => {
+    const tags = deriveSignalTags(makeSignals({ functionCount: 3.7 }));
+    expect(tags).not.toContain("high_function_count");
+  });
+
+  test("returns has_type_assertions when typeAssertionCount is 1", () => {
+    const tags = deriveSignalTags(makeSignals({ typeAssertionCount: 1 }));
+    expect(tags).toContain("has_type_assertions");
+  });
+
+  test("does not return has_type_assertions when typeAssertionCount is 0", () => {
+    const tags = deriveSignalTags(makeSignals({ typeAssertionCount: 0 }));
+    expect(tags).not.toContain("has_type_assertions");
   });
 });

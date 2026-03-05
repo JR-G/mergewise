@@ -208,4 +208,63 @@ describe("buildDynamicFilePrompt", () => {
     });
     expect(result).toContain("// line 1: const a = 1;");
   });
+
+  test("truncates callers list beyond MAX_CALLERS_IN_PROMPT", () => {
+    const callers = Array.from({ length: 15 }, (_, index) => `caller-${index}`);
+    const graphContext: FileGraphContext = {
+      filePath: "src/index.ts",
+      callers,
+      centrality: 0.5,
+      isHotspot: false,
+    };
+
+    const result = buildDynamicFilePrompt({
+      fileDiff: makeDiff(),
+      fullContent: null,
+      signals: makeSignals(),
+      knowledge: [],
+      graphContext,
+    });
+    expect(result).toContain("caller-9");
+    expect(result).not.toContain("caller-10");
+  });
+
+  test("truncates learnings beyond MAX_LEARNINGS_IN_PROMPT", () => {
+    const preferences = Array.from({ length: 8 }, (_, index) => `pref-${index}`);
+    const learnings: ReviewLearnings = { preferences };
+
+    const result = buildDynamicFilePrompt({
+      fileDiff: makeDiff(),
+      fullContent: null,
+      signals: makeSignals(),
+      knowledge: [],
+      learnings,
+    });
+    expect(result).toContain("pref-4");
+    expect(result).not.toContain("pref-5");
+  });
+
+  test("truncates full file content beyond MAX_FULL_FILE_LINES", () => {
+    const fullContent = Array.from({ length: 2500 }, (_, index) => `line content ${index}`).join("\n");
+    const largeDiff: FileDiff = {
+      filePath: "src/big.ts",
+      previousPath: null,
+      hunks: [
+        {
+          header: "@@ -1,2500 +1,2500 @@",
+          lines: ["+changed line"],
+        },
+      ],
+    };
+
+    const result = buildDynamicFilePrompt({
+      fileDiff: largeDiff,
+      fullContent,
+      signals: makeSignals(),
+      knowledge: [],
+    });
+    expect(result).toContain("// line 2000:");
+    expect(result).not.toContain("// line 2001:");
+    expect(result).toContain("[truncated");
+  });
 });

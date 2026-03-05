@@ -163,4 +163,61 @@ describe("retrieveKnowledge", () => {
     expect(result.length).toBeGreaterThan(0);
     expect(KNOWLEDGE_REGISTRY.length).toBeGreaterThan(0);
   });
+
+  test("does not throw for zero signal values", () => {
+    const invoke = () =>
+      retrieveKnowledge({
+        signals: makeSignals(),
+        fileExtension: ".ts",
+        classifications: [],
+      });
+    expect(invoke).not.toThrow();
+    expect(invoke()).toEqual([]);
+  });
+
+  test("does not throw for negative signal values and returns empty array", () => {
+    const invoke = () =>
+      retrieveKnowledge({
+        signals: makeSignals({ functionCount: -1, hookCount: -1 }),
+        fileExtension: ".ts",
+        classifications: [],
+      });
+    expect(invoke).not.toThrow();
+    expect(invoke()).toEqual([]);
+  });
+
+  test("does not throw for very large signal values and caps results", () => {
+    const invoke = () =>
+      retrieveKnowledge({
+        signals: makeSignals({ functionCount: 1e9 }),
+        fileExtension: ".ts",
+        classifications: [],
+      });
+    expect(invoke).not.toThrow();
+    const result = invoke();
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBeLessThanOrEqual(5);
+  });
+
+  test("does not throw for NaN signal values and returns empty array", () => {
+    const invoke = () =>
+      retrieveKnowledge({
+        signals: makeSignals({ functionCount: NaN }),
+        fileExtension: ".ts",
+        classifications: [],
+      });
+    expect(invoke).not.toThrow();
+    expect(invoke()).toEqual([]);
+  });
+
+  test("does not throw for non-integer float signal values", () => {
+    const invoke = () =>
+      retrieveKnowledge({
+        signals: makeSignals({ functionCount: 2.5 }),
+        fileExtension: ".ts",
+        classifications: [],
+      });
+    expect(invoke).not.toThrow();
+    expect(Array.isArray(invoke())).toBe(true);
+  });
 });
