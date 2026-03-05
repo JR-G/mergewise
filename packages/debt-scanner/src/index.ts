@@ -87,6 +87,12 @@ function parseCliArgs(): ParsedArgs {
     process.exit(1);
   }
 
+  const allowedFormats = ["json", "markdown"];
+  if (!allowedFormats.includes(values.format)) {
+    console.error(`Invalid --format value: "${values.format}". Must be one of: ${allowedFormats.join(", ")}`);
+    process.exit(1);
+  }
+
   return {
     repoPath: resolve(values.repo),
     topCount: parsedTop,

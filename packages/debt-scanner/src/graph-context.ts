@@ -13,6 +13,7 @@ export interface PrGraphContext {
   readonly impactSummary: string;
 }
 
+const MAX_CONTEXT_FILES = 30;
 const MAX_REVERSE_DEPS = 50;
 const HOTSPOT_SCORE_THRESHOLD = 0.5;
 
@@ -76,13 +77,20 @@ export function formatGraphContextPrompt(context: PrGraphContext): string {
     "Changed files and their dependencies:",
   ];
 
-  for (const file of context.files) {
+  const displayFiles = context.files.slice(0, MAX_CONTEXT_FILES);
+
+  for (const file of displayFiles) {
     const impact = file.centralityScore >= HOTSPOT_SCORE_THRESHOLD ? "HIGH IMPACT" : "low impact";
     const depCount = file.importedBy.length;
     const depLabel = depCount === 1 ? "1 file" : `${depCount} files`;
     lines.push(
       `- ${file.filePath} (centrality: ${file.centralityScore.toFixed(2)}, imported by ${depLabel}) — ${impact}`,
     );
+  }
+
+  const omitted = context.files.length - displayFiles.length;
+  if (omitted > 0) {
+    lines.push(`- ...and ${omitted} more files omitted`);
   }
 
   const highImpactFiles = context.files.filter((file) => file.centralityScore >= HOTSPOT_SCORE_THRESHOLD);
