@@ -1674,4 +1674,124 @@ describe("createLlmReviewerRule", () => {
       },
     );
   });
+
+  test("pipeline mode reports aggregated token usage to onFileReviewComplete", async () => {
+    function buildResponseWithUsage(content: string, promptTokens: number, completionTokens: number): string {
+      return JSON.stringify({
+        id: "chatcmpl-test",
+        object: "chat.completion",
+        created: 1700000000,
+        model: "test-model",
+        choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
+        usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens },
+      });
+    }
+
+    let callIndex = 0;
+    await withMockFetch(
+      () => {
+        callIndex++;
+        if (callIndex === 1) {
+          return new Response(
+            buildResponseWithUsage(
+              JSON.stringify({ files: [{ file: "src/app.ts", priority: "high", classifications: ["logic"], reasoning: "test" }] }),
+              200, 80,
+            ),
+            { headers: { "Content-Type": "application/json" } },
+          );
+        }
+        if (callIndex === 2) {
+          return new Response(
+            buildResponseWithUsage(JSON.stringify({ findings: [] }), 500, 120),
+            { headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(
+          buildResponseWithUsage(JSON.stringify({ verdicts: [] }), 300, 60),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      },
+      async () => {
+        const completions: { filePath: string; promptTokens: number; completionTokens: number }[] = [];
+        const rule = createLlmReviewerRule({
+          clientConfig: {
+            apiKey: "test-key",
+            baseUrl: "http://mock.local/v1",
+            model: "test-model",
+          },
+          usePipeline: true,
+          triageModel: "test-triage",
+          criticModel: "test-critic",
+          onFileReviewComplete: (filePath, _count, promptTokens, completionTokens) => {
+            completions.push({ filePath, promptTokens, completionTokens });
+          },
+        });
+        const context = {
+          diffs: [makeDiff("src/app.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const x = 1"])])],
+          pullRequest: PULL_REQUEST_METADATA,
+        };
+        await rule.analyse(context, makeMockCodebaseContext());
+
+        expect(completions).toHaveLength(1);
+        expect(completions[0]!.filePath).toBe("src/app.ts");
+        const totalPromptTokens = completions.reduce((sum, completion) => sum + completion.promptTokens, 0);
+        const totalCompletionTokens = completions.reduce((sum, completion) => sum + completion.completionTokens, 0);
+        expect(totalPromptTokens).toBeGreaterThan(0);
+        expect(totalCompletionTokens).toBeGreaterThan(0);
+      },
+    );
+  });
+
+  test("pipeline mode reports token usage on first file only when multiple files succeed", async () => {
+    let callIndex = 0;
+    await withMockFetch(
+      () => {
+        callIndex++;
+        if (callIndex === 1) {
+          return new Response(
+            buildCompletionResponse(
+              JSON.stringify({
+                files: [
+                  { file: "src/a.ts", priority: "high", classifications: [], reasoning: "test" },
+                  { file: "src/b.ts", priority: "high", classifications: [], reasoning: "test" },
+                ],
+              }),
+            ),
+            { headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(
+          buildCompletionResponse(JSON.stringify({ findings: [], verdicts: [] })),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      },
+      async () => {
+        const completions: { filePath: string; promptTokens: number; completionTokens: number }[] = [];
+        const rule = createLlmReviewerRule({
+          clientConfig: {
+            apiKey: "test-key",
+            baseUrl: "http://mock.local/v1",
+            model: "test-model",
+          },
+          usePipeline: true,
+          onFileReviewComplete: (filePath, _count, promptTokens, completionTokens) => {
+            completions.push({ filePath, promptTokens, completionTokens });
+          },
+        });
+        const context = {
+          diffs: [
+            makeDiff("src/a.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const a = 1"])]),
+            makeDiff("src/b.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const b = 2"])]),
+          ],
+          pullRequest: PULL_REQUEST_METADATA,
+        };
+        await rule.analyse(context, makeMockCodebaseContext());
+
+        expect(completions).toHaveLength(2);
+        const filesWithUsage = completions.filter((completion) => completion.promptTokens > 0 || completion.completionTokens > 0);
+        expect(filesWithUsage).toHaveLength(1);
+        expect(completions.some((completion) => completion.promptTokens === 0 && completion.completionTokens === 0)).toBe(true);
+      },
+    );
+  });
 });
