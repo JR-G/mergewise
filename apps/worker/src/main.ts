@@ -293,7 +293,7 @@ async function processFeedbackJobEntry(
   processedKeyState: ReturnType<typeof createProcessedKeyState>,
   maxProcessedKeys: number,
   processCollectFeedbackJobFn: typeof processCollectFeedbackJob,
-  feedbackStore: FeedbackStore | undefined,
+  feedbackStore: FeedbackStore,
   githubFetchOptions: WorkerGitHubFetchOptions,
   infoLogger: (message: string) => void,
   errorLogger: (message: string) => void,
