@@ -43,7 +43,7 @@ while IFS= read -r test_file; do
     *) continue ;;
   esac
 
-  if ! grep -iEq "test\(['\"].*${BOUNDARY_PATTERN}" "$test_file" 2>/dev/null; then
+  if ! git show ":$test_file" 2>/dev/null | grep -iEq "(test|it)\(['\"].*${BOUNDARY_PATTERN}"; then
     echo "No empty/boundary test found in: $test_file"
     no_boundary="yes"
   fi
