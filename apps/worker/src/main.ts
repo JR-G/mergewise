@@ -297,7 +297,7 @@ async function processFeedbackJobEntry(
   infoLogger: (message: string) => void,
   errorLogger: (message: string) => void,
 ): Promise<void> {
-  const feedbackIdempotencyKey = `feedback:${queuedJob.repo_full_name}#${queuedJob.pr_number}`;
+  const feedbackIdempotencyKey = `feedback:${queuedJob.repo_full_name}#${queuedJob.pr_number}@${queuedJob.queued_at}`;
   if (processedKeyState.keys.has(feedbackIdempotencyKey)) {
     return;
   }

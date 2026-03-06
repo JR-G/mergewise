@@ -143,6 +143,7 @@ function resolveProcessingConfig(
     for (const suppressedRuleId of repoLearnings.suppressedRules) {
       if (!blockedSet.has(suppressedRuleId)) {
         blockedRuleIds.push(suppressedRuleId);
+        blockedSet.add(suppressedRuleId);
       }
     }
   }

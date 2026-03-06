@@ -1047,6 +1047,51 @@ describe("github-client", () => {
     expect(threads[0]!.comments[0]!.authorIsBot).toBe(false);
   });
 
+  test("listPullRequestReviewThreadsWithReplies throws GitHubApiError on non-2xx response", async () => {
+    const fetchMock: FetchMock = async () =>
+      new Response(JSON.stringify({ message: "Bad credentials" }), { status: 401 });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    let thrownError: unknown;
+    try {
+      await listPullRequestReviewThreadsWithReplies({
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 3,
+        installationAccessToken: "bad_token",
+      });
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(GitHubApiError);
+    expect((thrownError as GitHubApiError).status).toBe(401);
+  });
+
+  test("listPullRequestReviewThreadsWithReplies throws GitHubGraphQlError on GraphQL errors", async () => {
+    const fetchMock: FetchMock = async () =>
+      makeJsonResponse({
+        data: null,
+        errors: [{ message: "Could not resolve to a PullRequest", type: "NOT_FOUND" }],
+      });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    let thrownError: unknown;
+    try {
+      await listPullRequestReviewThreadsWithReplies({
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 999,
+        installationAccessToken: "ghs_token",
+      });
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(GitHubGraphQlError);
+    expect((thrownError as GitHubGraphQlError).message).toContain("Could not resolve");
+  });
+
   test("updateIssueComment PATCHes the correct endpoint and returns updated comment", async () => {
     const calls: FetchCall[] = [];
     const fetchMock: FetchMock = async (input, init) => {

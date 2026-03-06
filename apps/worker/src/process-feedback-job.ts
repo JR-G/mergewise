@@ -87,6 +87,7 @@ function persistReactionFeedback(
   } catch (persistError) {
     const detail = persistError instanceof Error ? persistError.message : String(persistError);
     ctx.errorLogger(`[worker] feedback_persist_failed trace=${ctx.traceId} job=${ctx.job.job_id}: ${detail}`);
+    throw persistError;
   }
 }
 
@@ -107,7 +108,7 @@ function persistInstructions(
   } catch (persistError) {
     const detail = persistError instanceof Error ? persistError.message : String(persistError);
     ctx.errorLogger(`[worker] instructions_persist_failed trace=${ctx.traceId} job=${ctx.job.job_id}: ${detail}`);
-    return 0;
+    throw persistError;
   }
 }
 

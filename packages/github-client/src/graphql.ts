@@ -21,8 +21,13 @@ async function paginateGraphqlQuery<T>(
   queryString: string,
   pageExtractor: (data: unknown) => PaginatedPage<T>,
 ): Promise<T[]> {
-  const perPage = clamp(options.perPage ?? 100, 1, 100);
-  const maxPages = clamp(options.maxPages ?? 20, 1, 50);
+  const rawPerPage = options.perPage ?? 100;
+  const rawMaxPages = options.maxPages ?? 20;
+  if (!Number.isFinite(rawPerPage) || !Number.isFinite(rawMaxPages)) {
+    throw new RangeError(`perPage and maxPages must be finite numbers (got perPage=${rawPerPage}, maxPages=${rawMaxPages})`);
+  }
+  const perPage = clamp(rawPerPage, 1, 100);
+  const maxPages = clamp(rawMaxPages, 1, 50);
   const maxTotalThreads = perPage * maxPages;
   const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
   const apiBaseUrl = trimTrailingSlash(

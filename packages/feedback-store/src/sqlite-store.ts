@@ -65,12 +65,16 @@ INSERT INTO repo_instructions (
 `;
 
 const QUERY_INSTRUCTIONS_SQL = `
-SELECT repo_full_name, instruction, rule_id, category, source_pr_number,
-       MAX(created_at) AS created_at
-FROM repo_instructions
-WHERE repo_full_name = ?
-GROUP BY instruction
-ORDER BY MAX(created_at) DESC
+SELECT ri.repo_full_name, ri.instruction, ri.rule_id, ri.category,
+       ri.source_pr_number, ri.created_at
+FROM repo_instructions ri
+INNER JOIN (
+  SELECT instruction, MAX(id) AS max_id
+  FROM repo_instructions
+  WHERE repo_full_name = ?
+  GROUP BY instruction
+) grouped ON ri.id = grouped.max_id
+ORDER BY ri.created_at DESC, ri.id DESC
 LIMIT 30
 `;
 
@@ -84,7 +88,7 @@ FROM comment_feedback
 WHERE repo_full_name = ? AND rule_id IS NOT NULL
 GROUP BY rule_id
 HAVING COALESCE(SUM(thumbs_up), 0) + COALESCE(SUM(thumbs_down), 0) >= 3
-ORDER BY thumbs_down DESC
+ORDER BY thumbs_down DESC, rule_id ASC
 LIMIT 50
 `;
 

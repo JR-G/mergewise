@@ -22,6 +22,13 @@ export function extractInstructionsFromThreads(
   repoFullName: string,
   prNumber: number,
 ): RepoInstruction[] {
+  if (!repoFullName || !/^[^/]+\/[^/]+$/.test(repoFullName)) {
+    throw new TypeError(`repoFullName must match "owner/repo" format (got "${repoFullName}")`);
+  }
+  if (!Number.isInteger(prNumber) || prNumber <= 0) {
+    throw new TypeError(`prNumber must be a positive integer (got ${prNumber})`);
+  }
+
   const instructions: RepoInstruction[] = [];
   const now = new Date().toISOString();
 

@@ -187,7 +187,7 @@ function prepareStatements(database: Database): Statements {
     ),
     queryScans: database.prepare("SELECT * FROM scans ORDER BY scanned_at DESC LIMIT 100"),
     queryScansByRepo: database.prepare("SELECT * FROM scans WHERE repo_path = ? ORDER BY scanned_at DESC LIMIT 100"),
-    queryScanById: database.prepare("SELECT * FROM scans WHERE id = ?"),
+    queryScanById: database.prepare("SELECT * FROM scans WHERE id = ? LIMIT 1"),
     queryLatestByRepo: database.prepare("SELECT * FROM scans WHERE repo_path = ? ORDER BY scanned_at DESC LIMIT 1"),
     queryHotspots: database.prepare(
       "SELECT node_id, file_path, score, centrality, signal_density, line_count FROM hotspots WHERE scan_id = ? ORDER BY score DESC LIMIT 500",

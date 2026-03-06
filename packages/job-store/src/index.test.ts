@@ -192,8 +192,8 @@ describe("isCollectFeedbackJob", () => {
     expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: -1 as number }))).toBe(false);
   });
 
-  test("returns true for pr_number zero", () => {
-    expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: 0 }))).toBe(true);
+  test("returns false for pr_number zero", () => {
+    expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: 0 }))).toBe(false);
   });
 
   test("returns false for NaN pr_number", () => {
@@ -206,6 +206,14 @@ describe("isCollectFeedbackJob", () => {
 
   test("returns true for MAX_SAFE_INTEGER pr_number", () => {
     expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: Number.MAX_SAFE_INTEGER }))).toBe(true);
+  });
+
+  test("returns false for zero installation_id", () => {
+    expect(isCollectFeedbackJob(makeFeedbackJob({ installation_id: 0 as number }))).toBe(false);
+  });
+
+  test("returns false for zero pr_number", () => {
+    expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: 0 as number }))).toBe(false);
   });
 
   test("returns false for negative installation_id", () => {
@@ -307,5 +315,18 @@ describe("readAllQueueJobs", () => {
     expect(jobs).toHaveLength(1);
     expect(jobs[0]!.job_id).toBe("good");
     expect(skips).toHaveLength(1);
+  });
+
+  test("enforces MAX_QUEUE_SIZE cap on returned jobs", async () => {
+    mkdirSync(dirname(filePath), { recursive: true });
+    const lines: string[] = [];
+    for (let jobIndex = 0; jobIndex < 10_001; jobIndex++) {
+      lines.push(JSON.stringify(makeFeedbackJob({ job_id: `job-${jobIndex}` })));
+    }
+    writeFileSync(filePath, lines.join("\n") + "\n", "utf8");
+
+    const jobs = await readAllQueueJobs(filePath);
+
+    expect(jobs.length).toBeLessThanOrEqual(10_000);
   });
 });

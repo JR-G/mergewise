@@ -260,6 +260,27 @@ describe("queryInstructions", () => {
     expect(results).toEqual([]);
   });
 
+  test("deduplicates instructions by text, keeping the newest", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    store.saveInstructions([
+      buildInstruction({ instruction: "skip SRP in tests", ruleId: "old-rule", createdAt: "2026-01-01T00:00:00.000Z", sourcePrNumber: 10 }),
+      buildInstruction({ instruction: "skip SRP in tests", ruleId: "new-rule", createdAt: "2026-03-01T00:00:00.000Z", sourcePrNumber: 42 }),
+      buildInstruction({ instruction: "prefer early returns", createdAt: "2026-02-01T00:00:00.000Z" }),
+    ]);
+
+    const results = store.queryInstructions("acme/widget");
+    store.close();
+
+    const srpResult = results.find((row) => row.instruction === "skip SRP in tests");
+    expect(srpResult).toBeDefined();
+    expect(srpResult!.ruleId).toBe("new-rule");
+    expect(srpResult!.sourcePrNumber).toBe(42);
+    expect(results.filter((row) => row.instruction === "skip SRP in tests")).toHaveLength(1);
+  });
+
   test("limits results to 30", () => {
     const databasePath = tempDatabasePath();
     cleanupPaths.push(databasePath);
@@ -281,7 +302,7 @@ describe("queryInstructions", () => {
 });
 
 describe("queryRuleSentiment", () => {
-  test("returns aggregated sentiment per rule with at least 3 records", () => {
+  test("returns aggregated sentiment per rule when total reactions >= 3", () => {
     const databasePath = tempDatabasePath();
     cleanupPaths.push(databasePath);
     const store = openFeedbackStore(databasePath);
@@ -292,16 +313,28 @@ describe("queryRuleSentiment", () => {
       buildRecord({ findingId: "a3", ruleId: "rule-a", thumbsUp: 0, thumbsDown: 1 }),
       buildRecord({ findingId: "b1", ruleId: "rule-b", thumbsUp: 1, thumbsDown: 0 }),
       buildRecord({ findingId: "b2", ruleId: "rule-b", thumbsUp: 1, thumbsDown: 0 }),
+      buildRecord({ findingId: "c1", ruleId: "rule-c", thumbsUp: 3, thumbsDown: 0 }),
+      buildRecord({ findingId: "d1", ruleId: "rule-d", thumbsUp: 1, thumbsDown: 0 }),
     ]);
 
     const results = store.queryRuleSentiment("acme/widget");
     store.close();
 
-    expect(results).toHaveLength(1);
-    expect(results[0]!.ruleId).toBe("rule-a");
-    expect(results[0]!.thumbsUp).toBe(1);
-    expect(results[0]!.thumbsDown).toBe(2);
-    expect(results[0]!.totalRecords).toBe(3);
+    const ruleIds = results.map((row) => row.ruleId);
+    expect(ruleIds).toContain("rule-a");
+    expect(ruleIds).toContain("rule-c");
+    expect(ruleIds).not.toContain("rule-b");
+    expect(ruleIds).not.toContain("rule-d");
+
+    const ruleA = results.find((row) => row.ruleId === "rule-a")!;
+    expect(ruleA.thumbsUp).toBe(1);
+    expect(ruleA.thumbsDown).toBe(2);
+    expect(ruleA.totalRecords).toBe(3);
+
+    const ruleC = results.find((row) => row.ruleId === "rule-c")!;
+    expect(ruleC.thumbsUp).toBe(3);
+    expect(ruleC.thumbsDown).toBe(0);
+    expect(ruleC.totalRecords).toBe(1);
   });
 
   test("returns empty when no rules meet the threshold", () => {

@@ -139,4 +139,17 @@ describe("extractInstructionsFromThreads", () => {
 
     expect(results).toHaveLength(2);
   });
+
+  test("rejects repoFullName that does not match owner/repo format", () => {
+    expect(() => extractInstructionsFromThreads([], "", 1)).toThrow(TypeError);
+    expect(() => extractInstructionsFromThreads([], "no-slash", 1)).toThrow(TypeError);
+    expect(() => extractInstructionsFromThreads([], "a/b/c", 1)).toThrow(TypeError);
+  });
+
+  test("rejects non-positive-integer prNumber", () => {
+    expect(() => extractInstructionsFromThreads([], "acme/widget", 0)).toThrow(TypeError);
+    expect(() => extractInstructionsFromThreads([], "acme/widget", -1)).toThrow(TypeError);
+    expect(() => extractInstructionsFromThreads([], "acme/widget", 1.5)).toThrow(TypeError);
+    expect(() => extractInstructionsFromThreads([], "acme/widget", NaN)).toThrow(TypeError);
+  });
 });
