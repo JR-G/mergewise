@@ -105,7 +105,10 @@ function mergeUsage(
  */
 export async function reviewFile(options: ReviewFileOptions): Promise<FileReviewResult> {
   const { fileDiff, pullRequest, codebaseContext, client } = options;
-  const consistencySamples = Math.max(1, Math.min(options.consistencySamples ?? 1, MAX_CONSISTENCY_SAMPLES));
+  const rawSamples = options.consistencySamples ?? 1;
+  const consistencySamples = Number.isFinite(rawSamples)
+    ? Math.max(1, Math.min(Math.floor(rawSamples), MAX_CONSISTENCY_SAMPLES))
+    : 1;
 
   const fullContent = await codebaseContext.readFile(fileDiff.filePath);
   const signals = extractStructuralSignals(fileDiff);

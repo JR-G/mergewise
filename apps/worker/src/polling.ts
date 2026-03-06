@@ -208,7 +208,7 @@ export function trackProcessedKey(
     return;
   }
 
-  const effectiveMaxKeys = Math.max(0, maxKeys);
+  const effectiveMaxKeys = Number.isFinite(maxKeys) ? Math.max(0, Math.floor(maxKeys)) : 0;
 
   state.keys.add(key);
   state.order.push(key);

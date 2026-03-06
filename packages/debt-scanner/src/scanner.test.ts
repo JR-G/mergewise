@@ -117,6 +117,33 @@ describe("scan", () => {
     expect(Array.isArray(profile.hotspots)).toBe(true);
   });
 
+  it("falls back to default topCount for NaN", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "scanner-nan-"));
+    await Bun.write(join(tempDir, "index.ts"), "export const x = 1;");
+    initGitRepo(tempDir, ["index.ts"]);
+
+    const profile = await scan({ repoPath: tempDir, skipLlm: true, topCount: NaN });
+    expect(Array.isArray(profile.hotspots)).toBe(true);
+  });
+
+  it("falls back to default topCount for Infinity", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "scanner-inf-"));
+    await Bun.write(join(tempDir, "index.ts"), "export const x = 1;");
+    initGitRepo(tempDir, ["index.ts"]);
+
+    const profile = await scan({ repoPath: tempDir, skipLlm: true, topCount: Infinity });
+    expect(Array.isArray(profile.hotspots)).toBe(true);
+  });
+
+  it("truncates non-integer topCount to integer", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "scanner-frac-"));
+    await Bun.write(join(tempDir, "index.ts"), "export const x = 1;");
+    initGitRepo(tempDir, ["index.ts"]);
+
+    const profile = await scan({ repoPath: tempDir, skipLlm: true, topCount: 2.7 });
+    expect(Array.isArray(profile.hotspots)).toBe(true);
+  });
+
   it("returns a profile with zero hotspots for an empty directory", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "scanner-test-empty-"));
     initGitRepo(tempDir, []);

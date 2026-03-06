@@ -74,6 +74,11 @@ describe("buildBlobUrl", () => {
     const url = buildBlobUrl("acme/widget", "abc123", "src/index.ts", 1.5);
     expect(url).toMatch(/#L1$/);
   });
+
+  it("normalises negative line numbers to L1", () => {
+    const url = buildBlobUrl("acme/widget", "abc123", "src/index.ts", -5);
+    expect(url).toContain("#L1");
+  });
 });
 
 describe("truncateRecommendation", () => {

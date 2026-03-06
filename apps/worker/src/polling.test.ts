@@ -77,6 +77,34 @@ describe("createPollingLoopController", () => {
     expect(cleared).toBe(true);
   });
 
+  it("waits for in-flight poll to finish before stop resolves", async () => {
+    let cleared = false;
+    let pollResolve: (() => void) | undefined;
+    const pollPromise = new Promise<void>((resolve) => { pollResolve = resolve; });
+    let capturedCallback: (() => void) | undefined;
+
+    const controller = createPollingLoopController(500, () => pollPromise, {
+      setIntervalFn: (callback, _delay) => { capturedCallback = callback; return 1 as unknown as WorkerPollingTimerHandle; },
+      clearIntervalFn: () => { cleared = true; },
+    });
+
+    controller.start();
+    capturedCallback?.();
+
+    let stopResolved = false;
+    const stopPromise = controller.stop().then(() => { stopResolved = true; });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(cleared).toBe(true);
+    expect(stopResolved).toBe(false);
+
+    pollResolve?.();
+    await stopPromise;
+
+    expect(stopResolved).toBe(true);
+    expect(controller.isRunning()).toBe(false);
+  });
+
   it("logs errors from failing poll cycles without crashing", async () => {
     let loggedMessage = "";
     let capturedCallback: (() => void) | undefined;
@@ -196,5 +224,33 @@ describe("trackProcessedKey", () => {
     trackProcessedKey("key-neg", state, -5);
 
     expect(state.keys.has("key-neg")).toBe(false);
+  });
+
+  it("treats NaN maxKeys as zero and evicts immediately", () => {
+    const state = createProcessedKeyState();
+
+    trackProcessedKey("key-nan", state, NaN);
+
+    expect(state.keys.has("key-nan")).toBe(false);
+    expect(state.order).toEqual([]);
+  });
+
+  it("treats Infinity maxKeys as zero and evicts immediately", () => {
+    const state = createProcessedKeyState();
+
+    trackProcessedKey("key-inf", state, Infinity);
+
+    expect(state.keys.has("key-inf")).toBe(false);
+    expect(state.order).toEqual([]);
+  });
+
+  it("floors non-integer maxKeys to nearest integer", () => {
+    const state = createProcessedKeyState();
+    trackProcessedKey("first", state, 1.9);
+    trackProcessedKey("second", state, 1.9);
+
+    expect(state.keys.has("first")).toBe(false);
+    expect(state.keys.has("second")).toBe(true);
+    expect(state.order).toEqual(["second"]);
   });
 });

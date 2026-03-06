@@ -33,14 +33,16 @@ function makeCodebaseContext(fileContent: string | null = "const x = 1;"): Codeb
   };
 }
 
-function makeMockClient(responseContent: string): ReviewClient {
+function makeMockClient(responseContent: string): ReviewClient & { completeCalls: string[][] } {
   const result: CompletionResult = {
     content: responseContent,
     usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
   };
+  const completeCalls: string[][] = [];
   return {
-    complete: mock(() => Promise.resolve(result)),
-  } as unknown as ReviewClient;
+    completeCalls,
+    complete: mock((...args: string[]) => { completeCalls.push(args); return Promise.resolve(result); }),
+  } as unknown as ReviewClient & { completeCalls: string[][] };
 }
 
 describe("reviewFile", () => {
@@ -100,10 +102,10 @@ describe("reviewFile", () => {
     expect(result.findings).toEqual([]);
   });
 
-  it("reads full file content from codebase context", async () => {
+  it("includes full file content in the LLM prompt", async () => {
     const emptyResponse = JSON.stringify({ findings: [] });
     const client = makeMockClient(emptyResponse);
-    const codebaseContext = makeCodebaseContext();
+    const codebaseContext = makeCodebaseContext("FULL_FILE_CONTENT");
 
     await reviewFile({
       fileDiff: STUB_DIFF,
@@ -112,10 +114,11 @@ describe("reviewFile", () => {
       client,
     });
 
-    expect(codebaseContext.readFile).toHaveBeenCalledWith("src/index.ts");
+    const userPrompt = client.completeCalls[0]?.[1] ?? "";
+    expect(userPrompt).toContain("FULL_FILE_CONTENT");
   });
 
-  it("clamps consistencySamples to at least 1", async () => {
+  it("clamps negative consistencySamples to 1 (single-shot path)", async () => {
     const validResponse = JSON.stringify({
       findings: [
         {
@@ -130,7 +133,7 @@ describe("reviewFile", () => {
     const client = makeMockClient(validResponse);
     const codebaseContext = makeCodebaseContext();
 
-    const result = await reviewFile({
+    await reviewFile({
       fileDiff: STUB_DIFF,
       pullRequest: STUB_PR,
       codebaseContext,
@@ -138,8 +141,83 @@ describe("reviewFile", () => {
       consistencySamples: -5,
     });
 
-    expect(result.findings.length).toBeGreaterThanOrEqual(0);
-    expect(result.usage).toBeDefined();
+    expect(client.completeCalls).toHaveLength(1);
+  });
+
+  it("clamps zero consistencySamples to 1 (single-shot path)", async () => {
+    const emptyResponse = JSON.stringify({ findings: [] });
+    const client = makeMockClient(emptyResponse);
+    const codebaseContext = makeCodebaseContext();
+
+    await reviewFile({
+      fileDiff: STUB_DIFF,
+      pullRequest: STUB_PR,
+      codebaseContext,
+      client,
+      consistencySamples: 0,
+    });
+
+    expect(client.completeCalls).toHaveLength(1);
+  });
+
+  it("clamps NaN consistencySamples to 1 (single-shot path)", async () => {
+    const emptyResponse = JSON.stringify({ findings: [] });
+    const client = makeMockClient(emptyResponse);
+    const codebaseContext = makeCodebaseContext();
+
+    await reviewFile({
+      fileDiff: STUB_DIFF,
+      pullRequest: STUB_PR,
+      codebaseContext,
+      client,
+      consistencySamples: NaN,
+    });
+
+    expect(client.completeCalls).toHaveLength(1);
+  });
+
+  it("uses multiple samples when consistencySamples is 3", async () => {
+    const validResponse = JSON.stringify({ findings: [] });
+    const client = makeMockClient(validResponse);
+    const codebaseContext = makeCodebaseContext();
+
+    await reviewFile({
+      fileDiff: STUB_DIFF,
+      pullRequest: STUB_PR,
+      codebaseContext,
+      client,
+      consistencySamples: 3,
+    });
+
+    expect(client.completeCalls).toHaveLength(3);
+  });
+
+  it("returns empty findings for malformed JSON from LLM", async () => {
+    const client = makeMockClient("not valid json {{{");
+    const codebaseContext = makeCodebaseContext();
+
+    const result = await reviewFile({
+      fileDiff: STUB_DIFF,
+      pullRequest: STUB_PR,
+      codebaseContext,
+      client,
+    });
+
+    expect(result.findings).toEqual([]);
+  });
+
+  it("returns empty findings for schema-invalid JSON from LLM", async () => {
+    const client = makeMockClient(JSON.stringify({ not_findings: true }));
+    const codebaseContext = makeCodebaseContext();
+
+    const result = await reviewFile({
+      fileDiff: STUB_DIFF,
+      pullRequest: STUB_PR,
+      codebaseContext,
+      client,
+    });
+
+    expect(result.findings).toEqual([]);
   });
 
   it("propagates rejection when client.complete throws", async () => {
