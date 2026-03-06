@@ -519,4 +519,24 @@ describe("writeQueueOffset", () => {
     writeQueueOffset(offsetPath, largeOffset);
     expect(readQueueOffset(offsetPath)).toBe(largeOffset);
   });
+
+  test("rejects NaN offset", () => {
+    const offsetPath = join(tempDir, "nan.offset");
+    expect(() => writeQueueOffset(offsetPath, NaN)).toThrow(RangeError);
+  });
+
+  test("rejects negative offset", () => {
+    const offsetPath = join(tempDir, "neg.offset");
+    expect(() => writeQueueOffset(offsetPath, -1)).toThrow(RangeError);
+  });
+
+  test("rejects non-integer offset", () => {
+    const offsetPath = join(tempDir, "float.offset");
+    expect(() => writeQueueOffset(offsetPath, 1.5)).toThrow(RangeError);
+  });
+
+  test("rejects Infinity offset", () => {
+    const offsetPath = join(tempDir, "inf.offset");
+    expect(() => writeQueueOffset(offsetPath, Infinity)).toThrow(RangeError);
+  });
 });

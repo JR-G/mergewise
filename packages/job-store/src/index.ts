@@ -66,6 +66,9 @@ export function readQueueOffset(offsetFilePath: string): number {
  * @param offset - Non-negative byte offset to persist.
  */
 export function writeQueueOffset(offsetFilePath: string, offset: number): void {
+  if (!Number.isFinite(offset) || !Number.isInteger(offset) || offset < 0) {
+    throw new RangeError(`writeQueueOffset: expected a finite non-negative integer, got ${offset}`);
+  }
   ensureParentDirectory(offsetFilePath);
   const tmpPath = `${offsetFilePath}.tmp`;
   writeFileSync(tmpPath, String(offset), "utf8");
