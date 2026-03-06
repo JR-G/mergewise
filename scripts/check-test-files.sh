@@ -45,7 +45,7 @@ while IFS= read -r test_file; do
     *) continue ;;
   esac
 
-  if ! git show ":$test_file" 2>/dev/null | perl -0777 -ne "exit 0 if /(test|it)(?:\.each\([^)]*\))?\s*\(\s*['\"\`].*?${BOUNDARY_PATTERN}/si; exit 1"; then
+  if ! git show ":$test_file" 2>/dev/null | perl -0777 -ne "exit 0 if /(test|it)(?:\.each\([^)]*\))?\s*\(\s*['\"\`][^'\"\`]*?${BOUNDARY_PATTERN}/si; exit 1"; then
     echo "No empty/boundary test found in: $test_file"
     no_boundary="yes"
   fi
