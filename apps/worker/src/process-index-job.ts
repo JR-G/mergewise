@@ -70,7 +70,6 @@ export async function processIndexRepoJob(
     const profile = await scan({
       repoPath: cloneDir,
       skipLlm: true,
-      store: dependencies.debtStore,
     });
 
     const scanId = dependencies.debtStore.saveScan({
@@ -137,10 +136,14 @@ async function spawnShallowClone(
     { stdout: "ignore", stderr: "pipe" },
   );
 
+  let timer: ReturnType<typeof setTimeout>;
   const exitCode = await Promise.race([
-    proc.exited,
+    proc.exited.then((code) => {
+      clearTimeout(timer);
+      return code;
+    }),
     new Promise<never>((_resolve, reject) => {
-      setTimeout(() => {
+      timer = setTimeout(() => {
         proc.kill();
         reject(new Error(`git clone timed out after ${CLONE_TIMEOUT_MS}ms`));
       }, CLONE_TIMEOUT_MS);
@@ -148,7 +151,14 @@ async function spawnShallowClone(
   ]);
 
   if (exitCode !== 0) {
-    const stderr = await new Response(proc.stderr).text();
+    const stderr = scrubCredentials(await new Response(proc.stderr).text());
     throw new Error(`git clone failed with exit code ${exitCode}: ${stderr.slice(0, 500)}`);
   }
+}
+
+/**
+ * Removes embedded access tokens from clone URLs in error output.
+ */
+function scrubCredentials(text: string): string {
+  return text.replace(/x-access-token:[^@]+@/g, "x-access-token:***@");
 }

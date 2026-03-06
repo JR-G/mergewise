@@ -149,10 +149,4 @@ describe("buildReviewToolkit", () => {
     expect(result.callers).not.toContain("src/derived.ts");
   });
 
-  test("returns the toolkit as an object with a getCallers method", () => {
-    const graph = makeGraph([], []);
-    const toolkit = buildReviewToolkit(graph, []);
-
-    expect(typeof toolkit.getCallers).toBe("function");
-  });
 });

@@ -372,7 +372,7 @@ describe("processIndexRepoJob", () => {
       expect(capturedTargetDir.startsWith(tmpdir())).toBe(true);
     });
 
-    test("logs cleanup failure without throwing", async () => {
+    test("completes successfully with normal cleanup", async () => {
       const errors: string[] = [];
       const infos: string[] = [];
       const dependencies = baseDependencies({

@@ -30,6 +30,11 @@ import { processCollectFeedbackJob } from "./process-feedback-job";
 import { processIndexRepoJob } from "./process-index-job";
 
 /**
+ * Default path for the debt-scanner SQLite database.
+ */
+const DEFAULT_DEBT_DB_PATH = ".mergewise-runtime/debt.db";
+
+/**
  * Supported shutdown signals for graceful worker termination.
  */
 export type WorkerShutdownSignal = "SIGTERM" | "SIGINT";
@@ -211,7 +216,6 @@ export function startWorkerProcess(
     throw storeError;
   }
 
-  const DEFAULT_DEBT_DB_PATH = ".mergewise-runtime/debt.db";
   const openDebtStoreFn = dependencies.openDebtStoreFn ?? (() => openStore(DEFAULT_DEBT_DB_PATH));
   let debtStore: DebtStore;
   try {

@@ -299,10 +299,23 @@ export function isPushWebhookEvent(
     return false;
   }
 
-  return (
-    typeof repository.full_name === "string" &&
-    typeof repository.default_branch === "string"
-  );
+  if (
+    typeof repository.full_name !== "string" ||
+    typeof repository.default_branch !== "string"
+  ) {
+    return false;
+  }
+
+  if (
+    event.installation !== undefined &&
+    (typeof event.installation.id !== "number" ||
+      !Number.isInteger(event.installation.id) ||
+      event.installation.id <= 0)
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 /**
