@@ -679,6 +679,83 @@ describe("startWorkerProcess", () => {
     expect(pollCallCount).toBe(2);
 
     await processHandle.shutdown();
+
+    const restartIntervalCallbacks: (() => void)[] = [];
+    let restartReadOffset: number | undefined;
+    const restartProcessedJobIds: string[] = [];
+
+    const restartHandle = startWorkerProcess({
+      loadConfigFn: () => ({
+        pollIntervalMs: 3000,
+        maxProcessedKeys: 1000,
+        githubApiBaseUrl: "https://api.github.com",
+        githubUserAgent: "mergewise-worker-test",
+        githubRequestTimeoutMs: 1000,
+        githubFetchRetries: 2,
+        githubRetryDelayMs: 10,
+        confidenceThreshold: 0.78,
+        maxComments: 20,
+        testFileConfidenceThreshold: 0.98,
+      }),
+      loadMergewiseConfigFn: () => ({
+        gating: { confidenceThreshold: 0.8, maxComments: 10 },
+        rules: { include: [], exclude: [] },
+        review: { skipPatterns: [] },
+        llm: {
+          enabled: false,
+          model: "gpt-4o",
+          ...DEFAULT_LLM_MODELS,
+          tokenBudget: 30_000,
+          baseUrl: "https://api.openai.com/v1",
+          consistencySamples: 1,
+        },
+      }),
+      readQueueOffsetFn: () => writtenOffsets[0] ?? 0,
+      writeQueueOffsetFn: () => {},
+      readAllQueueJobsFn: async (_filePath, _onSkipped, startByteOffset = 0) => {
+        restartReadOffset = startByteOffset;
+        return { jobs: [], byteOffset: startByteOffset };
+      },
+      processAnalyzePullRequestJobFn: async (job) => {
+        restartProcessedJobIds.push(job.job_id);
+        return {
+          jobId: job.job_id,
+          idempotencyKey: `${job.repo_full_name}#${job.pr_number}@${job.head_sha}`,
+          repository: job.repo_full_name,
+          pullRequestNumber: job.pr_number,
+          headSha: job.head_sha,
+          totalFindings: 0,
+          findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          totalRules: 0,
+          successfulRules: 0,
+          failedRules: 0,
+          failedRuleIds: [],
+          processedAt: "2026-02-01T00:00:00.000Z",
+          traceId: job.job_id,
+        };
+      },
+      createPollingLoopControllerFn: (_pollIntervalMs, pollCycle) => ({
+        start: () => {
+          restartIntervalCallbacks.push(() => {
+            pollCycle().then(() => undefined, () => undefined);
+          });
+        },
+        stop: async () => {},
+        isRunning: () => true,
+      }),
+      registerSignalHandlerFn: () => {},
+      logInfo: () => {},
+      logError: () => {},
+    });
+
+    const [runRestartPollCycle] = restartIntervalCallbacks;
+    runRestartPollCycle?.();
+    await drainMicrotasks();
+
+    expect(restartReadOffset).toBe(150);
+    expect(restartProcessedJobIds).toEqual([]);
+
+    await restartHandle.shutdown();
   });
 
   test("does not persist offset when no new data was read", async () => {

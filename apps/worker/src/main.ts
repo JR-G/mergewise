@@ -201,7 +201,14 @@ export function startWorkerProcess(
   const processedKeyState = createProcessedKeyState();
   const pollCycleState = { isPollInFlight: false };
   const offsetFilePath = deriveOffsetFilePath(DEFAULT_JOB_FILE_PATH);
-  let currentByteOffset = readQueueOffsetFn(offsetFilePath);
+  let currentByteOffset: number;
+  try {
+    currentByteOffset = readQueueOffsetFn(offsetFilePath);
+  } catch (readError) {
+    const details = readError instanceof Error ? readError.message : String(readError);
+    errorLogger(`[worker] failed to read queue offset, defaulting to 0: ${details}`);
+    currentByteOffset = 0;
+  }
 
   const pollAndProcessJobs = async (): Promise<void> => {
     const didRun = await runPollCycleWithInFlightGuard(pollCycleState, async () => {
@@ -262,14 +269,12 @@ export function startWorkerProcess(
         }
       }
 
-      if (newByteOffset !== currentByteOffset) {
+      if (newByteOffset === currentByteOffset) {
+        return;
+      }
+      const wrote = await writeOffsetWithRetry(writeQueueOffsetFn, offsetFilePath, newByteOffset, errorLogger);
+      if (wrote) {
         currentByteOffset = newByteOffset;
-        try {
-          writeQueueOffsetFn(offsetFilePath, currentByteOffset);
-        } catch (writeError) {
-          const details = writeError instanceof Error ? writeError.message : String(writeError);
-          errorLogger(`[worker] failed to write queue offset: ${details}`);
-        }
       }
     });
 
@@ -313,6 +318,33 @@ export function startWorkerProcess(
     },
     handleSignal: shutdownSignalHandler,
   };
+}
+
+const OFFSET_WRITE_MAX_RETRIES = 2;
+const OFFSET_WRITE_BASE_DELAY_MS = 50;
+
+async function writeOffsetWithRetry(
+  writeFn: typeof writeQueueOffset,
+  filePath: string,
+  offset: number,
+  errorLogger: (message: string) => void,
+): Promise<boolean> {
+  for (let attempt = 0; attempt <= OFFSET_WRITE_MAX_RETRIES; attempt++) {
+    try {
+      writeFn(filePath, offset);
+      return true;
+    } catch (error) {
+      const details = error instanceof Error ? error.message : String(error);
+      if (attempt < OFFSET_WRITE_MAX_RETRIES) {
+        const delayMs = OFFSET_WRITE_BASE_DELAY_MS * 2 ** attempt;
+        errorLogger(`[worker] offset write attempt ${attempt + 1} failed, retrying in ${delayMs}ms: ${details}`);
+        await new Promise<void>((resolve) => { setTimeout(resolve, delayMs); });
+      } else {
+        errorLogger(`[worker] offset write failed after ${OFFSET_WRITE_MAX_RETRIES + 1} attempts: ${details}`);
+      }
+    }
+  }
+  return false;
 }
 
 async function processFeedbackJobEntry(
