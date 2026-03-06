@@ -1,7 +1,8 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { createInterface } from "node:readline";
 import { dirname } from "node:path";
 
-import type { AnalyzePullRequestJob } from "@mergewise/shared-types";
+import type { AnalyzePullRequestJob, CollectFeedbackJob, QueueJob } from "@mergewise/shared-types";
 
 /**
  * Logical queue file location used by the local development skeleton.
@@ -46,17 +47,33 @@ function isAnalyzePullRequestJob(value: unknown): value is AnalyzePullRequestJob
     return false;
   }
 
+  const rawType = (value as Record<string, unknown>).type;
+  if (rawType !== undefined && rawType !== "analyze-pull-request") {
+    return false;
+  }
+
   const candidate = value as Partial<AnalyzePullRequestJob>;
-  return (
-    typeof candidate.job_id === "string" &&
-    (typeof candidate.installation_id === "number" ||
-      candidate.installation_id === null) &&
-    typeof candidate.repo_full_name === "string" &&
-    typeof candidate.pr_number === "number" &&
-    typeof candidate.head_sha === "string" &&
-    (candidate.trace_id === undefined || typeof candidate.trace_id === "string") &&
-    typeof candidate.queued_at === "string"
-  );
+  if (
+    typeof candidate.job_id !== "string" ||
+    typeof candidate.repo_full_name !== "string" ||
+    typeof candidate.head_sha !== "string" ||
+    typeof candidate.queued_at !== "string"
+  ) {
+    return false;
+  }
+  if (candidate.trace_id !== undefined && typeof candidate.trace_id !== "string") {
+    return false;
+  }
+  if (
+    candidate.installation_id !== null &&
+    (typeof candidate.installation_id !== "number" || !Number.isInteger(candidate.installation_id) || candidate.installation_id <= 0)
+  ) {
+    return false;
+  }
+  if (typeof candidate.pr_number !== "number" || !Number.isInteger(candidate.pr_number) || candidate.pr_number <= 0) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -127,5 +144,121 @@ export function readAllAnalyzePullRequestJobs(
     }
   }
 
+  return jobs;
+}
+
+/**
+ * Determines whether a parsed value matches the collect-feedback job shape.
+ *
+ * @param value - Parsed JSON value from the local queue file.
+ * @returns `true` when the value satisfies required collect-feedback job fields.
+ */
+export function isCollectFeedbackJob(value: unknown): value is CollectFeedbackJob {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<CollectFeedbackJob>;
+  if (
+    candidate.type !== "collect-feedback" ||
+    typeof candidate.job_id !== "string" ||
+    typeof candidate.repo_full_name !== "string" ||
+    typeof candidate.queued_at !== "string"
+  ) {
+    return false;
+  }
+  if (candidate.installation_id !== null && typeof candidate.installation_id !== "number") {
+    return false;
+  }
+  if (typeof candidate.installation_id === "number" && (!Number.isFinite(candidate.installation_id) || !Number.isInteger(candidate.installation_id) || candidate.installation_id <= 0)) {
+    return false;
+  }
+  if (candidate.trace_id !== undefined && typeof candidate.trace_id !== "string") {
+    return false;
+  }
+  if (typeof candidate.pr_number !== "number" || !Number.isFinite(candidate.pr_number) || !Number.isInteger(candidate.pr_number) || candidate.pr_number <= 0) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Appends a collect-feedback job as one NDJSON line to the local queue file.
+ *
+ * @param job - Collect-feedback job payload to persist.
+ * @param filePath - Optional file path override for tests/local customization.
+ * @throws May throw on file system errors (permissions, disk full, etc.).
+ */
+export function enqueueCollectFeedbackJob(
+  job: CollectFeedbackJob,
+  filePath = DEFAULT_JOB_FILE_PATH,
+): void {
+  ensureParentDirectory(filePath);
+  appendFileSync(filePath, `${JSON.stringify(job)}\n`, "utf8");
+}
+
+/**
+ * Maximum number of jobs read from the queue file in a single call.
+ */
+const MAX_QUEUE_SIZE = 10_000;
+
+/**
+ * Maximum number of input lines scanned per poll, including malformed lines.
+ */
+const MAX_SCAN_LINES = 50_000;
+
+/**
+ * Reads queued jobs from the local NDJSON queue file using line-by-line streaming.
+ *
+ * @remarks
+ * Lines without a `type` field are treated as `AnalyzePullRequestJob` for
+ * backward compatibility with queue entries written before the discriminator
+ * was introduced. Reading stops once `MAX_QUEUE_SIZE` jobs have been collected.
+ *
+ * @param filePath - Optional file path override for tests/local customization.
+ * @param onSkippedLine - Optional callback for skipped lines. Defaults to stderr logging.
+ * @returns Parsed queue jobs in file order.
+ */
+export async function readAllQueueJobs(
+  filePath = DEFAULT_JOB_FILE_PATH,
+  onSkippedLine: OnSkippedLine = defaultOnSkippedLine,
+): Promise<QueueJob[]> {
+  if (!existsSync(filePath)) {
+    return [];
+  }
+
+  const jobs: QueueJob[] = [];
+  const stream = createReadStream(filePath, { encoding: "utf8" });
+  const reader = createInterface({ input: stream, crlfDelay: Infinity });
+  let lineNumber = 0;
+
+  try {
+    for await (const line of reader) {
+      lineNumber++;
+      if (!line.trim()) {
+        continue;
+      }
+
+      try {
+        const parsed = JSON.parse(line) as unknown;
+        if (isCollectFeedbackJob(parsed)) {
+          jobs.push(parsed);
+        } else if (isAnalyzePullRequestJob(parsed)) {
+          jobs.push(parsed);
+        } else {
+          onSkippedLine(lineNumber, "shape mismatch");
+        }
+      } catch (error) {
+        const details = error instanceof Error ? error.message : String(error);
+        onSkippedLine(lineNumber, details);
+      }
+
+      if (jobs.length >= MAX_QUEUE_SIZE || lineNumber >= MAX_SCAN_LINES) {
+        break;
+      }
+    }
+  } finally {
+    reader.close();
+  }
   return jobs;
 }

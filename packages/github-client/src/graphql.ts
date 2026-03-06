@@ -10,6 +10,77 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+interface PaginatedPage<T> {
+  readonly threads: T[];
+  readonly hasNextPage: boolean;
+  readonly endCursor: string | null;
+}
+
+async function paginateGraphqlQuery<T>(
+  options: ListPullRequestReviewThreadsOptions,
+  queryString: string,
+  pageExtractor: (data: unknown) => PaginatedPage<T>,
+): Promise<T[]> {
+  if (!options.owner || !options.repository) {
+    throw new TypeError(`owner and repository must be non-empty strings (got owner="${options.owner}", repository="${options.repository}")`);
+  }
+  if (!Number.isInteger(options.pullRequestNumber) || options.pullRequestNumber <= 0) {
+    throw new TypeError(`pullRequestNumber must be a positive integer (got ${String(options.pullRequestNumber)})`);
+  }
+
+  const rawPerPage = options.perPage ?? 100;
+  const rawMaxPages = options.maxPages ?? 20;
+  if (!Number.isInteger(rawPerPage) || !Number.isInteger(rawMaxPages) || rawPerPage <= 0 || rawMaxPages <= 0) {
+    throw new RangeError(`perPage and maxPages must be positive integers (got perPage=${rawPerPage}, maxPages=${rawMaxPages})`);
+  }
+  const perPage = clamp(rawPerPage, 1, 100);
+  const maxPages = clamp(rawMaxPages, 1, 50);
+  const maxTotalThreads = perPage * maxPages;
+  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
+  const apiBaseUrl = trimTrailingSlash(
+    options.apiBaseUrl ?? "https://api.github.com",
+  );
+  const endpointUrl = `${apiBaseUrl}/graphql`;
+  const collected: T[] = [];
+  let cursor: string | null = null;
+
+  for (let pageNumber = 0; pageNumber < maxPages; pageNumber += 1) {
+    const variables: Record<string, unknown> = {
+      owner: options.owner,
+      name: options.repository,
+      prNumber: options.pullRequestNumber,
+      first: perPage,
+    };
+    if (cursor !== null) {
+      variables.after = cursor;
+    }
+
+    const response = await fetch(endpointUrl, {
+      method: "POST",
+      headers: buildHeaders({
+        authorization: `Bearer ${options.installationAccessToken}`,
+        userAgent: options.userAgent,
+        contentType: "application/json",
+        traceId: options.traceId,
+      }),
+      body: JSON.stringify({ query: queryString, variables }),
+      signal: AbortSignal.timeout(requestTimeoutMs),
+    });
+
+    const page = await parseGraphQlResponse<PaginatedPage<T>>(response, endpointUrl, pageExtractor);
+    collected.push(...page.threads);
+    if (collected.length >= maxTotalThreads) {
+      break;
+    }
+    if (!page.hasNextPage || page.endCursor === null) {
+      break;
+    }
+    cursor = page.endCursor;
+  }
+
+  return collected;
+}
+
 /**
  * Request options for minimising a comment via the GitHub GraphQL API.
  */
@@ -101,6 +172,30 @@ export interface ListPullRequestReviewThreadsOptions extends GitHubApiOptions {
 }
 
 /**
+ * A single comment within a review thread, including author metadata.
+ */
+export interface ReviewThreadComment {
+  readonly body: string;
+  readonly authorLogin: string;
+  readonly authorIsBot: boolean;
+}
+
+/**
+ * Review thread data with up to 20 comments per thread for feedback extraction.
+ *
+ * @remarks
+ * The underlying GraphQL query fetches `comments(first: 20)` per thread.
+ * The comments array includes the first comment (the review comment itself)
+ * plus subsequent replies, so threads with more than 20 total comments will
+ * have their newest comments unavailable.
+ */
+export interface ReviewThreadWithReplies {
+  readonly id: string;
+  readonly firstCommentBody: string;
+  readonly comments: readonly ReviewThreadComment[];
+}
+
+/**
  * Request options for resolving a review thread via GraphQL.
  */
 export interface ResolveReviewThreadOptions extends GitHubApiOptions {
@@ -188,59 +283,7 @@ export async function minimizeComment(
 export async function listPullRequestReviewThreads(
   options: ListPullRequestReviewThreadsOptions,
 ): Promise<ReviewThread[]> {
-  const perPage = clamp(options.perPage ?? 100, 1, 100);
-  const maxPages = clamp(options.maxPages ?? 20, 1, 50);
-  const maxTotalThreads = perPage * maxPages;
-  const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
-  const apiBaseUrl = trimTrailingSlash(
-    options.apiBaseUrl ?? "https://api.github.com",
-  );
-  const endpointUrl = `${apiBaseUrl}/graphql`;
-
-  const query = buildReviewThreadsQuery();
-  const collectedThreads: ReviewThread[] = [];
-  let cursor: string | null = null;
-
-  for (let pageNumber = 0; pageNumber < maxPages; pageNumber += 1) {
-    const variables: Record<string, unknown> = {
-      owner: options.owner,
-      name: options.repository,
-      prNumber: options.pullRequestNumber,
-      first: perPage,
-    };
-    if (cursor !== null) {
-      variables.after = cursor;
-    }
-
-    const response = await fetch(endpointUrl, {
-      method: "POST",
-      headers: buildHeaders({
-        authorization: `Bearer ${options.installationAccessToken}`,
-        userAgent: options.userAgent,
-        contentType: "application/json",
-        traceId: options.traceId,
-      }),
-      body: JSON.stringify({ query, variables }),
-      signal: AbortSignal.timeout(requestTimeoutMs),
-    });
-
-    const page = await parseGraphQlResponse<{
-      threads: ReviewThread[];
-      hasNextPage: boolean;
-      endCursor: string | null;
-    }>(response, endpointUrl, extractReviewThreadPage);
-
-    collectedThreads.push(...page.threads);
-    if (collectedThreads.length >= maxTotalThreads) {
-      break;
-    }
-    if (!page.hasNextPage || page.endCursor === null) {
-      break;
-    }
-    cursor = page.endCursor;
-  }
-
-  return collectedThreads;
+  return paginateGraphqlQuery(options, buildReviewThreadsQuery(), extractReviewThreadPage);
 }
 
 function buildReviewThreadsQuery(): string {
@@ -292,6 +335,115 @@ function extractReviewThreadPage(data: unknown): ReviewThreadPageResult {
     isOutdated: node.isOutdated === true,
     firstCommentBody: node.comments?.nodes?.[0]?.body ?? "",
   }));
+  return {
+    threads,
+    hasNextPage: reviewThreads?.pageInfo?.hasNextPage === true,
+    endCursor: reviewThreads?.pageInfo?.endCursor ?? null,
+  };
+}
+
+/**
+ * Lists review threads with all comments for feedback extraction.
+ *
+ * @remarks
+ * Unlike {@link listPullRequestReviewThreads} which fetches only the first
+ * comment per thread, this function fetches up to 20 comments per thread
+ * with author metadata for conversational learning extraction.
+ *
+ * @param options - Review thread listing options.
+ * @returns Review threads with up to 20 replies each.
+ * @throws {@link GitHubApiError} when the HTTP request fails.
+ * @throws {@link GitHubGraphQlError} when the GraphQL response contains errors.
+ */
+export async function listPullRequestReviewThreadsWithReplies(
+  options: ListPullRequestReviewThreadsOptions,
+): Promise<ReviewThreadWithReplies[]> {
+  return paginateGraphqlQuery(options, buildReviewThreadsWithRepliesQuery(), extractReviewThreadWithRepliesPage);
+}
+
+function buildReviewThreadsWithRepliesQuery(): string {
+  return `query($owner: String!, $name: String!, $prNumber: Int!, $first: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $prNumber) {
+      reviewThreads(first: $first, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          comments(first: 20) {
+            nodes {
+              body
+              author {
+                login
+                ... on Bot { id }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+}
+
+interface RawThreadCommentAuthor {
+  login?: string;
+  id?: string;
+}
+
+interface RawThreadComment {
+  body?: string;
+  author?: RawThreadCommentAuthor | null;
+}
+
+interface RawThreadWithRepliesNode {
+  id?: string;
+  comments?: { nodes?: RawThreadComment[] };
+}
+
+/**
+ * Maps a raw GraphQL comment node to a typed {@link ReviewThreadComment}.
+ *
+ * @remarks
+ * `authorIsBot` is determined by two signals: the GraphQL fragment `... on Bot { id }`
+ * sets `raw.author.id` for GitHub App actors, and the `[bot]` login suffix catches
+ * service accounts (e.g. `github-actions[bot]`) that GitHub represents as User type.
+ * Changes to {@link RawThreadComment} or the GraphQL fragment may require updating this logic.
+ */
+function mapRawComment(raw: RawThreadComment): ReviewThreadComment {
+  return {
+    body: raw.body ?? "",
+    authorLogin: raw.author?.login ?? "",
+    authorIsBot: raw.author?.id !== undefined || (raw.author?.login ?? "").endsWith("[bot]"),
+  };
+}
+
+function extractReviewThreadWithRepliesPage(data: unknown): {
+  threads: ReviewThreadWithReplies[];
+  hasNextPage: boolean;
+  endCursor: string | null;
+} {
+  const reviewThreads = (
+    data as {
+      repository?: {
+        pullRequest?: {
+          reviewThreads?: {
+            pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+            nodes?: RawThreadWithRepliesNode[];
+          };
+        };
+      };
+    }
+  ).repository?.pullRequest?.reviewThreads;
+  const nodes = reviewThreads?.nodes ?? [];
+  const threads: ReviewThreadWithReplies[] = nodes.map((node) => {
+    const rawComments = node.comments?.nodes ?? [];
+    const comments = rawComments.map(mapRawComment);
+    return {
+      id: node.id ?? "",
+      firstCommentBody: comments[0]?.body ?? "",
+      comments,
+    };
+  });
   return {
     threads,
     hasNextPage: reviewThreads?.pageInfo?.hasNextPage === true,

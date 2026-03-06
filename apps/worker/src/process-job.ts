@@ -3,9 +3,11 @@ import { DEFAULT_MERGEWISE_CONFIG, type MergewiseConfig } from "@mergewise/confi
 import { executeRules } from "@mergewise/rule-engine";
 import { tsReactRules } from "@mergewise/rule-ts-react";
 import { createLlmReviewerRule } from "@mergewise/llm-reviewer";
+import { compileLearnings } from "@mergewise/feedback-store";
 import type {
   AnalyzePullRequestJob,
   CodebaseContext,
+  RepoLearnings,
   Rule,
 } from "@mergewise/shared-types";
 import {
@@ -63,6 +65,7 @@ function buildLlmRules(
   mergewiseConfig: MergewiseConfig,
   traceId: string,
   loggers: ResolvedLoggers,
+  repoLearnings?: RepoLearnings,
 ): readonly Rule[] {
   const llmConfig = mergewiseConfig.llm;
   const llmApiKey = process.env.LLM_API_KEY;
@@ -88,6 +91,7 @@ function buildLlmRules(
         ? mergewiseConfig.review.skipPatterns
         : undefined,
       confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
+      repoLearnings,
       onFileReviewError: (filePath, error) => {
         loggers.warnLogger(
           `[worker] llm review failed trace=${traceId} file=${filePath} error=${error instanceof Error ? error.message : String(error)}`,
@@ -111,8 +115,45 @@ function resolveProcessingConfig(
   const loggers = resolveLoggers(dependencies);
   const mergewiseConfig = dependencies.mergewiseConfig ?? DEFAULT_MERGEWISE_CONFIG;
 
-  const baseLlmRules = buildLlmRules(mergewiseConfig, traceId, loggers);
+  let repoLearnings: RepoLearnings | undefined;
+  if (dependencies.feedbackStore) {
+    try {
+      repoLearnings = compileLearnings(job.repo_full_name, dependencies.feedbackStore);
+      if (repoLearnings.summary !== "no learnings") {
+        loggers.infoLogger(
+          `[worker] learnings trace=${traceId} repo=${job.repo_full_name} ${repoLearnings.summary}`,
+        );
+      }
+    } catch (learningError) {
+      const detail = learningError instanceof Error ? learningError.message : String(learningError);
+      loggers.errorLogger(
+        `[worker] compile_learnings_failed trace=${traceId} repo=${job.repo_full_name}: ${detail}`,
+      );
+    }
+  }
+
+  const baseLlmRules = buildLlmRules(mergewiseConfig, traceId, loggers, repoLearnings);
   const rules = dependencies.rules ?? [...tsReactRules, ...baseLlmRules];
+
+  const baseBlockedRuleIds = dependencies.findingDeliveryOptions?.blockedRuleIds
+    ?? DEFAULT_BLOCKED_POST_RULE_IDS;
+  const blockedRuleIds = [...baseBlockedRuleIds];
+  if (repoLearnings) {
+    const blockedSet = new Set(blockedRuleIds);
+    for (const suppressedRuleId of repoLearnings.suppressedRules) {
+      if (!blockedSet.has(suppressedRuleId)) {
+        blockedRuleIds.push(suppressedRuleId);
+        blockedSet.add(suppressedRuleId);
+      }
+    }
+  }
+
+  const baseFindingDeliveryOptions = dependencies.findingDeliveryOptions ?? {
+    confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
+    maxComments: mergewiseConfig.gating.maxComments,
+    testFileConfidenceThreshold: DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD,
+    allowedCategories: DEFAULT_ALLOWED_POST_CATEGORIES,
+  };
 
   return {
     key,
@@ -122,13 +163,7 @@ function resolveProcessingConfig(
     selectedRules: selectRulesForExecution(rules, mergewiseConfig),
     executeRulesFn: dependencies.executeRulesFn ?? executeRules,
     githubFetchOptions: dependencies.githubFetchOptions ?? resolveGitHubFetchOptions(),
-    findingDeliveryOptions: dependencies.findingDeliveryOptions ?? {
-      confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
-      maxComments: mergewiseConfig.gating.maxComments,
-      testFileConfidenceThreshold: DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD,
-      allowedCategories: DEFAULT_ALLOWED_POST_CATEGORIES,
-      blockedRuleIds: DEFAULT_BLOCKED_POST_RULE_IDS,
-    },
+    findingDeliveryOptions: { ...baseFindingDeliveryOptions, blockedRuleIds },
   };
 }
 

@@ -4,7 +4,7 @@ import { unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openFeedbackStore } from "./sqlite-store";
-import type { FeedbackRecord } from "./types";
+import type { FeedbackRecord, RepoInstruction } from "./types";
 
 function tempDatabasePath(): string {
   return join(tmpdir(), `feedback-test-${crypto.randomUUID()}.db`);
@@ -23,6 +23,18 @@ function buildRecord(overrides: Partial<FeedbackRecord> = {}): FeedbackRecord {
     prNumber: 42,
     traceId: "trace-abc",
     recordedAt: "2026-03-03T12:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function buildInstruction(overrides: Partial<RepoInstruction> = {}): RepoInstruction {
+  return {
+    repoFullName: "acme/widget",
+    instruction: "We prefer early returns over nested ifs",
+    ruleId: "clean/srp",
+    category: "clean",
+    sourcePrNumber: 42,
+    createdAt: "2026-03-03T12:00:00.000Z",
     ...overrides,
   };
 }
@@ -74,6 +86,27 @@ describe("openFeedbackStore", () => {
 
     expect(rows.some((row) => row.finding_id === "f1" && row.thumbs_up === 5)).toBe(true);
     expect(rows.some((row) => row.finding_id === "f2" && row.thumbs_down === 2 && row.pr_number === 99)).toBe(true);
+  });
+
+  test("upserts on duplicate (repo, pr, finding) instead of inserting duplicates", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    store.saveFeedback([buildRecord({ findingId: "f1", thumbsUp: 1, thumbsDown: 0 })]);
+    store.saveFeedback([buildRecord({ findingId: "f1", thumbsUp: 3, thumbsDown: 2 })]);
+    store.close();
+
+    const database = new Database(databasePath, { readonly: true });
+    const rows = database.query("SELECT thumbs_up, thumbs_down FROM comment_feedback WHERE finding_id = 'f1'").all() as {
+      thumbs_up: number;
+      thumbs_down: number;
+    }[];
+    database.close();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.thumbs_up).toBe(3);
+    expect(rows[0]!.thumbs_down).toBe(2);
   });
 
   test("handles empty records array without error", () => {
@@ -136,5 +169,290 @@ describe("openFeedbackStore", () => {
     expect(row.pr_number).toBe(record.prNumber);
     expect(row.trace_id).toBe(record.traceId);
     expect(row.recorded_at).toBe(record.recordedAt);
+  });
+});
+
+describe("saveInstructions", () => {
+  test("persists instruction records to the database", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    const instructions = [
+      buildInstruction({ instruction: "prefer early returns" }),
+      buildInstruction({ instruction: "skip SRP in tests", ruleId: null }),
+    ];
+    store.saveInstructions(instructions);
+    store.close();
+
+    const database = new Database(databasePath, { readonly: true });
+    const rows = database.query("SELECT instruction, rule_id FROM repo_instructions ORDER BY id").all() as {
+      instruction: string;
+      rule_id: string | null;
+    }[];
+    database.close();
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.instruction).toBe("prefer early returns");
+    expect(rows[1]!.rule_id).toBeNull();
+  });
+
+  test("handles empty instructions array without error", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    store.saveInstructions([]);
+    store.close();
+
+    const database = new Database(databasePath, { readonly: true });
+    const count = database.query("SELECT COUNT(*) as cnt FROM repo_instructions").get() as { cnt: number };
+    database.close();
+
+    expect(count.cnt).toBe(0);
+  });
+});
+
+describe("queryInstructions", () => {
+  test("returns instructions for the given repo, newest first", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    store.saveInstructions([
+      buildInstruction({ instruction: "older", createdAt: "2026-01-01T00:00:00.000Z" }),
+      buildInstruction({ instruction: "newer", createdAt: "2026-03-01T00:00:00.000Z" }),
+    ]);
+
+    const results = store.queryInstructions("acme/widget");
+    store.close();
+
+    expect(results).toHaveLength(2);
+    expect(results[0]!.instruction).toBe("newer");
+    expect(results[1]!.instruction).toBe("older");
+  });
+
+  test("does not return instructions for other repos", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    store.saveInstructions([
+      buildInstruction({ repoFullName: "acme/widget" }),
+      buildInstruction({ repoFullName: "other/repo" }),
+    ]);
+
+    const results = store.queryInstructions("acme/widget");
+    store.close();
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.repoFullName).toBe("acme/widget");
+  });
+
+  test("returns empty array when no instructions exist", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    const results = store.queryInstructions("acme/widget");
+    store.close();
+
+    expect(results).toEqual([]);
+  });
+
+  test("deduplicates instructions by text, keeping the newest", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    store.saveInstructions([
+      buildInstruction({ instruction: "skip SRP in tests", ruleId: "old-rule", createdAt: "2026-01-01T00:00:00.000Z", sourcePrNumber: 10 }),
+      buildInstruction({ instruction: "skip SRP in tests", ruleId: "new-rule", createdAt: "2026-03-01T00:00:00.000Z", sourcePrNumber: 42 }),
+      buildInstruction({ instruction: "prefer early returns", createdAt: "2026-02-01T00:00:00.000Z" }),
+    ]);
+
+    const results = store.queryInstructions("acme/widget");
+    store.close();
+
+    const srpResult = results.find((row) => row.instruction === "skip SRP in tests");
+    expect(srpResult).toBeDefined();
+    expect(srpResult!.ruleId).toBe("new-rule");
+    expect(srpResult!.sourcePrNumber).toBe(42);
+    expect(results.filter((row) => row.instruction === "skip SRP in tests")).toHaveLength(1);
+  });
+
+  test("limits results to 30", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    const instructions = Array.from({ length: 35 }, (_, index) =>
+      buildInstruction({
+        instruction: `instruction-${index}`,
+        createdAt: `2026-01-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`,
+      }),
+    );
+    store.saveInstructions(instructions);
+
+    const results = store.queryInstructions("acme/widget");
+    store.close();
+
+    expect(results).toHaveLength(30);
+  });
+});
+
+describe("queryRuleSentiment", () => {
+  test("returns aggregated sentiment per rule when total reactions >= 3", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    store.saveFeedback([
+      buildRecord({ findingId: "a1", ruleId: "rule-a", thumbsUp: 1, thumbsDown: 0 }),
+      buildRecord({ findingId: "a2", ruleId: "rule-a", thumbsUp: 0, thumbsDown: 1 }),
+      buildRecord({ findingId: "a3", ruleId: "rule-a", thumbsUp: 0, thumbsDown: 1 }),
+      buildRecord({ findingId: "b1", ruleId: "rule-b", thumbsUp: 1, thumbsDown: 0 }),
+      buildRecord({ findingId: "b2", ruleId: "rule-b", thumbsUp: 1, thumbsDown: 0 }),
+      buildRecord({ findingId: "c1", ruleId: "rule-c", thumbsUp: 3, thumbsDown: 0 }),
+      buildRecord({ findingId: "d1", ruleId: "rule-d", thumbsUp: 1, thumbsDown: 0 }),
+    ]);
+
+    const results = store.queryRuleSentiment("acme/widget");
+    store.close();
+
+    const ruleIds = results.map((row) => row.ruleId);
+    expect(ruleIds).toContain("rule-a");
+    expect(ruleIds).toContain("rule-c");
+    expect(ruleIds).not.toContain("rule-b");
+    expect(ruleIds).not.toContain("rule-d");
+
+    const ruleA = results.find((row) => row.ruleId === "rule-a")!;
+    expect(ruleA.thumbsUp).toBe(1);
+    expect(ruleA.thumbsDown).toBe(2);
+    expect(ruleA.totalRecords).toBe(3);
+
+    const ruleC = results.find((row) => row.ruleId === "rule-c")!;
+    expect(ruleC.thumbsUp).toBe(3);
+    expect(ruleC.thumbsDown).toBe(0);
+    expect(ruleC.totalRecords).toBe(1);
+  });
+
+  test("returns empty when no rules meet the threshold", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    store.saveFeedback([
+      buildRecord({ ruleId: "rule-a", thumbsUp: 1, thumbsDown: 0 }),
+    ]);
+
+    const results = store.queryRuleSentiment("acme/widget");
+    store.close();
+
+    expect(results).toEqual([]);
+  });
+
+  test("orders by thumbs_down descending", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    for (let index = 0; index < 3; index++) {
+      store.saveFeedback([
+        buildRecord({ findingId: `low-${index}`, ruleId: "low-dislikes", thumbsUp: 1, thumbsDown: 0 }),
+        buildRecord({ findingId: `high-${index}`, ruleId: "high-dislikes", thumbsUp: 0, thumbsDown: 3 }),
+      ]);
+    }
+
+    const results = store.queryRuleSentiment("acme/widget");
+    store.close();
+
+    expect(results[0]!.ruleId).toBe("high-dislikes");
+  });
+
+  test("limits results to 50", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    for (let ruleIndex = 0; ruleIndex < 55; ruleIndex++) {
+      for (let recordIndex = 0; recordIndex < 3; recordIndex++) {
+        store.saveFeedback([
+          buildRecord({
+            findingId: `f-${ruleIndex}-${recordIndex}`,
+            ruleId: `rule-${ruleIndex}`,
+            thumbsDown: 1,
+          }),
+        ]);
+      }
+    }
+
+    const results = store.queryRuleSentiment("acme/widget");
+    store.close();
+
+    expect(results).toHaveLength(50);
+  });
+});
+
+describe("queryCategorySentiment", () => {
+  test("returns aggregated sentiment per category with at least 5 records", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    for (let index = 0; index < 5; index++) {
+      store.saveFeedback([
+        buildRecord({ findingId: `f-${index}`, category: "clean", thumbsUp: 0, thumbsDown: 1 }),
+      ]);
+    }
+    for (let index = 0; index < 4; index++) {
+      store.saveFeedback([
+        buildRecord({ findingId: `g-${index}`, category: "safety", thumbsUp: 1, thumbsDown: 0 }),
+      ]);
+    }
+
+    const results = store.queryCategorySentiment("acme/widget");
+    store.close();
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.category).toBe("clean");
+    expect(results[0]!.thumbsDown).toBe(5);
+    expect(results[0]!.totalRecords).toBe(5);
+  });
+
+  test("returns empty when no categories meet the threshold", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    store.saveFeedback([buildRecord()]);
+
+    const results = store.queryCategorySentiment("acme/widget");
+    store.close();
+
+    expect(results).toEqual([]);
+  });
+
+  test("limits results to 20", () => {
+    const databasePath = tempDatabasePath();
+    cleanupPaths.push(databasePath);
+    const store = openFeedbackStore(databasePath);
+
+    for (let categoryIndex = 0; categoryIndex < 25; categoryIndex++) {
+      for (let recordIndex = 0; recordIndex < 5; recordIndex++) {
+        store.saveFeedback([
+          buildRecord({
+            findingId: `f-${categoryIndex}-${recordIndex}`,
+            category: `cat-${categoryIndex}`,
+            thumbsDown: 1,
+          }),
+        ]);
+      }
+    }
+
+    const results = store.queryCategorySentiment("acme/widget");
+    store.close();
+
+    expect(results).toHaveLength(20);
   });
 });

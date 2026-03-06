@@ -15,6 +15,7 @@ import {
   GitHubGraphQlError,
   listPullRequestInlineComments,
   listPullRequestReviewThreads,
+  listPullRequestReviewThreadsWithReplies,
   listPullRequestSummaryComments,
   minimizeComment,
   postPullRequestInlineComment,
@@ -924,6 +925,201 @@ describe("github-client", () => {
     try {
       await resolveReviewThread({
         threadId: "PRT_kwDObad",
+        installationAccessToken: "ghs_token",
+      });
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(GitHubGraphQlError);
+    expect((thrownError as GitHubGraphQlError).message).toContain("Could not resolve");
+  });
+
+  test("listPullRequestReviewThreadsWithReplies fetches threads with full comment history", async () => {
+    const calls: FetchCall[] = [];
+    const fetchMock: FetchMock = async (input, init) => {
+      calls.push({ input, init });
+      return makeJsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: "PRT_kwDO1",
+                    comments: {
+                      nodes: [
+                        { body: "<!-- mergewise-meta -->", author: { login: "mergewise[bot]", id: "BOT_1" } },
+                        { body: "we don't care about this in tests", author: { login: "alice" } },
+                        { body: "agreed", author: { login: "bob" } },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+    };
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const threads = await listPullRequestReviewThreadsWithReplies({
+      owner: "acme",
+      repository: "widget",
+      pullRequestNumber: 3,
+      installationAccessToken: "ghs_token",
+      apiBaseUrl: "https://api.github.com",
+      traceId: "trace-replies-1",
+    });
+
+    expect(threads).toHaveLength(1);
+    expect(threads[0]!.id).toBe("PRT_kwDO1");
+    expect(threads[0]!.firstCommentBody).toContain("mergewise-meta");
+    expect(threads[0]!.comments).toHaveLength(3);
+    expect(threads[0]!.comments[0]!.authorIsBot).toBe(true);
+    expect(threads[0]!.comments[0]!.authorLogin).toBe("mergewise[bot]");
+    expect(threads[0]!.comments[1]!.authorIsBot).toBe(false);
+    expect(threads[0]!.comments[1]!.body).toBe("we don't care about this in tests");
+    expect(calls).toHaveLength(1);
+  });
+
+  test("listPullRequestReviewThreadsWithReplies handles threads with no comments", async () => {
+    const fetchMock: FetchMock = async () =>
+      makeJsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [{ id: "PRT_empty", comments: { nodes: [] } }],
+              },
+            },
+          },
+        },
+      });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const threads = await listPullRequestReviewThreadsWithReplies({
+      owner: "acme",
+      repository: "widget",
+      pullRequestNumber: 1,
+      installationAccessToken: "ghs_token",
+    });
+
+    expect(threads).toHaveLength(1);
+    expect(threads[0]!.comments).toHaveLength(0);
+    expect(threads[0]!.firstCommentBody).toBe("");
+  });
+
+  test("listPullRequestReviewThreadsWithReplies handles null author gracefully", async () => {
+    const fetchMock: FetchMock = async () =>
+      makeJsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: "PRT_null_author",
+                    comments: {
+                      nodes: [{ body: "ghost comment", author: null }],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const threads = await listPullRequestReviewThreadsWithReplies({
+      owner: "acme",
+      repository: "widget",
+      pullRequestNumber: 1,
+      installationAccessToken: "ghs_token",
+    });
+
+    expect(threads[0]!.comments[0]!.authorLogin).toBe("");
+    expect(threads[0]!.comments[0]!.authorIsBot).toBe(false);
+  });
+
+  test("listPullRequestReviewThreadsWithReplies classifies bot by login suffix when GraphQL id is absent", async () => {
+    const fetchMock: FetchMock = async () =>
+      makeJsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: "PRT_bot_suffix",
+                    comments: {
+                      nodes: [
+                        { body: "automated comment", author: { login: "github-actions[bot]" } },
+                        { body: "human reply", author: { login: "alice" } },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const threads = await listPullRequestReviewThreadsWithReplies({
+      owner: "acme",
+      repository: "widget",
+      pullRequestNumber: 1,
+      installationAccessToken: "ghs_token",
+    });
+
+    expect(threads[0]!.comments[0]!.authorLogin).toBe("github-actions[bot]");
+    expect(threads[0]!.comments[0]!.authorIsBot).toBe(true);
+    expect(threads[0]!.comments[1]!.authorIsBot).toBe(false);
+  });
+
+  test("listPullRequestReviewThreadsWithReplies throws GitHubApiError on non-2xx response", async () => {
+    const fetchMock: FetchMock = async () =>
+      new Response(JSON.stringify({ message: "Bad credentials" }), { status: 401 });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    let thrownError: unknown;
+    try {
+      await listPullRequestReviewThreadsWithReplies({
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 3,
+        installationAccessToken: "bad_token",
+      });
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(GitHubApiError);
+    expect((thrownError as GitHubApiError).status).toBe(401);
+  });
+
+  test("listPullRequestReviewThreadsWithReplies throws GitHubGraphQlError on GraphQL errors", async () => {
+    const fetchMock: FetchMock = async () =>
+      makeJsonResponse({
+        data: null,
+        errors: [{ message: "Could not resolve to a PullRequest", type: "NOT_FOUND" }],
+      });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    let thrownError: unknown;
+    try {
+      await listPullRequestReviewThreadsWithReplies({
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 999,
         installationAccessToken: "ghs_token",
       });
     } catch (error) {

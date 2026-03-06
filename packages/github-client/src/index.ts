@@ -63,10 +63,13 @@ export {
   type MinimizeCommentOptions,
   type MinimizeCommentResult,
   type ReviewThread,
+  type ReviewThreadComment,
+  type ReviewThreadWithReplies,
   type ListPullRequestReviewThreadsOptions,
   type ResolveReviewThreadOptions,
   type ResolveReviewThreadResult,
   minimizeComment,
   listPullRequestReviewThreads,
+  listPullRequestReviewThreadsWithReplies,
   resolveReviewThread,
 } from "./graphql";

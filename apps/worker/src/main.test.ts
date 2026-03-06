@@ -106,7 +106,7 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllAnalyzePullRequestJobsFn: () => [],
+      readAllQueueJobsFn: async () => [],
       processAnalyzePullRequestJobFn: async () => {
         throw new Error("should not run");
       },
@@ -187,7 +187,7 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllAnalyzePullRequestJobsFn: () => queuedJobs,
+      readAllQueueJobsFn: async () => queuedJobs,
       processAnalyzePullRequestJobFn: async (job) => {
         processedJobIds.push(job.job_id);
         return {
@@ -268,7 +268,7 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllAnalyzePullRequestJobsFn: () => {
+      readAllQueueJobsFn: async () => {
         throw new Error("queue read failed");
       },
       processAnalyzePullRequestJobFn: async () => {
@@ -350,7 +350,7 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllAnalyzePullRequestJobsFn: () => [queuedJob],
+      readAllQueueJobsFn: async () => [queuedJob],
       processAnalyzePullRequestJobFn: async () => {
         await processingGate;
         throw new Error("processing failed");
@@ -393,6 +393,104 @@ describe("startWorkerProcess", () => {
     ).toBe(true);
 
     await workerHandle.shutdown();
+  });
+
+  test("routes feedback jobs to processCollectFeedbackJobFn and skips analyze handler", async () => {
+    const feedbackJobIds: string[] = [];
+    const analyzeJobIds: string[] = [];
+    const intervalCallbacks: (() => void)[] = [];
+
+    const feedbackJob = {
+      type: "collect-feedback" as const,
+      job_id: "fb-1",
+      installation_id: 9,
+      repo_full_name: "acme/widget",
+      pr_number: 10,
+      queued_at: "2026-02-01T00:00:00.000Z",
+    };
+
+    const processHandle = startWorkerProcess({
+      loadConfigFn: () => ({
+        pollIntervalMs: 3000,
+        maxProcessedKeys: 1000,
+        githubApiBaseUrl: "https://api.github.com",
+        githubUserAgent: "mergewise-worker-test",
+        githubRequestTimeoutMs: 1000,
+        githubFetchRetries: 2,
+        githubRetryDelayMs: 10,
+        confidenceThreshold: 0.78,
+        maxComments: 20,
+        testFileConfidenceThreshold: 0.98,
+      }),
+      loadMergewiseConfigFn: () => ({
+        gating: {
+          confidenceThreshold: 0.8,
+          maxComments: 10,
+        },
+        rules: {
+          include: [],
+          exclude: [],
+        },
+        review: { skipPatterns: [] },
+        llm: {
+          enabled: false,
+          model: "gpt-4o",
+          ...DEFAULT_LLM_MODELS,
+          tokenBudget: 30_000,
+          baseUrl: "https://api.openai.com/v1",
+          consistencySamples: 1,
+        },
+      }),
+      readAllQueueJobsFn: async () => [feedbackJob],
+      processAnalyzePullRequestJobFn: async (job) => {
+        analyzeJobIds.push(job.job_id);
+        return {
+          jobId: job.job_id,
+          idempotencyKey: `${job.repo_full_name}#${job.pr_number}@${job.head_sha}`,
+          repository: job.repo_full_name,
+          pullRequestNumber: job.pr_number,
+          headSha: job.head_sha,
+          totalFindings: 0,
+          findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          totalRules: 0,
+          successfulRules: 0,
+          failedRules: 0,
+          failedRuleIds: [],
+          processedAt: "2026-02-01T00:00:00.000Z",
+          traceId: job.job_id,
+        };
+      },
+      processCollectFeedbackJobFn: async (job) => {
+        feedbackJobIds.push(job.job_id);
+      },
+      createPollingLoopControllerFn: (_pollIntervalMs, pollCycle) => ({
+        start: () => {
+          intervalCallbacks.push(() => {
+            pollCycle().then(() => undefined, () => undefined);
+          });
+        },
+        stop: async () => {},
+        isRunning: () => true,
+      }),
+      registerSignalHandlerFn: () => {},
+      logInfo: () => {},
+      logError: () => {},
+    });
+
+    const [runPollCycle] = intervalCallbacks;
+    runPollCycle?.();
+    await Promise.resolve();
+
+    expect(feedbackJobIds).toEqual(["fb-1"]);
+    expect(analyzeJobIds).toEqual([]);
+
+    runPollCycle?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(feedbackJobIds).toEqual(["fb-1"]);
+
+    await processHandle.shutdown();
   });
 
   test("uses default process signal registration and default exit wiring", async () => {
@@ -446,7 +544,7 @@ describe("startWorkerProcess", () => {
             consistencySamples: 1,
           },
         }),
-        readAllAnalyzePullRequestJobsFn: () => [],
+        readAllQueueJobsFn: async () => [],
         processAnalyzePullRequestJobFn: async () => {
           throw new Error("should not run");
         },

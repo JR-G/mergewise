@@ -3,6 +3,7 @@ import type {
   CodebaseAwareRule,
   CodebaseContext,
   Finding,
+  RepoLearnings,
 } from "@mergewise/shared-types";
 import { createReviewClient, type ReviewClientConfig } from "./client";
 import { selectFilesForReview } from "./file-selection";
@@ -79,6 +80,10 @@ export interface LlmReviewerConfig {
    * are kept. Defaults to 1 (single-shot).
    */
   readonly consistencySamples?: number;
+  /**
+   * Repository-level learnings to inject as review preferences.
+   */
+  readonly repoLearnings?: RepoLearnings;
   /**
    * When true, uses the three-stage pipeline (triage → review → critic)
    * instead of the single-shot per-file review.
@@ -232,6 +237,7 @@ async function analysePerFile(options: PerFileAnalysisOptions): Promise<readonly
         client,
         confidenceThreshold: config.confidenceThreshold,
         consistencySamples: config.consistencySamples,
+        repoLearnings: config.repoLearnings,
       });
       allFindings.push(...result.findings);
       config.onFileReviewComplete?.(

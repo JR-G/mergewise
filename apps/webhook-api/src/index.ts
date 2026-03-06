@@ -10,6 +10,7 @@ import {
 
 import type {
   AnalyzePullRequestJob,
+  CollectFeedbackJob,
   GitHubPullRequestAction,
   GitHubPullRequestWebhookEvent,
 } from "@mergewise/shared-types";
@@ -230,6 +231,28 @@ export function buildAnalyzePullRequestJob(
     repo_full_name: payload.repository.full_name,
     pr_number: payload.pull_request.number,
     head_sha: payload.pull_request.head.sha,
+    trace_id: traceId,
+    queued_at: new Date().toISOString(),
+  };
+}
+
+/**
+ * Converts a pull request close/merge webhook event into a feedback collection job payload.
+ *
+ * @param payload - Parsed and validated pull request webhook event.
+ * @param traceId - Optional end-to-end trace identifier sourced from request handling.
+ * @returns Local queue job payload for feedback collection.
+ */
+export function buildCollectFeedbackJob(
+  payload: GitHubPullRequestWebhookEvent,
+  traceId?: string,
+): CollectFeedbackJob {
+  return {
+    type: "collect-feedback",
+    job_id: randomUUID(),
+    installation_id: payload.installation?.id ?? null,
+    repo_full_name: payload.repository.full_name,
+    pr_number: payload.pull_request.number,
     trace_id: traceId,
     queued_at: new Date().toISOString(),
   };
