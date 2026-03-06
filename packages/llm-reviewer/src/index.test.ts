@@ -1794,4 +1794,64 @@ describe("createLlmReviewerRule", () => {
       },
     );
   });
+
+  test("pipeline mode reports token usage on second file when first file fails", async () => {
+    let triageDone = false;
+    await withMockFetch(
+      async (request) => {
+        const body = await request.text();
+        if (!triageDone) {
+          triageDone = true;
+          return new Response(
+            buildCompletionResponse(
+              JSON.stringify({
+                files: [
+                  { file: "src/a.ts", priority: "high", classifications: [], reasoning: "test" },
+                  { file: "src/b.ts", priority: "high", classifications: [], reasoning: "test" },
+                ],
+              }),
+            ),
+            { headers: { "Content-Type": "application/json" } },
+          );
+        }
+        if (body.includes("src/a.ts")) {
+          return new Response("Internal Server Error", { status: 500 });
+        }
+        return new Response(
+          buildCompletionResponse(JSON.stringify({ findings: [], verdicts: [] })),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      },
+      async () => {
+        const completions: { filePath: string; promptTokens: number; completionTokens: number }[] = [];
+        const errors: { filePath: string }[] = [];
+        const rule = createLlmReviewerRule({
+          clientConfig: {
+            apiKey: "test-key",
+            baseUrl: "http://mock.local/v1",
+            model: "test-model",
+          },
+          usePipeline: true,
+          onFileReviewComplete: (filePath, _count, promptTokens, completionTokens) => {
+            completions.push({ filePath, promptTokens, completionTokens });
+          },
+          onFileReviewError: (filePath) => {
+            errors.push({ filePath });
+          },
+        });
+        const context = {
+          diffs: [
+            makeDiff("src/a.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const a = 1"])]),
+            makeDiff("src/b.ts", [makeHunk("@@ -0,0 +1,1 @@", ["+const b = 2"])]),
+          ],
+          pullRequest: PULL_REQUEST_METADATA,
+        };
+        await rule.analyse(context, makeMockCodebaseContext());
+
+        expect(errors.some((error) => error.filePath === "src/a.ts")).toBe(true);
+        expect(completions.some((completion) => completion.filePath === "src/b.ts" && completion.promptTokens > 0)).toBe(true);
+        expect(completions.some((completion) => completion.filePath === "src/a.ts" && completion.promptTokens === 0 && completion.completionTokens === 0)).toBe(true);
+      },
+    );
+  });
 });
