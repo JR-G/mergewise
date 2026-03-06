@@ -56,12 +56,20 @@ When NOT to flag:
 }`,
       good: `async function processOrder(orderId: string) {
   const order = await db.orders.findUnique({ where: { id: orderId } });
+  if (!order) throw new OrderNotFoundError(orderId);
+
   const total = computeOrderTotal(order);
-  await chargeCustomer(order.customerId, total);
+
+  try {
+    await chargeCustomer(order.customerId, total);
+  } catch (error) {
+    throw new PaymentError(orderId, { cause: error });
+  }
+
   await markOrderPaid(orderId);
 }`,
       explanation:
-        "The broad try-catch couples database, computation, and payment failures into one handler. Extracting each concern makes failure modes testable and recoverable independently.",
+        "Each concern has its own failure boundary. The database call propagates naturally, payment has a targeted catch that adds context via cause, and the pure computation has no error handling at all. Each failure mode is recoverable independently.",
     },
   ],
 };

@@ -79,14 +79,19 @@ When NOT to flag:
   | { type: "user_created"; payload: UserPayload }
   | { type: "order_placed"; payload: OrderPayload };
 
+function assertNever(value: never): never {
+  throw new Error(\`Unhandled variant: \${JSON.stringify(value)}\`);
+}
+
 function handleEvent(event: AppEvent) {
   switch (event.type) {
     case "user_created": return notifyUser(event.payload);
     case "order_placed": return processOrder(event.payload);
+    default: return assertNever(event);
   }
 }`,
       explanation:
-        "The discriminated union eliminates all type assertions and makes the compiler enforce exhaustiveness — adding a new event type causes a compile error at every switch that does not handle it.",
+        "The discriminated union eliminates all type assertions. The assertNever default case makes the compiler enforce exhaustiveness — adding a new event type causes a compile error at the default branch because the new variant is not assignable to never.",
     },
   ],
 };

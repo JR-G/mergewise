@@ -1,5 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import { ERROR_HANDLING_KNOWLEDGE } from "./error-handling";
+import { retrieveKnowledge } from "./retrieve";
+import type { StructuralSignals } from "../signals";
+
+const EMPTY_SIGNALS: StructuralSignals = {
+  componentLineCount: 0,
+  hookCount: 0,
+  importCount: 0,
+  maxNestingDepth: 0,
+  functionCount: 0,
+  maxFunctionLineCount: 0,
+  maxParameterCount: 0,
+  classCount: 0,
+  typeAssertionCount: 0,
+};
 
 describe("ERROR_HANDLING_KNOWLEDGE", () => {
   test("has required fields", () => {
@@ -19,9 +33,12 @@ describe("ERROR_HANDLING_KNOWLEDGE", () => {
     expect(ERROR_HANDLING_KNOWLEDGE.examples.length).toBeGreaterThan(0);
   });
 
-  test("handles empty trigger arrays gracefully via registry scoring", () => {
+  test("scores zero and is not retrieved when triggers are empty", () => {
     const emptyTriggerDoc = { ...ERROR_HANDLING_KNOWLEDGE, triggerSignals: [], triggerClassifications: [] };
-    expect(emptyTriggerDoc.triggerSignals).toHaveLength(0);
-    expect(emptyTriggerDoc.triggerClassifications).toHaveLength(0);
+    const results = retrieveKnowledge(
+      { signals: EMPTY_SIGNALS, fileExtension: ".ts", classifications: [] },
+      [emptyTriggerDoc],
+    );
+    expect(results).toHaveLength(0);
   });
 });
