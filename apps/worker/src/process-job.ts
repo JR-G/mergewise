@@ -1,7 +1,6 @@
 import { fetchFileContent } from "@mergewise/github-client";
 import { DEFAULT_MERGEWISE_CONFIG, type MergewiseConfig } from "@mergewise/config-loader";
 import { executeRules } from "@mergewise/rule-engine";
-import { tsReactRules } from "@mergewise/rule-ts-react";
 import { createLlmReviewerRule } from "@mergewise/llm-reviewer";
 import { compileLearnings } from "@mergewise/feedback-store";
 import type {
@@ -133,7 +132,7 @@ function resolveProcessingConfig(
   }
 
   const baseLlmRules = buildLlmRules(mergewiseConfig, traceId, loggers, repoLearnings);
-  const rules = dependencies.rules ?? [...tsReactRules, ...baseLlmRules];
+  const rules = dependencies.rules ?? [...baseLlmRules];
 
   const baseBlockedRuleIds = dependencies.findingDeliveryOptions?.blockedRuleIds
     ?? DEFAULT_BLOCKED_POST_RULE_IDS;
