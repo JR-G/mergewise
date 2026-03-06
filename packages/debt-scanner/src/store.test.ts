@@ -1,6 +1,6 @@
 import { describe, expect, test, afterEach } from "bun:test";
-import { openStore } from "./store.ts";
-import type { DebtProfile, DebtGraph, DebtFinding, HotspotEntry } from "./graph-types.ts";
+import { openStore } from "./store";
+import type { DebtProfile, DebtGraph, DebtFinding, HotspotEntry } from "./graph-types";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { unlinkSync } from "node:fs";

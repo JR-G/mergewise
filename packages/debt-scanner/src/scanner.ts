@@ -1,12 +1,12 @@
 import type { ReviewClientConfig } from "@mergewise/llm-reviewer";
-import { collectFiles } from "./file-collector.ts";
-import { analyseFiles } from "./ast-analyser.ts";
-import { buildGraph } from "./graph-builder.ts";
-import { computeCentrality } from "./centrality.ts";
-import { rankHotspots } from "./hotspot-ranker.ts";
-import { scanWithLlm } from "./llm-scanner.ts";
-import type { DebtProfile, DebtFinding } from "./graph-types.ts";
-import type { DebtStore } from "./store.ts";
+import { collectFiles } from "./file-collector";
+import { analyseFiles } from "./ast-analyser";
+import { buildGraph } from "./graph-builder";
+import { computeCentrality } from "./centrality";
+import { rankHotspots } from "./hotspot-ranker";
+import { scanWithLlm } from "./llm-scanner";
+import type { DebtProfile, DebtFinding } from "./graph-types";
+import type { DebtStore } from "./store";
 
 export interface ScanOptions {
   readonly repoPath: string;

@@ -27,7 +27,7 @@ import type { DebtProfile, ScanSummary } from "./graph-types";
 import { scan, type ScanOptions } from "./scanner";
 import { formatJsonReport, formatMarkdownReport, formatComparisonMarkdown, formatComparisonJson } from "./report";
 import { openStore, type DebtStore } from "./store";
-import { compareScans, type ScanComparison } from "./compare.ts";
+import { compareScans, type ScanComparison } from "./compare";
 
 const DEFAULT_DB_PATH = ".mergewise-runtime/debt.db";
 

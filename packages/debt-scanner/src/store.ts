@@ -5,7 +5,7 @@ import type {
   DebtFinding,
   HotspotEntry,
   ScanSummary,
-} from "./graph-types.ts";
+} from "./graph-types";
 
 export interface DebtStore {
   saveScan(profile: DebtProfile): string;

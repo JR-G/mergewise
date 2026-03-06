@@ -1,5 +1,5 @@
 import type { StructuralSignals } from "@mergewise/llm-reviewer";
-import type { DebtGraph, HotspotEntry } from "./graph-types.ts";
+import type { DebtGraph, HotspotEntry } from "./graph-types";
 
 const DEFAULT_TOP_COUNT = 20;
 

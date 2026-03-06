@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { compareScans } from "./compare.ts";
-import type { DebtProfile, DebtGraph, DebtFinding, HotspotEntry } from "./graph-types.ts";
+import { compareScans } from "./compare";
+import type { DebtProfile, DebtGraph, DebtFinding, HotspotEntry } from "./graph-types";
 
 const EMPTY_GRAPH: DebtGraph = { nodes: new Map(), edges: [] };
 

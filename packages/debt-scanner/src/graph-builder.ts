@@ -1,6 +1,6 @@
 import { dirname, resolve, relative } from "node:path";
 import ts from "typescript";
-import type { DebtEdge, DebtGraph, DebtNode } from "./graph-types.ts";
+import type { DebtEdge, DebtGraph, DebtNode } from "./graph-types";
 
 const TS_EXTENSIONS = [".ts", ".tsx", "/index.ts", "/index.tsx"];
 

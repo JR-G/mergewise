@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { computeCentrality } from "./centrality.ts";
-import type { DebtGraph, DebtNode, DebtEdge } from "./graph-types.ts";
+import { computeCentrality } from "./centrality";
+import type { DebtGraph, DebtNode, DebtEdge } from "./graph-types";
 import type { StructuralSignals } from "@mergewise/llm-reviewer";
 
 const EMPTY_SIGNALS: StructuralSignals = {

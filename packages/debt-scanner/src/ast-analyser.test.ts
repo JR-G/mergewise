@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { analyseFile } from "./ast-analyser.ts";
+import { analyseFile } from "./ast-analyser";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

@@ -1,5 +1,5 @@
-import type { DebtFinding, DebtProfile } from "./graph-types.ts";
-import type { HotspotChange, ScanComparison } from "./compare.ts";
+import type { DebtFinding, DebtProfile } from "./graph-types";
+import type { HotspotChange, ScanComparison } from "./compare";
 
 const MAX_HOTSPOTS = 50;
 const MAX_FINDINGS_PER_FILE = 20;

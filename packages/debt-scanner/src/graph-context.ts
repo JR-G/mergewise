@@ -1,4 +1,4 @@
-import type { DebtGraph, HotspotEntry } from "./graph-types.ts";
+import type { DebtGraph, HotspotEntry } from "./graph-types";
 
 export interface FileGraphContext {
   readonly filePath: string;
