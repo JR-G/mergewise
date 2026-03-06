@@ -271,6 +271,17 @@ const MAX_QUEUE_SIZE = 10_000;
 const MAX_SCAN_LINES = 50_000;
 
 /**
+ * Byte length of the line separator written by enqueue functions.
+ *
+ * @remarks
+ * All enqueue paths use explicit `"\n"` (Unix LF). The `readline` interface
+ * with `crlfDelay: Infinity` strips the full terminator, so this constant
+ * must match the separator actually written. If enqueue ever switches to
+ * CRLF, this must change to 2.
+ */
+const LINE_SEPARATOR_BYTES = 1;
+
+/**
  * Reads queued jobs from the local NDJSON queue file using line-by-line streaming.
  *
  * @remarks
@@ -314,7 +325,7 @@ export async function readAllQueueJobs(
   try {
     for await (const line of reader) {
       lineNumber++;
-      bytesConsumed += Buffer.byteLength(line, "utf8") + 1;
+      bytesConsumed += Buffer.byteLength(line, "utf8") + LINE_SEPARATOR_BYTES;
 
       if (!line.trim()) {
         continue;

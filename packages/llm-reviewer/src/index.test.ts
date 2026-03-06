@@ -1850,7 +1850,7 @@ describe("createLlmReviewerRule", () => {
 
         expect(errors.some((error) => error.filePath === "src/a.ts")).toBe(true);
         expect(completions.some((completion) => completion.filePath === "src/b.ts" && completion.promptTokens > 0)).toBe(true);
-        expect(completions.some((completion) => completion.filePath === "src/a.ts" && completion.promptTokens === 0 && completion.completionTokens === 0)).toBe(true);
+        expect(completions.every((completion) => completion.filePath !== "src/a.ts")).toBe(true);
       },
     );
   });

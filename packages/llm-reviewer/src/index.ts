@@ -197,14 +197,18 @@ async function analysePipeline(
 
     if (onComplete) {
       const failedPaths = new Set(result.failedFiles.map((failure) => failure.filePath));
-      const aggregateUsage = result.tokenUsage.totalUsage;
-      const firstNonFailedFile = selectedFiles.find((file) => !failedPaths.has(file.filePath));
-      const usageRecipient = firstNonFailedFile ?? selectedFiles[0];
+      let tokenUsageReported = false;
       for (const file of selectedFiles) {
-        const isFailed = failedPaths.has(file.filePath);
-        const count = isFailed ? 0 : result.findings.filter((finding) => finding.filePath === file.filePath).length;
-        if (file === usageRecipient && aggregateUsage) {
-          onComplete(file.filePath, count, aggregateUsage.promptTokens, aggregateUsage.completionTokens);
+        if (failedPaths.has(file.filePath)) continue;
+        const count = result.findings.filter((finding) => finding.filePath === file.filePath).length;
+        if (!tokenUsageReported && result.tokenUsage.totalUsage) {
+          onComplete(
+            file.filePath,
+            count,
+            result.tokenUsage.totalUsage.promptTokens,
+            result.tokenUsage.totalUsage.completionTokens,
+          );
+          tokenUsageReported = true;
         } else {
           onComplete(file.filePath, count, 0, 0);
         }
