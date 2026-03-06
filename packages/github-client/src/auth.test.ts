@@ -154,6 +154,20 @@ describe("auth", () => {
       expect((thrownError as GitHubApiError).status).toBe(401);
     });
 
+    it("surfaces network errors when fetch rejects", async () => {
+      globalThis.fetch = (() => Promise.reject(new TypeError("fetch failed"))) as unknown as typeof globalThis.fetch;
+
+      let thrownError: unknown;
+      try {
+        await exchangeInstallationAccessToken("jwt-value", 1);
+      } catch (error) {
+        thrownError = error;
+      }
+
+      expect(thrownError).toBeInstanceOf(TypeError);
+      expect((thrownError as TypeError).message).toBe("fetch failed");
+    });
+
     it("strips trailing slash from custom apiBaseUrl", async () => {
       const calls: FetchCall[] = [];
       const fetchMock: FetchMock = async (input, init) => {

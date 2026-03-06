@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { afterEach, beforeEach, describe, it, expect } from "bun:test";
 import { ReviewClient, createReviewClient, mergeUsage } from "./client";
 import type { CompletionUsage, ReviewClientConfig } from "./client";
 
@@ -26,6 +26,50 @@ describe("ReviewClient", () => {
     };
     const client = createReviewClient(config);
     expect(client).toBeInstanceOf(ReviewClient);
+  });
+
+  describe("outbound request behaviour", () => {
+    let originalFetch: typeof globalThis.fetch;
+
+    beforeEach(() => {
+      originalFetch = globalThis.fetch;
+    });
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    it("sends completion request to configured baseUrl with configured model", async () => {
+      const capturedUrls: string[] = [];
+      const capturedBodies: unknown[] = [];
+
+      globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+        capturedUrls.push(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+        const bodyText = typeof init?.body === "string" ? init.body : "{}";
+        capturedBodies.push(JSON.parse(bodyText) as unknown);
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: '{"findings": []}' } }],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }) as unknown as typeof globalThis.fetch;
+
+      const client = createReviewClient({
+        apiKey: "test-key",
+        baseUrl: "https://custom.api.example.com/v1",
+        model: "custom-model-7b",
+        maxRetries: 0,
+      });
+
+      await client.complete("system prompt", "user prompt", 1024);
+
+      expect(capturedUrls.some((url) => url.includes("custom.api.example.com"))).toBe(true);
+      expect(capturedBodies.some((body) =>
+        typeof body === "object" && body !== null && (body as Record<string, unknown>)["model"] === "custom-model-7b",
+      )).toBe(true);
+    });
   });
 });
 

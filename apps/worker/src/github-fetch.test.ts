@@ -103,6 +103,33 @@ describe("fetchPullRequestFilesWithRetry", () => {
     }
 
     expect(sleepDelays.every((delay) => delay === 42)).toBe(true);
+    expect(sleepDelays).toHaveLength(2);
+  });
+
+  it("rethrows non-retryable errors immediately without sleeping", async () => {
+    const sleepDelays: number[] = [];
+
+    try {
+      await fetchPullRequestFilesWithRetry(
+        baseOptions,
+        3,
+        100,
+        {
+          fetchPullRequestFiles: async () => {
+            throw new GitHubApiError(404, "GET", "https://api.github.com/x", "not found");
+          },
+          sleep: async (delayMs) => {
+            sleepDelays.push(delayMs);
+          },
+        },
+      );
+      expect.unreachable("should have thrown");
+    } catch (thrown) {
+      expect(thrown).toBeInstanceOf(GitHubApiError);
+      expect((thrown as GitHubApiError).status).toBe(404);
+    }
+
+    expect(sleepDelays).toHaveLength(0);
   });
 
   it("succeeds without retrying when maxRetries is zero", async () => {
@@ -119,5 +146,63 @@ describe("fetchPullRequestFilesWithRetry", () => {
     );
 
     expect(files.some((file) => file.filename === "readme.md")).toBe(true);
+  });
+
+  it("throws when maxRetries is negative", async () => {
+    let thrownError: unknown;
+    try {
+      await fetchPullRequestFilesWithRetry(
+        baseOptions,
+        -1,
+        5,
+        {
+          fetchPullRequestFiles: async () => [
+            { filename: "a.ts", status: "added", additions: 1, deletions: 0, changes: 1 },
+          ],
+          sleep: async () => {},
+        },
+      );
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(Error);
+  });
+
+  it("throws when maxRetries is NaN", async () => {
+    let thrownError: unknown;
+    try {
+      await fetchPullRequestFilesWithRetry(
+        baseOptions,
+        NaN,
+        5,
+        {
+          fetchPullRequestFiles: async () => [
+            { filename: "b.ts", status: "added", additions: 1, deletions: 0, changes: 1 },
+          ],
+          sleep: async () => {},
+        },
+      );
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(Error);
+  });
+
+  it("succeeds on first attempt when maxRetries is a non-integer float", async () => {
+    const files = await fetchPullRequestFilesWithRetry(
+      baseOptions,
+      1.5,
+      5,
+      {
+        fetchPullRequestFiles: async () => [
+          { filename: "c.ts", status: "added", additions: 1, deletions: 0, changes: 1 },
+        ],
+        sleep: async () => {},
+      },
+    );
+
+    expect(files.some((file) => file.filename === "c.ts")).toBe(true);
   });
 });

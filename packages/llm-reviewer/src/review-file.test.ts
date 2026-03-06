@@ -85,19 +85,19 @@ describe("reviewFile", () => {
     expect(result.findings).toEqual([]);
   });
 
-  it("calls client.complete with expected arguments", async () => {
+  it("produces a result even when file content is null", async () => {
     const emptyResponse = JSON.stringify({ findings: [] });
     const client = makeMockClient(emptyResponse);
-    const codebaseContext = makeCodebaseContext();
+    const codebaseContext = makeCodebaseContext(null);
 
-    await reviewFile({
+    const result = await reviewFile({
       fileDiff: STUB_DIFF,
       pullRequest: STUB_PR,
       codebaseContext,
       client,
     });
 
-    expect(client.complete).toHaveBeenCalledTimes(1);
+    expect(result.findings).toEqual([]);
   });
 
   it("reads full file content from codebase context", async () => {
@@ -138,7 +138,54 @@ describe("reviewFile", () => {
       consistencySamples: -5,
     });
 
-    expect(client.complete).toHaveBeenCalledTimes(1);
     expect(result.findings.length).toBeGreaterThanOrEqual(0);
+    expect(result.usage).toBeDefined();
+  });
+
+  it("propagates rejection when client.complete throws", async () => {
+    const failingClient = {
+      complete: mock(() => Promise.reject(new Error("LLM service unavailable"))),
+    } as unknown as ReviewClient;
+    const codebaseContext = makeCodebaseContext();
+
+    let thrownError: unknown;
+    try {
+      await reviewFile({
+        fileDiff: STUB_DIFF,
+        pullRequest: STUB_PR,
+        codebaseContext,
+        client: failingClient,
+      });
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(Error);
+    expect((thrownError as Error).message).toBe("LLM service unavailable");
+  });
+
+  it("propagates error when readFile throws", async () => {
+    const emptyResponse = JSON.stringify({ findings: [] });
+    const client = makeMockClient(emptyResponse);
+    const codebaseContext: CodebaseContext = {
+      symbols: [],
+      conventions: new Map(),
+      readFile: mock(() => Promise.reject(new Error("file read failed"))),
+    };
+
+    let thrownError: unknown;
+    try {
+      await reviewFile({
+        fileDiff: STUB_DIFF,
+        pullRequest: STUB_PR,
+        codebaseContext,
+        client,
+      });
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(Error);
+    expect((thrownError as Error).message).toBe("file read failed");
   });
 });

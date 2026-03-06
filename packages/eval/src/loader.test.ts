@@ -1,5 +1,7 @@
 import { describe, it, expect } from "bun:test";
+import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { discoverFixtures, loadFixture, STUB_PR_METADATA } from "./loader";
 
 describe("STUB_PR_METADATA", () => {
@@ -29,9 +31,13 @@ describe("discoverFixtures", () => {
   });
 
   it("returns empty array for a directory with no subdirectories", async () => {
-    const emptyDir = join(import.meta.dirname);
-    const fixtures = await discoverFixtures(emptyDir);
-    expect(Array.isArray(fixtures)).toBe(true);
+    const emptyDir = await mkdtemp(join(tmpdir(), "eval-test-empty-"));
+    try {
+      const fixtures = await discoverFixtures(emptyDir);
+      expect(fixtures).toEqual([]);
+    } finally {
+      await rm(emptyDir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -44,7 +50,13 @@ describe("loadFixture", () => {
   });
 
   it("throws for a nonexistent fixture directory", async () => {
-    expect(() => loadFixture("nonexistent-fixture-that-does-not-exist")).toThrow();
+    let thrownError: unknown;
+    try {
+      await loadFixture("nonexistent-fixture-that-does-not-exist");
+    } catch (error) {
+      thrownError = error;
+    }
+    expect(thrownError).toBeDefined();
   });
 
   it("includes expectations with required boolean field", async () => {
@@ -56,8 +68,54 @@ describe("loadFixture", () => {
 
   it("sets fixtureId to the directory name", async () => {
     const fixtures = await discoverFixtures();
+    expect(fixtures.length).toBeGreaterThan(0);
     const firstName = fixtures[0]!;
     const fixture = await loadFixture(firstName);
     expect(fixture.fixtureId).toBe(firstName);
+  });
+
+  it("throws for a fixture with invalid diff.json", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "eval-test-malformed-diff-"));
+    const fixtureDir = join(tempDir, "bad-diff");
+    await mkdir(fixtureDir, { recursive: true });
+    await writeFile(join(fixtureDir, "diff.json"), "{ not valid json !!!");
+    await writeFile(join(fixtureDir, "expectations.json"), "[]");
+
+    try {
+      let thrownError: unknown;
+      try {
+        await loadFixture("bad-diff", tempDir);
+      } catch (error) {
+        thrownError = error;
+      }
+      expect(thrownError).toBeDefined();
+      expect((thrownError as Error).message).toContain("diff.json");
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("throws for a fixture with non-array expectations.json", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "eval-test-malformed-exp-"));
+    const fixtureDir = join(tempDir, "bad-expectations");
+    await mkdir(fixtureDir, { recursive: true });
+    await writeFile(
+      join(fixtureDir, "diff.json"),
+      JSON.stringify({ filePath: "test.ts", hunks: [] }),
+    );
+    await writeFile(join(fixtureDir, "expectations.json"), JSON.stringify({ not: "an array" }));
+
+    try {
+      let thrownError: unknown;
+      try {
+        await loadFixture("bad-expectations", tempDir);
+      } catch (error) {
+        thrownError = error;
+      }
+      expect(thrownError).toBeDefined();
+      expect((thrownError as Error).message).toContain("expected an array");
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 });

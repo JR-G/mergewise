@@ -90,26 +90,26 @@ export interface WorkerGitHubFetchOptions {
  */
 export function loadConfig(): WorkerConfig {
   const pollRaw = process.env["WORKER_POLL_INTERVAL_MS"] ?? "3000";
-  const pollIntervalMs = Number.parseInt(pollRaw, 10);
+  const pollIntervalMs = Number(pollRaw);
   const maxKeysRaw = process.env["WORKER_MAX_PROCESSED_KEYS"] ?? "10000";
-  const maxProcessedKeys = Number.parseInt(maxKeysRaw, 10);
+  const maxProcessedKeys = Number(maxKeysRaw);
   const githubApiBaseUrl = process.env["GITHUB_API_BASE_URL"] ?? "https://api.github.com";
   const githubUserAgent = process.env["WORKER_GITHUB_USER_AGENT"] ?? "mergewise-worker";
   const timeoutRaw = process.env["WORKER_GITHUB_REQUEST_TIMEOUT_MS"] ?? "10000";
-  const githubRequestTimeoutMs = Number.parseInt(timeoutRaw, 10);
+  const githubRequestTimeoutMs = Number(timeoutRaw);
   const retriesRaw = process.env["WORKER_GITHUB_FETCH_RETRIES"] ?? "2";
-  const githubFetchRetries = Number.parseInt(retriesRaw, 10);
+  const githubFetchRetries = Number(retriesRaw);
   const retryDelayRaw = process.env["WORKER_GITHUB_RETRY_DELAY_MS"] ?? "250";
-  const githubRetryDelayMs = Number.parseInt(retryDelayRaw, 10);
+  const githubRetryDelayMs = Number(retryDelayRaw);
   const confidenceThresholdRaw =
     process.env["WORKER_FINDING_CONFIDENCE_THRESHOLD"] ?? "0.78";
-  const confidenceThreshold = Number.parseFloat(confidenceThresholdRaw);
+  const confidenceThreshold = Number(confidenceThresholdRaw);
   const maxCommentsRaw = process.env["WORKER_FINDING_MAX_COMMENTS"] ?? "5";
-  const maxComments = Number.parseInt(maxCommentsRaw, 10);
+  const maxComments = Number(maxCommentsRaw);
   const testFileConfidenceThresholdRaw =
     process.env["WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD"] ??
     String(DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD);
-  const testFileConfidenceThreshold = Number.parseFloat(testFileConfidenceThresholdRaw);
+  const testFileConfidenceThreshold = Number(testFileConfidenceThresholdRaw);
 
   validateConfig({
     pollIntervalMs, pollRaw,
@@ -148,11 +148,11 @@ function validateConfig(values: {
   maxComments: number; maxCommentsRaw: string;
   testFileConfidenceThreshold: number; testFileConfidenceThresholdRaw: string;
 }): void {
-  if (Number.isNaN(values.pollIntervalMs) || values.pollIntervalMs < 250) {
+  if (!Number.isFinite(values.pollIntervalMs) || !Number.isInteger(values.pollIntervalMs) || values.pollIntervalMs < 250) {
     throw new Error(`Invalid WORKER_POLL_INTERVAL_MS value: ${values.pollRaw}`);
   }
 
-  if (Number.isNaN(values.maxProcessedKeys) || values.maxProcessedKeys < 100) {
+  if (!Number.isFinite(values.maxProcessedKeys) || !Number.isInteger(values.maxProcessedKeys) || values.maxProcessedKeys < 100) {
     throw new Error(`Invalid WORKER_MAX_PROCESSED_KEYS value: ${values.maxKeysRaw}`);
   }
 
@@ -164,20 +164,20 @@ function validateConfig(values: {
     throw new Error("Invalid WORKER_GITHUB_USER_AGENT value: empty");
   }
 
-  if (Number.isNaN(values.githubRequestTimeoutMs) || values.githubRequestTimeoutMs < 100) {
+  if (!Number.isFinite(values.githubRequestTimeoutMs) || !Number.isInteger(values.githubRequestTimeoutMs) || values.githubRequestTimeoutMs < 100) {
     throw new Error(`Invalid WORKER_GITHUB_REQUEST_TIMEOUT_MS value: ${values.timeoutRaw}`);
   }
 
-  if (Number.isNaN(values.githubFetchRetries) || values.githubFetchRetries < 0) {
+  if (!Number.isFinite(values.githubFetchRetries) || !Number.isInteger(values.githubFetchRetries) || values.githubFetchRetries < 0) {
     throw new Error(`Invalid WORKER_GITHUB_FETCH_RETRIES value: ${values.retriesRaw}`);
   }
 
-  if (Number.isNaN(values.githubRetryDelayMs) || values.githubRetryDelayMs < 10) {
+  if (!Number.isFinite(values.githubRetryDelayMs) || !Number.isInteger(values.githubRetryDelayMs) || values.githubRetryDelayMs < 10) {
     throw new Error(`Invalid WORKER_GITHUB_RETRY_DELAY_MS value: ${values.retryDelayRaw}`);
   }
 
   if (
-    Number.isNaN(values.confidenceThreshold) ||
+    !Number.isFinite(values.confidenceThreshold) ||
     values.confidenceThreshold < 0 ||
     values.confidenceThreshold > 1
   ) {
@@ -186,11 +186,11 @@ function validateConfig(values: {
     );
   }
 
-  if (Number.isNaN(values.maxComments) || values.maxComments < 1) {
+  if (!Number.isFinite(values.maxComments) || !Number.isInteger(values.maxComments) || values.maxComments < 1) {
     throw new Error(`Invalid WORKER_FINDING_MAX_COMMENTS value: ${values.maxCommentsRaw}`);
   }
   if (
-    Number.isNaN(values.testFileConfidenceThreshold) ||
+    !Number.isFinite(values.testFileConfidenceThreshold) ||
     values.testFileConfidenceThreshold < 0 ||
     values.testFileConfidenceThreshold > 1
   ) {

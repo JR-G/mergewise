@@ -64,6 +64,16 @@ describe("buildBlobUrl", () => {
     const url = buildBlobUrl("acme/widget", "abc123", "src/my file.ts", 5);
     expect(url).toContain("src/my%20file.ts");
   });
+
+  it("normalises NaN line to L1", () => {
+    const url = buildBlobUrl("acme/widget", "abc123", "src/index.ts", NaN);
+    expect(url).toContain("#L1");
+  });
+
+  it("normalises fractional line 1.5 to an integer anchor", () => {
+    const url = buildBlobUrl("acme/widget", "abc123", "src/index.ts", 1.5);
+    expect(url).toMatch(/#L1$/);
+  });
 });
 
 describe("truncateRecommendation", () => {

@@ -15,8 +15,17 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  process.env["GITHUB_APP_ID"] = originalEnv["GITHUB_APP_ID"];
-  process.env["GITHUB_APP_PRIVATE_KEY"] = originalEnv["GITHUB_APP_PRIVATE_KEY"];
+  if (originalEnv["GITHUB_APP_ID"] !== undefined) {
+    process.env["GITHUB_APP_ID"] = originalEnv["GITHUB_APP_ID"];
+  } else {
+    delete process.env["GITHUB_APP_ID"];
+  }
+
+  if (originalEnv["GITHUB_APP_PRIVATE_KEY"] !== undefined) {
+    process.env["GITHUB_APP_PRIVATE_KEY"] = originalEnv["GITHUB_APP_PRIVATE_KEY"];
+  } else {
+    delete process.env["GITHUB_APP_PRIVATE_KEY"];
+  }
 });
 
 function makeJob(overrides: Partial<CollectFeedbackJob> = {}): CollectFeedbackJob {

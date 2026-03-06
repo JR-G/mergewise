@@ -104,6 +104,90 @@ describe("pull-requests", () => {
       expect(thrownError).toBeInstanceOf(GitHubApiError);
       expect((thrownError as GitHubApiError).status).toBe(404);
     });
+
+    it("throws for NaN perPage", () => {
+      expect(() =>
+        fetchPullRequestFiles({
+          owner: "o",
+          repository: "r",
+          pullRequestNumber: 1,
+          installationAccessToken: "tok",
+          perPage: NaN,
+        }),
+      ).toThrow("perPage must be a finite number");
+    });
+
+    it("throws for Infinity maxPages", () => {
+      expect(() =>
+        fetchPullRequestFiles({
+          owner: "o",
+          repository: "r",
+          pullRequestNumber: 1,
+          installationAccessToken: "tok",
+          maxPages: Infinity,
+        }),
+      ).toThrow("maxPages must be a finite number");
+    });
+
+    it("clamps perPage to 1-100 range", async () => {
+      const calls: FetchCall[] = [];
+      const fetchMock: FetchMock = async (input, init) => {
+        calls.push({ input, init });
+        return makeJsonResponse([]);
+      };
+      globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+      await fetchPullRequestFiles({
+        owner: "o",
+        repository: "r",
+        pullRequestNumber: 1,
+        installationAccessToken: "tok",
+        perPage: 200,
+      });
+
+      expect(String(calls[0]!.input)).toContain("per_page=100");
+    });
+
+    it("clamps maxPages to at least 1", async () => {
+      let callCount = 0;
+      const fetchMock: FetchMock = async () => {
+        callCount += 1;
+        return makeJsonResponse([]);
+      };
+      globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+      await fetchPullRequestFiles({
+        owner: "o",
+        repository: "r",
+        pullRequestNumber: 1,
+        installationAccessToken: "tok",
+        maxPages: 0,
+      });
+
+      expect(callCount).toBe(1);
+    });
+
+    it("clamps maxPages to at most 50", async () => {
+      let callCount = 0;
+      const fetchMock: FetchMock = async () => {
+        callCount += 1;
+        return makeJsonResponse([
+          { filename: `f${callCount}.ts`, status: "modified", additions: 1, deletions: 0, changes: 1 },
+        ]);
+      };
+      globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+      await fetchPullRequestFiles({
+        owner: "o",
+        repository: "r",
+        pullRequestNumber: 1,
+        installationAccessToken: "tok",
+        perPage: 1,
+        maxPages: 100,
+      });
+
+      expect(callCount).toBe(50);
+    });
   });
 
   describe("fetchPullRequest", () => {

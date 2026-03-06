@@ -53,6 +53,36 @@ describe("loadConfig", () => {
     process.env["WORKER_GITHUB_RETRY_DELAY_MS"] = "5";
     expect(() => loadConfig()).toThrow("Invalid WORKER_GITHUB_RETRY_DELAY_MS value");
   });
+
+  it("rejects non-integer poll interval like 1.5", () => {
+    process.env["WORKER_POLL_INTERVAL_MS"] = "1.5";
+    expect(() => loadConfig()).toThrow("Invalid WORKER_POLL_INTERVAL_MS value");
+  });
+
+  it("rejects poll interval with trailing text like 250ms", () => {
+    process.env["WORKER_POLL_INTERVAL_MS"] = "250ms";
+    expect(() => loadConfig()).toThrow("Invalid WORKER_POLL_INTERVAL_MS value");
+  });
+
+  it("rejects non-integer max comments like 3.7", () => {
+    process.env["WORKER_FINDING_MAX_COMMENTS"] = "3.7";
+    expect(() => loadConfig()).toThrow("Invalid WORKER_FINDING_MAX_COMMENTS value");
+  });
+
+  it("rejects max comments with trailing text", () => {
+    process.env["WORKER_FINDING_MAX_COMMENTS"] = "5abc";
+    expect(() => loadConfig()).toThrow("Invalid WORKER_FINDING_MAX_COMMENTS value");
+  });
+
+  it("rejects non-numeric retry count", () => {
+    process.env["WORKER_GITHUB_FETCH_RETRIES"] = "two";
+    expect(() => loadConfig()).toThrow("Invalid WORKER_GITHUB_FETCH_RETRIES value");
+  });
+
+  it("rejects non-integer timeout like 1000.5", () => {
+    process.env["WORKER_GITHUB_REQUEST_TIMEOUT_MS"] = "1000.5";
+    expect(() => loadConfig()).toThrow("Invalid WORKER_GITHUB_REQUEST_TIMEOUT_MS value");
+  });
 });
 
 describe("resolveGitHubFetchOptions", () => {

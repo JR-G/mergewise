@@ -449,6 +449,7 @@ function isValidRawFinding(
   }
   if (
     typeof candidate["confidence"] !== "number" ||
+    !Number.isFinite(candidate["confidence"]) ||
     candidate["confidence"] < 0 ||
     candidate["confidence"] > 1
   ) {

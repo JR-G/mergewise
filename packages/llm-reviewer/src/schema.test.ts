@@ -141,6 +141,40 @@ describe("parseLlmResponse", () => {
     });
     expect(parseLlmResponse(raw, diff, STUB_PR)).toEqual([]);
   });
+
+  it("discards findings with NaN confidence", () => {
+    const diff = makeDiff(["+const x = 1;"]);
+    const rawObject = {
+      findings: [
+        {
+          line: 1,
+          category: "clean",
+          confidence: NaN,
+          evidence: "code",
+          recommendation: "fix it",
+        },
+      ],
+    };
+    const raw = JSON.stringify(rawObject);
+    expect(parseLlmResponse(raw, diff, STUB_PR)).toEqual([]);
+  });
+
+  it("discards findings with Infinity confidence", () => {
+    const diff = makeDiff(["+const x = 1;"]);
+    const rawObject = {
+      findings: [
+        {
+          line: 1,
+          category: "clean",
+          confidence: Infinity,
+          evidence: "code",
+          recommendation: "fix it",
+        },
+      ],
+    };
+    const raw = JSON.stringify(rawObject);
+    expect(parseLlmResponse(raw, diff, STUB_PR)).toEqual([]);
+  });
 });
 
 describe("isPlausibleRewrite", () => {

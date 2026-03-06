@@ -96,6 +96,50 @@ describe("createPollingLoopController", () => {
 
     expect(loggedMessage).toContain("poll cycle failed");
   });
+
+  it("catches synchronous throws from the poll function", async () => {
+    let loggedMessage = "";
+    let capturedCallback: (() => void) | undefined;
+    const controller = createPollingLoopController(
+      100,
+      () => { throw new Error("sync boom"); },
+      {
+        setIntervalFn: (callback, _delay) => { capturedCallback = callback; return 1 as unknown as WorkerPollingTimerHandle; },
+        clearIntervalFn: () => {},
+        logError: (message) => { loggedMessage = message; },
+      },
+    );
+
+    controller.start();
+    capturedCallback?.();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(loggedMessage).toContain("poll cycle failed");
+  });
+
+  it("throws for NaN pollIntervalMs", () => {
+    expect(() => createPollingLoopController(NaN, async () => {})).toThrow(
+      "pollIntervalMs must be a finite positive number",
+    );
+  });
+
+  it("throws for Infinity pollIntervalMs", () => {
+    expect(() => createPollingLoopController(Infinity, async () => {})).toThrow(
+      "pollIntervalMs must be a finite positive number",
+    );
+  });
+
+  it("throws for negative pollIntervalMs", () => {
+    expect(() => createPollingLoopController(-100, async () => {})).toThrow(
+      "pollIntervalMs must be a finite positive number",
+    );
+  });
+
+  it("throws for zero pollIntervalMs", () => {
+    expect(() => createPollingLoopController(0, async () => {})).toThrow(
+      "pollIntervalMs must be a finite positive number",
+    );
+  });
 });
 
 describe("createProcessedKeyState", () => {

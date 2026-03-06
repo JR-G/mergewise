@@ -139,6 +139,19 @@ describe("http", () => {
       expect(apiError.url).toBe("https://example.com/api");
       expect(apiError.responseBody).toContain("bad");
     });
+
+    it("throws when a 200 response contains malformed JSON", async () => {
+      const response = new Response("not valid json {{{", { status: 200 });
+
+      let thrownError: unknown;
+      try {
+        await parseResponse(response, "GET", "https://example.com/api");
+      } catch (error) {
+        thrownError = error;
+      }
+
+      expect(thrownError).toBeDefined();
+    });
   });
 
   describe("parseGraphQlResponse", () => {
@@ -164,6 +177,19 @@ describe("http", () => {
 
       expect(thrownError).toBeInstanceOf(GitHubApiError);
       expect((thrownError as GitHubApiError).status).toBe(500);
+    });
+
+    it("throws when a 200 response contains malformed JSON", async () => {
+      const response = new Response("not valid json {{{", { status: 200 });
+
+      let thrownError: unknown;
+      try {
+        await parseGraphQlResponse(response, "https://api.github.com/graphql", () => null);
+      } catch (error) {
+        thrownError = error;
+      }
+
+      expect(thrownError).toBeDefined();
     });
 
     it("throws GitHubGraphQlError when the response body contains errors", async () => {

@@ -1,5 +1,22 @@
-import { describe, it, expect } from "bun:test";
+import { afterEach, describe, it, expect } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { execSync } from "node:child_process";
+import { scan } from "./scanner.ts";
 import type { ScanOptions } from "./scanner.ts";
+
+function initGitRepo(directory: string, files: string[]): void {
+  execSync("git init", { cwd: directory, stdio: "ignore" });
+  execSync("git config user.email test@test.com", { cwd: directory, stdio: "ignore" });
+  execSync("git config user.name test", { cwd: directory, stdio: "ignore" });
+  for (const filePath of files) {
+    execSync(`git add "${filePath}"`, { cwd: directory, stdio: "ignore" });
+  }
+  if (files.length > 0) {
+    execSync('git commit -m "init"', { cwd: directory, stdio: "ignore" });
+  }
+}
 
 describe("ScanOptions defaults", () => {
   it("topCount defaults to 20 when not specified", () => {
@@ -35,20 +52,81 @@ describe("ScanOptions defaults", () => {
 });
 
 describe("ScanOptions boundary conditions", () => {
-  it("handles topCount of zero by applying default", () => {
+  it("clamps topCount of zero to 1", () => {
     const options: ScanOptions = { repoPath: "/tmp/repo", topCount: 0 };
-    const topCount = Math.min(options.topCount ?? 20, 100);
-    expect(topCount).toBe(0);
+    const topCount = Math.min(Math.max(options.topCount ?? 20, 1), 100);
+    expect(topCount).toBe(1);
   });
 
-  it("handles negative topCount", () => {
+  it("clamps negative topCount to 1", () => {
     const options: ScanOptions = { repoPath: "/tmp/repo", topCount: -5 };
-    const topCount = Math.min(options.topCount ?? 20, 100);
-    expect(topCount).toBe(-5);
+    const topCount = Math.min(Math.max(options.topCount ?? 20, 1), 100);
+    expect(topCount).toBe(1);
   });
 
   it("handles tokenBudget of zero", () => {
     const options: ScanOptions = { repoPath: "/tmp/repo", tokenBudget: 0 };
     expect(options.tokenBudget).toBe(0);
+  });
+});
+
+describe("scan", () => {
+  let tempDir: string;
+
+  afterEach(async () => {
+    if (tempDir) {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns a profile with empty findings when skipLlm is true", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "scanner-test-"));
+    await Bun.write(join(tempDir, "index.ts"), "export const add = (a: number, b: number): number => a + b;");
+    initGitRepo(tempDir, ["index.ts"]);
+
+    const stages: string[] = [];
+    const profile = await scan({
+      repoPath: tempDir,
+      skipLlm: true,
+      onProgress: (stage) => {
+        stages.push(stage);
+      },
+    });
+
+    expect(profile.repoPath).toBe(tempDir);
+    expect(profile.scannedAt).toBeDefined();
+    expect(Array.isArray(profile.findings)).toBe(true);
+    expect(profile.findings).toEqual([]);
+    expect(stages).toContain("collect");
+    expect(stages).toContain("rank");
+  });
+
+  it("returns a profile with hotspots for a directory with TypeScript files", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "scanner-test-hotspot-"));
+    await Bun.write(join(tempDir, "a.ts"), 'import { b } from "./b";\nexport const a = b + 1;');
+    await Bun.write(join(tempDir, "b.ts"), "export const b = 42;");
+    initGitRepo(tempDir, ["a.ts", "b.ts"]);
+
+    const profile = await scan({
+      repoPath: tempDir,
+      skipLlm: true,
+      topCount: 5,
+    });
+
+    expect(profile.graph.nodes.size).toBeGreaterThan(0);
+    expect(Array.isArray(profile.hotspots)).toBe(true);
+  });
+
+  it("returns a profile with zero hotspots for an empty directory", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "scanner-test-empty-"));
+    initGitRepo(tempDir, []);
+
+    const profile = await scan({
+      repoPath: tempDir,
+      skipLlm: true,
+    });
+
+    expect(profile.hotspots).toEqual([]);
+    expect(profile.findings).toEqual([]);
   });
 });

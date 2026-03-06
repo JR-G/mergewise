@@ -15,8 +15,11 @@ export function loadGitHubAppCredentials(): Readonly<{ appId: number; privateKey
     throw new Error("[worker] missing GITHUB_APP_ID");
   }
 
-  const appId = Number.parseInt(appIdRaw, 10);
-  if (Number.isNaN(appId) || appId <= 0) {
+  if (!/^\d+$/.test(appIdRaw.trim())) {
+    throw new Error(`[worker] invalid GITHUB_APP_ID value: ${appIdRaw}`);
+  }
+  const appId = Number(appIdRaw);
+  if (!Number.isFinite(appId) || appId <= 0) {
     throw new Error(`[worker] invalid GITHUB_APP_ID value: ${appIdRaw}`);
   }
 

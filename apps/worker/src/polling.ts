@@ -107,6 +107,10 @@ export function createPollingLoopController(
   pollCycle: () => Promise<void>,
   dependencies: PollingLoopDependencies = {},
 ): PollingLoopController {
+  if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) {
+    throw new Error(`pollIntervalMs must be a finite positive number, got: ${pollIntervalMs}`);
+  }
+
   const setIntervalFn: NonNullable<PollingLoopDependencies["setIntervalFn"]> =
     dependencies.setIntervalFn ??
     ((callback: () => void, delayMs: number): WorkerPollingTimerHandle => setInterval(callback, delayMs));
@@ -125,7 +129,7 @@ export function createPollingLoopController(
       return;
     }
 
-    const pendingPollPromise = pollCycle().catch((error: unknown) => {
+    const pendingPollPromise = Promise.resolve().then(() => pollCycle()).catch((error: unknown) => {
       const details = error instanceof Error ? error.stack ?? error.message : String(error);
       errorLogger(`[worker] poll cycle failed: ${details}`);
     });

@@ -90,7 +90,7 @@ export function buildBlobUrl(
     .split("/")
     .map((segment) => encodeURIComponent(segment))
     .join("/");
-  const normalizedLine = Math.max(1, line);
+  const normalizedLine = Number.isFinite(line) ? Math.max(1, Math.floor(line)) : 1;
   return (
     `https://github.com/${repositoryFullName}` +
     `/blob/${encodeURIComponent(headSha)}/${encodedFilePath}#L${String(normalizedLine)}`

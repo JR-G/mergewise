@@ -68,9 +68,13 @@ function buildLlmRules(
 ): readonly Rule[] {
   const llmConfig = mergewiseConfig.llm;
   const llmApiKey = process.env["LLM_API_KEY"];
-  const llmEnabled = llmConfig.enabled && llmApiKey !== undefined && llmApiKey.length > 0;
 
-  if (!llmEnabled || !llmApiKey) {
+  if (!llmConfig.enabled) {
+    return [];
+  }
+
+  if (llmApiKey === undefined || llmApiKey.length === 0) {
+    loggers.warnLogger("[worker] llm_api_key_missing: LLM review enabled but LLM_API_KEY is not set");
     return [];
   }
 

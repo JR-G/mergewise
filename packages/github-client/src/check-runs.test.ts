@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-import { createCheckRun, updateCheckRun } from "./check-runs";
+import { createCheckRun, updateCheckRun, sanitizeCheckRunOutput } from "./check-runs";
 import { GitHubApiError } from "./http";
 
 type FetchMock = (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -61,7 +61,7 @@ describe("check-runs", () => {
       expect(body["head_sha"]).toBe("sha-abc");
     });
 
-    it("defaults status to completed when not provided", async () => {
+    it("defaults status to completed when conclusion is provided and status is omitted", async () => {
       const calls: FetchCall[] = [];
       const fetchMock: FetchMock = async (input, init) => {
         calls.push({ input, init });
@@ -80,6 +80,39 @@ describe("check-runs", () => {
 
       const body = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
       expect(body["status"]).toBe("completed");
+    });
+
+    it("defaults status to queued when neither status nor conclusion is provided", async () => {
+      const calls: FetchCall[] = [];
+      const fetchMock: FetchMock = async (input, init) => {
+        calls.push({ input, init });
+        return makeJsonResponse({ id: 1, html_url: "", status: "queued", conclusion: null });
+      };
+      globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+      await createCheckRun({
+        owner: "o",
+        repository: "r",
+        headSha: "sha",
+        installationAccessToken: "tok",
+        name: "test",
+      });
+
+      const body = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
+      expect(body["status"]).toBe("queued");
+    });
+
+    it("throws when status is completed but conclusion is missing", async () => {
+      expect(() =>
+        createCheckRun({
+          owner: "o",
+          repository: "r",
+          headSha: "sha",
+          installationAccessToken: "tok",
+          name: "test",
+          status: "completed",
+        }),
+      ).toThrow("conclusion is required");
     });
 
     it("omits conclusion from request body when not provided", async () => {
@@ -196,6 +229,7 @@ describe("check-runs", () => {
           checkRunId: 999,
           installationAccessToken: "tok",
           status: "completed",
+          conclusion: "neutral",
         });
       } catch (error) {
         thrownError = error;
@@ -203,6 +237,18 @@ describe("check-runs", () => {
 
       expect(thrownError).toBeInstanceOf(GitHubApiError);
       expect((thrownError as GitHubApiError).status).toBe(404);
+    });
+
+    it("throws when status is completed but conclusion is missing", () => {
+      expect(() =>
+        updateCheckRun({
+          owner: "o",
+          repository: "r",
+          checkRunId: 1,
+          installationAccessToken: "tok",
+          status: "completed",
+        }),
+      ).toThrow("conclusion is required");
     });
 
     it("sends empty output body when output is omitted", async () => {
@@ -224,6 +270,40 @@ describe("check-runs", () => {
 
       const body = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
       expect(body["output"]).toBeUndefined();
+    });
+  });
+
+  describe("sanitizeCheckRunOutput", () => {
+    it("passes through short values unchanged", () => {
+      const output = sanitizeCheckRunOutput({ title: "OK", summary: "All clear" });
+      expect(output.title).toBe("OK");
+      expect(output.summary).toBe("All clear");
+    });
+
+    it("truncates title exceeding 255 characters", () => {
+      const longTitle = "x".repeat(300);
+      const output = sanitizeCheckRunOutput({ title: longTitle, summary: "s" });
+      expect(output.title.length).toBeLessThanOrEqual(255);
+      expect(output.title.endsWith("\u2026")).toBe(true);
+    });
+
+    it("truncates summary exceeding 65535 characters", () => {
+      const longSummary = "y".repeat(70_000);
+      const output = sanitizeCheckRunOutput({ title: "t", summary: longSummary });
+      expect(output.summary.length).toBeLessThanOrEqual(65_535);
+      expect(output.summary.endsWith("\u2026")).toBe(true);
+    });
+
+    it("truncates text exceeding 65535 characters", () => {
+      const longText = "z".repeat(70_000);
+      const output = sanitizeCheckRunOutput({ title: "t", summary: "s", text: longText });
+      expect(output.text!.length).toBeLessThanOrEqual(65_535);
+      expect(output.text!.endsWith("\u2026")).toBe(true);
+    });
+
+    it("omits text from output when text is undefined", () => {
+      const output = sanitizeCheckRunOutput({ title: "t", summary: "s" });
+      expect("text" in output).toBe(false);
     });
   });
 });
