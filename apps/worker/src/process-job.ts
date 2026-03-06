@@ -1,7 +1,8 @@
 import { fetchFileContent } from "@mergewise/github-client";
 import { DEFAULT_MERGEWISE_CONFIG, type MergewiseConfig } from "@mergewise/config-loader";
 import { executeRules } from "@mergewise/rule-engine";
-import { createLlmReviewerRule } from "@mergewise/llm-reviewer";
+import { createLlmReviewerRule, type ReviewToolkit } from "@mergewise/llm-reviewer";
+import { buildReviewToolkit } from "@mergewise/debt-scanner";
 import { compileLearnings } from "@mergewise/feedback-store";
 import type {
   AnalyzePullRequestJob,
@@ -60,12 +61,16 @@ function resolveLoggers(dependencies: WorkerProcessingDependencies): ResolvedLog
   return { infoLogger, errorLogger, warnLogger };
 }
 
-function buildLlmRules(
-  mergewiseConfig: MergewiseConfig,
-  traceId: string,
-  loggers: ResolvedLoggers,
-  repoLearnings?: RepoLearnings,
-): readonly Rule[] {
+interface BuildLlmRulesOptions {
+  readonly mergewiseConfig: MergewiseConfig;
+  readonly traceId: string;
+  readonly loggers: ResolvedLoggers;
+  readonly repoLearnings?: RepoLearnings;
+  readonly toolkit?: ReviewToolkit;
+}
+
+function buildLlmRules(options: BuildLlmRulesOptions): readonly Rule[] {
+  const { mergewiseConfig, traceId, loggers, repoLearnings, toolkit } = options;
   const llmConfig = mergewiseConfig.llm;
   const llmApiKey = process.env["LLM_API_KEY"];
 
@@ -95,6 +100,7 @@ function buildLlmRules(
         : undefined,
       confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
       repoLearnings,
+      toolkit,
       onFileReviewError: (filePath, error) => {
         loggers.warnLogger(
           `[worker] llm review failed trace=${traceId} file=${filePath} error=${error instanceof Error ? error.message : String(error)}`,
@@ -135,7 +141,25 @@ function resolveProcessingConfig(
     }
   }
 
-  const baseLlmRules = buildLlmRules(mergewiseConfig, traceId, loggers, repoLearnings);
+  let toolkit: ReviewToolkit | undefined;
+  if (dependencies.debtStore) {
+    try {
+      const latestProfile = dependencies.debtStore.latestScan(job.repo_full_name);
+      if (latestProfile) {
+        toolkit = buildReviewToolkit(latestProfile.graph, latestProfile.hotspots);
+        loggers.infoLogger(
+          `[worker] graph_context trace=${traceId} repo=${job.repo_full_name} hotspots=${latestProfile.hotspots.length} nodes=${latestProfile.graph.nodes.size}`,
+        );
+      }
+    } catch (graphError) {
+      const detail = graphError instanceof Error ? graphError.message : String(graphError);
+      loggers.errorLogger(
+        `[worker] graph_context_failed trace=${traceId} repo=${job.repo_full_name}: ${detail}`,
+      );
+    }
+  }
+
+  const baseLlmRules = buildLlmRules({ mergewiseConfig, traceId, loggers, repoLearnings, toolkit });
   const rules = dependencies.rules ?? [...baseLlmRules];
 
   const baseBlockedRuleIds = dependencies.findingDeliveryOptions?.blockedRuleIds

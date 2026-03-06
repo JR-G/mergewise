@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   buildAnalyzePullRequestJob,
   buildCollectFeedbackJob,
+  buildIndexRepoJob,
   cancelOrphanedCheckRun,
   computeGitHubSignature,
   createPendingCheckRun,
@@ -13,8 +14,10 @@ import {
   createWebhookJsonResponse,
   getRequestId,
   isClosedOrMergedPullRequest,
+  isDefaultBranchPush,
   isDraftPullRequest,
   isPullRequestWebhookEvent,
+  isPushWebhookEvent,
   isWebhookSignatureValid,
   loadConfig,
   logWebhookFailure,
@@ -627,6 +630,137 @@ describe("createPendingCheckRun", () => {
       },
     );
     expect(result).toBeNull();
+  });
+});
+
+describe("isPushWebhookEvent", () => {
+  const validPayload = {
+    ref: "refs/heads/main",
+    after: "abc123def456",
+    repository: {
+      full_name: "owner/repo",
+      default_branch: "main",
+    },
+    installation: { id: 12345 },
+  };
+
+  test("accepts valid push payload with all required fields", () => {
+    expect(isPushWebhookEvent(validPayload)).toBe(true);
+  });
+
+  test("rejects null", () => {
+    expect(isPushWebhookEvent(null)).toBe(false);
+  });
+
+  test("rejects undefined", () => {
+    expect(isPushWebhookEvent(undefined)).toBe(false);
+  });
+
+  test("rejects payload missing ref", () => {
+    const { ref: _, ...rest } = validPayload;
+    expect(isPushWebhookEvent(rest)).toBe(false);
+  });
+
+  test("rejects payload missing after", () => {
+    const { after: _, ...rest } = validPayload;
+    expect(isPushWebhookEvent(rest)).toBe(false);
+  });
+
+  test("rejects payload missing repository.default_branch", () => {
+    const payload = {
+      ...validPayload,
+      repository: { full_name: "owner/repo" },
+    };
+    expect(isPushWebhookEvent(payload)).toBe(false);
+  });
+
+  test("accepts payload with optional installation field", () => {
+    const { installation: _, ...withoutInstallation } = validPayload;
+    expect(isPushWebhookEvent(withoutInstallation)).toBe(true);
+  });
+});
+
+describe("isDefaultBranchPush", () => {
+  test("returns true when ref matches refs/heads/<default_branch>", () => {
+    const payload = {
+      ref: "refs/heads/main",
+      after: "abc123",
+      repository: { full_name: "owner/repo", default_branch: "main" },
+    };
+    expect(isDefaultBranchPush(payload)).toBe(true);
+  });
+
+  test("returns false for non-default branch push", () => {
+    const payload = {
+      ref: "refs/heads/feature-x",
+      after: "abc123",
+      repository: { full_name: "owner/repo", default_branch: "main" },
+    };
+    expect(isDefaultBranchPush(payload)).toBe(false);
+  });
+
+  test("returns false for tag refs", () => {
+    const payload = {
+      ref: "refs/tags/v1.0",
+      after: "abc123",
+      repository: { full_name: "owner/repo", default_branch: "main" },
+    };
+    expect(isDefaultBranchPush(payload)).toBe(false);
+  });
+});
+
+describe("buildIndexRepoJob", () => {
+  const payload = {
+    ref: "refs/heads/main",
+    after: "abc123def456",
+    repository: {
+      full_name: "owner/repo",
+      default_branch: "main",
+    },
+    installation: { id: 12345 },
+  };
+
+  test("sets type to index-repo", () => {
+    const job = buildIndexRepoJob(payload, "trace-100");
+    expect(job.type).toBe("index-repo");
+  });
+
+  test("maps repository.full_name to repo_full_name", () => {
+    const job = buildIndexRepoJob(payload, "trace-100");
+    expect(job.repo_full_name).toBe("owner/repo");
+  });
+
+  test("maps repository.default_branch to default_branch", () => {
+    const job = buildIndexRepoJob(payload, "trace-100");
+    expect(job.default_branch).toBe("main");
+  });
+
+  test("maps after to head_sha", () => {
+    const job = buildIndexRepoJob(payload, "trace-100");
+    expect(job.head_sha).toBe("abc123def456");
+  });
+
+  test("maps installation.id to installation_id", () => {
+    const job = buildIndexRepoJob(payload, "trace-100");
+    expect(job.installation_id).toBe(12345);
+  });
+
+  test("sets installation_id to null when installation is absent", () => {
+    const { installation: _, ...noInstall } = payload;
+    const job = buildIndexRepoJob(noInstall, "trace-100");
+    expect(job.installation_id).toBeNull();
+  });
+
+  test("includes traceId when provided", () => {
+    const job = buildIndexRepoJob(payload, "trace-100");
+    expect(job.trace_id).toBe("trace-100");
+  });
+
+  test("produces valid UUID for job_id", () => {
+    const job = buildIndexRepoJob(payload, "trace-100");
+    expect(job.job_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
   });
 });
 

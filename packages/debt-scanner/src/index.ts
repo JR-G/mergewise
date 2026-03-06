@@ -6,26 +6,27 @@ export type {
   DebtProfile,
   HotspotEntry,
   ScanSummary,
-} from "./graph-types.ts";
-export { collectFiles } from "./file-collector.ts";
-export { analyseFile, analyseFiles } from "./ast-analyser.ts";
-export { buildGraph } from "./graph-builder.ts";
-export { computeCentrality } from "./centrality.ts";
-export { rankHotspots, computeSignalDensity } from "./hotspot-ranker.ts";
-export { scanWithLlm } from "./llm-scanner.ts";
-export { scan, type ScanOptions } from "./scanner.ts";
-export { formatJsonReport, formatMarkdownReport, formatComparisonMarkdown, formatComparisonJson } from "./report.ts";
-export { openStore, type DebtStore } from "./store.ts";
-export { compareScans, type ScanComparison, type HotspotChange, type TrendDirection } from "./compare.ts";
-export { buildPrGraphContext, formatGraphContextPrompt, type FileGraphContext, type PrGraphContext } from "./graph-context.ts";
+} from "./graph-types";
+export { collectFiles } from "./file-collector";
+export { analyseFile, analyseFiles } from "./ast-analyser";
+export { buildGraph } from "./graph-builder";
+export { computeCentrality } from "./centrality";
+export { rankHotspots, computeSignalDensity } from "./hotspot-ranker";
+export { scanWithLlm } from "./llm-scanner";
+export { scan, type ScanOptions } from "./scanner";
+export { formatJsonReport, formatMarkdownReport, formatComparisonMarkdown, formatComparisonJson } from "./report";
+export { openStore, type DebtStore } from "./store";
+export { compareScans, type ScanComparison, type HotspotChange, type TrendDirection } from "./compare";
+export { buildPrGraphContext, formatGraphContextPrompt, type FileGraphContext, type PrGraphContext } from "./graph-context";
+export { buildReviewToolkit } from "./toolkit-adapter";
 
 import { resolve, dirname } from "node:path";
 import { mkdirSync } from "node:fs";
 import { parseArgs } from "node:util";
-import type { DebtProfile, ScanSummary } from "./graph-types.ts";
-import { scan, type ScanOptions } from "./scanner.ts";
-import { formatJsonReport, formatMarkdownReport, formatComparisonMarkdown, formatComparisonJson } from "./report.ts";
-import { openStore, type DebtStore } from "./store.ts";
+import type { DebtProfile, ScanSummary } from "./graph-types";
+import { scan, type ScanOptions } from "./scanner";
+import { formatJsonReport, formatMarkdownReport, formatComparisonMarkdown, formatComparisonJson } from "./report";
+import { openStore, type DebtStore } from "./store";
 import { compareScans, type ScanComparison } from "./compare.ts";
 
 const DEFAULT_DB_PATH = ".mergewise-runtime/debt.db";

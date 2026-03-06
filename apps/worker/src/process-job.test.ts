@@ -1157,3 +1157,186 @@ describe("processAnalyzePullRequestJob feedback logging", () => {
     expect(summaryLine).toBeUndefined();
   });
 });
+
+describe("processAnalyzePullRequestJob debt store wiring", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  test("logs graph context when debtStore returns a scan with hotspots", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    const logs: string[] = [];
+
+    const summary = await processAnalyzePullRequestJob(
+      {
+        job_id: "job-debt-scan",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 50,
+        head_sha: "debt123",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        fetchPullRequestFn: async () => openPullRequestState,
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => ({
+          findings: [],
+          summary: {
+            totalRules: 0,
+            successfulRules: 0,
+            failedRules: 0,
+            totalFindings: 0,
+            findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          },
+          failedRuleIds: [],
+        }),
+        logInfo: (msg: string) => logs.push(msg),
+        logError: () => {},
+        debtStore: {
+          latestScan: () => ({
+            repoPath: "acme/widget",
+            scannedAt: "2026-01-01T00:00:00Z",
+            graph: { nodes: new Map([["src/index.ts", { id: "src/index.ts", kind: "file" as const, filePath: "src/index.ts", signals: { componentLineCount: 0, hookCount: 0, classCount: 0, functionCount: 1, maxFunctionLineCount: 10, maxNestingDepth: 1, maxParameterCount: 1, typeAssertionCount: 0, importCount: 2 }, lineCount: 20, centrality: 0.5 }]]), edges: [] },
+            findings: [],
+            hotspots: [{ nodeId: "src/index.ts", filePath: "src/index.ts", score: 0.8, centrality: 0.5, signalDensity: 0.3, lineCount: 20 }],
+          }),
+          saveScan: () => "scan-id",
+          listScans: () => [],
+          loadScan: () => null,
+          close: () => {},
+        },
+      },
+    );
+
+    expect(summary.jobId).toBe("job-debt-scan");
+    const graphLine = logs.find((line) => line.includes("graph_context"));
+    expect(graphLine).toBeDefined();
+    expect(graphLine).toContain("repo=acme/widget");
+    expect(graphLine).toContain("hotspots=1");
+    expect(graphLine).toContain("nodes=1");
+  });
+
+  test("proceeds without toolkit when debtStore returns no scan", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    const logs: string[] = [];
+    const errors: string[] = [];
+
+    const summary = await processAnalyzePullRequestJob(
+      {
+        job_id: "job-no-debt-scan",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 50,
+        head_sha: "nodebt123",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        fetchPullRequestFn: async () => openPullRequestState,
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => ({
+          findings: [],
+          summary: {
+            totalRules: 0,
+            successfulRules: 0,
+            failedRules: 0,
+            totalFindings: 0,
+            findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          },
+          failedRuleIds: [],
+        }),
+        logInfo: (msg: string) => logs.push(msg),
+        logError: (msg: string) => errors.push(msg),
+        debtStore: {
+          latestScan: () => null,
+          saveScan: () => "scan-id",
+          listScans: () => [],
+          loadScan: () => null,
+          close: () => {},
+        },
+      },
+    );
+
+    expect(summary.jobId).toBe("job-no-debt-scan");
+    const graphLine = logs.find((line) => line.includes("graph_context"));
+    expect(graphLine).toBeUndefined();
+    expect(errors.some((msg) => msg.includes("graph_context"))).toBe(false);
+  });
+
+  test("logs error and proceeds when debtStore.latestScan throws", async () => {
+    process.env.GITHUB_APP_ID = "123";
+    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+
+    const logs: string[] = [];
+    const errors: string[] = [];
+
+    const summary = await processAnalyzePullRequestJob(
+      {
+        job_id: "job-debt-error",
+        installation_id: 44,
+        repo_full_name: "acme/widget",
+        pr_number: 50,
+        head_sha: "debterr123",
+        queued_at: "2025-01-01T00:00:00Z",
+      },
+      {
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        fetchPullRequestFn: async () => openPullRequestState,
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => ({
+          findings: [],
+          summary: {
+            totalRules: 0,
+            successfulRules: 0,
+            failedRules: 0,
+            totalFindings: 0,
+            findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          },
+          failedRuleIds: [],
+        }),
+        logInfo: (msg: string) => logs.push(msg),
+        logError: (msg: string) => errors.push(msg),
+        debtStore: {
+          latestScan: () => { throw new Error("SQLite disk I/O error"); },
+          saveScan: () => "scan-id",
+          listScans: () => [],
+          loadScan: () => null,
+          close: () => {},
+        },
+      },
+    );
+
+    expect(summary.jobId).toBe("job-debt-error");
+    const graphSuccessLine = logs.find((line) => line.includes("graph_context"));
+    expect(graphSuccessLine).toBeUndefined();
+    const graphErrorLine = errors.find((line) => line.includes("graph_context_failed"));
+    expect(graphErrorLine).toBeDefined();
+    expect(graphErrorLine).toContain("SQLite disk I/O error");
+    expect(graphErrorLine).toContain("repo=acme/widget");
+  });
+});
