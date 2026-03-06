@@ -71,23 +71,29 @@ ON CONFLICT (repo_full_name, pr_number, finding_id) DO UPDATE SET
   recorded_at = excluded.recorded_at
 `;
 
+const CREATE_UNIQUE_INSTRUCTION_INDEX_SQL = `
+CREATE UNIQUE INDEX IF NOT EXISTS idx_instruction_unique
+  ON repo_instructions (repo_full_name, instruction)
+`;
+
 const INSERT_INSTRUCTION_SQL = `
 INSERT INTO repo_instructions (
   repo_full_name, instruction, rule_id, category,
   source_pr_number, created_at
 ) VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (repo_full_name, instruction) DO UPDATE SET
+  rule_id = excluded.rule_id,
+  category = excluded.category,
+  source_pr_number = excluded.source_pr_number,
+  created_at = excluded.created_at
+WHERE excluded.created_at > repo_instructions.created_at
 `;
 
 const QUERY_INSTRUCTIONS_SQL = `
 SELECT repo_full_name, instruction, rule_id, category,
        source_pr_number, created_at
-FROM (
-  SELECT *,
-    ROW_NUMBER() OVER (PARTITION BY instruction ORDER BY created_at DESC, id DESC) AS rn
-  FROM repo_instructions
-  WHERE repo_full_name = ?
-)
-WHERE rn = 1
+FROM repo_instructions
+WHERE repo_full_name = ?
 ORDER BY created_at DESC, id DESC
 LIMIT 30
 `;
@@ -99,7 +105,7 @@ SELECT
   SUM(thumbs_down) AS thumbs_down,
   COUNT(*) AS total_records
 FROM comment_feedback
-WHERE repo_full_name = ? AND rule_id IS NOT NULL
+WHERE repo_full_name = ?
 GROUP BY rule_id
 HAVING COALESCE(SUM(thumbs_up), 0) + COALESCE(SUM(thumbs_down), 0) >= 3
 ORDER BY thumbs_down DESC, rule_id ASC
@@ -186,8 +192,16 @@ export function openFeedbackStore(databasePath = DEFAULT_DATABASE_PATH): Feedbac
   const database = new Database(databasePath);
   database.run("PRAGMA journal_mode = WAL;");
   database.run(SCHEMA_SQL);
-  database.run(DEDUPLICATE_FEEDBACK_SQL);
-  database.run(CREATE_UNIQUE_INDEX_SQL);
+
+  const feedbackIndexExists = database
+    .query("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_feedback_unique_finding' LIMIT 1")
+    .get();
+  if (!feedbackIndexExists) {
+    database.run(DEDUPLICATE_FEEDBACK_SQL);
+    database.run(CREATE_UNIQUE_INDEX_SQL);
+  }
+
+  database.run(CREATE_UNIQUE_INSTRUCTION_INDEX_SQL);
 
   const insertFeedbackStatement = database.prepare(INSERT_FEEDBACK_SQL);
   const insertManyFeedback = database.transaction((records: readonly FeedbackRecord[]) => {

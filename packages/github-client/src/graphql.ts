@@ -21,6 +21,13 @@ async function paginateGraphqlQuery<T>(
   queryString: string,
   pageExtractor: (data: unknown) => PaginatedPage<T>,
 ): Promise<T[]> {
+  if (!options.owner || !options.repository) {
+    throw new TypeError(`owner and repository must be non-empty strings (got owner="${options.owner}", repository="${options.repository}")`);
+  }
+  if (!Number.isInteger(options.pullRequestNumber) || options.pullRequestNumber <= 0) {
+    throw new TypeError(`pullRequestNumber must be a positive integer (got ${String(options.pullRequestNumber)})`);
+  }
+
   const rawPerPage = options.perPage ?? 100;
   const rawMaxPages = options.maxPages ?? 20;
   if (!Number.isInteger(rawPerPage) || !Number.isInteger(rawMaxPages) || rawPerPage <= 0 || rawMaxPages <= 0) {
@@ -393,6 +400,15 @@ interface RawThreadWithRepliesNode {
   comments?: { nodes?: RawThreadComment[] };
 }
 
+/**
+ * Maps a raw GraphQL comment node to a typed {@link ReviewThreadComment}.
+ *
+ * @remarks
+ * `authorIsBot` is determined by two signals: the GraphQL fragment `... on Bot { id }`
+ * sets `raw.author.id` for GitHub App actors, and the `[bot]` login suffix catches
+ * service accounts (e.g. `github-actions[bot]`) that GitHub represents as User type.
+ * Changes to {@link RawThreadComment} or the GraphQL fragment may require updating this logic.
+ */
 function mapRawComment(raw: RawThreadComment): ReviewThreadComment {
   return {
     body: raw.body ?? "",

@@ -484,6 +484,12 @@ describe("startWorkerProcess", () => {
     expect(feedbackJobIds).toEqual(["fb-1"]);
     expect(analyzeJobIds).toEqual([]);
 
+    runPollCycle?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(feedbackJobIds).toEqual(["fb-1"]);
+
     await processHandle.shutdown();
   });
 

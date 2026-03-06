@@ -99,25 +99,37 @@ describe("processCollectFeedbackJob", () => {
     expect(logs.some((log) => log.includes("feedback_store_unavailable"))).toBe(true);
   });
 
-  test("skips processing when installation_id is null", async () => {
+  test("throws when installation_id is null", async () => {
     const errors: string[] = [];
     const dependencies = baseDependencies({
       logError: (message) => errors.push(message),
     });
 
-    await processCollectFeedbackJob(makeJob({ installation_id: null }), dependencies);
+    let thrownError: unknown;
+    try {
+      await processCollectFeedbackJob(makeJob({ installation_id: null }), dependencies);
+    } catch (error) {
+      thrownError = error;
+    }
 
+    expect(thrownError).toBeInstanceOf(Error);
     expect(errors.some((log) => log.includes("feedback_missing_installation"))).toBe(true);
   });
 
-  test("skips processing when repo_full_name is invalid", async () => {
+  test("throws when repo_full_name is invalid", async () => {
     const errors: string[] = [];
     const dependencies = baseDependencies({
       logError: (message) => errors.push(message),
     });
 
-    await processCollectFeedbackJob(makeJob({ repo_full_name: "invalid" }), dependencies);
+    let thrownError: unknown;
+    try {
+      await processCollectFeedbackJob(makeJob({ repo_full_name: "invalid" }), dependencies);
+    } catch (error) {
+      thrownError = error;
+    }
 
+    expect(thrownError).toBeInstanceOf(Error);
     expect(errors.some((log) => log.includes("invalid repo_full_name"))).toBe(true);
   });
 
@@ -261,5 +273,48 @@ describe("processCollectFeedbackJob", () => {
     }
 
     expect(thrownError).toBeInstanceOf(TypeError);
+  });
+
+  test("propagates TypeError for negative pr_number", async () => {
+    let thrownError: unknown;
+    try {
+      await processCollectFeedbackJob(makeJob({ pr_number: -1 }), baseDependencies());
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(TypeError);
+  });
+
+  test("propagates TypeError for NaN pr_number", async () => {
+    let thrownError: unknown;
+    try {
+      await processCollectFeedbackJob(makeJob({ pr_number: NaN }), baseDependencies());
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(TypeError);
+  });
+
+  test("propagates TypeError for non-integer pr_number", async () => {
+    let thrownError: unknown;
+    try {
+      await processCollectFeedbackJob(makeJob({ pr_number: 3.14 }), baseDependencies());
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(TypeError);
+  });
+
+  test("succeeds with very large pr_number", async () => {
+    const store = makeFeedbackStore();
+    const dependencies = baseDependencies({ feedbackStore: store });
+
+    await processCollectFeedbackJob(
+      makeJob({ pr_number: Number.MAX_SAFE_INTEGER }),
+      dependencies,
+    );
   });
 });

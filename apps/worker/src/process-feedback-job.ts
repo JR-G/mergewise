@@ -136,13 +136,15 @@ export async function processCollectFeedbackJob(
 
   const parsed = parseRepositoryFullName(job.repo_full_name);
   if (!parsed) {
-    errorLogger(`[worker] invalid repo_full_name=${job.repo_full_name} trace=${traceId}`);
-    return;
+    const message = `[worker] invalid repo_full_name=${job.repo_full_name} trace=${traceId}`;
+    errorLogger(message);
+    throw new Error(message);
   }
 
   if (job.installation_id === null) {
-    errorLogger(`[worker] feedback_missing_installation trace=${traceId} job=${job.job_id}`);
-    return;
+    const message = `[worker] feedback_missing_installation trace=${traceId} job=${job.job_id}`;
+    errorLogger(message);
+    throw new Error(message);
   }
 
   const createJwtFn = dependencies.createGitHubAppJwtFn ?? createGitHubAppJwt;
