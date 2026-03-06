@@ -34,15 +34,15 @@ export interface GitHubPullRequestFile {
   /**
    * Optional patch snippet supplied by GitHub.
    */
-  patch?: string;
+  patch?: string | undefined;
   /**
    * Blob URL for the file at the head commit.
    */
-  blob_url?: string;
+  blob_url?: string | undefined;
   /**
    * Raw URL for retrieving file content.
    */
-  raw_url?: string;
+  raw_url?: string | undefined;
 }
 
 /**
@@ -70,13 +70,13 @@ export interface FetchPullRequestFilesOptions extends GitHubApiOptions {
    *
    * @defaultValue `100`
    */
-  perPage?: number;
+  perPage?: number | undefined;
   /**
    * Maximum number of pages to fetch.
    *
    * @defaultValue `20`
    */
-  maxPages?: number;
+  maxPages?: number | undefined;
 }
 
 /**

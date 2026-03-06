@@ -10,12 +10,12 @@ import type { DebtStore } from "./store.ts";
 
 export interface ScanOptions {
   readonly repoPath: string;
-  readonly topCount?: number;
-  readonly skipLlm?: boolean;
-  readonly clientConfig?: ReviewClientConfig;
-  readonly tokenBudget?: number;
-  readonly store?: DebtStore;
-  readonly onProgress?: (stage: string, detail: string) => void;
+  readonly topCount?: number | undefined;
+  readonly skipLlm?: boolean | undefined;
+  readonly clientConfig?: ReviewClientConfig | undefined;
+  readonly tokenBudget?: number | undefined;
+  readonly store?: DebtStore | undefined;
+  readonly onProgress?: ((stage: string, detail: string) => void) | undefined;
 }
 
 const DEFAULT_TOP_COUNT = 20;

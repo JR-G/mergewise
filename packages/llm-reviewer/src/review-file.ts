@@ -21,7 +21,7 @@ export interface ReviewFileOptions {
   readonly pullRequest: PullRequestMetadata;
   readonly codebaseContext: CodebaseContext;
   readonly client: ReviewClient;
-  readonly confidenceThreshold?: number;
+  readonly confidenceThreshold?: number | undefined;
   /**
    * Number of independent LLM samples to run for self-consistency filtering.
    *
@@ -30,11 +30,11 @@ export interface ReviewFileOptions {
    * only findings that appear consistently across the majority of runs
    * are kept. Defaults to 1 (single-shot, current behaviour).
    */
-  readonly consistencySamples?: number;
+  readonly consistencySamples?: number | undefined;
   /**
    * Repository-level learnings injected into the user message as preferences.
    */
-  readonly repoLearnings?: RepoLearnings;
+  readonly repoLearnings?: RepoLearnings | undefined;
 }
 
 /**

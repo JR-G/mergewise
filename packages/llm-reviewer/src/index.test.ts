@@ -1266,10 +1266,10 @@ describe("ReviewClient (via fake HTTP server)", () => {
     await withMockFetch(
       async (request) => {
         const requestBody = await request.json() as Record<string, unknown>;
-        expect(requestBody.model).toBe("test-model");
-        expect(requestBody.temperature).toBe(0.2);
-        expect(requestBody.max_completion_tokens).toBe(1024);
-        const messages = requestBody.messages as { role: string; content: string }[];
+        expect(requestBody["model"]).toBe("test-model");
+        expect(requestBody["temperature"]).toBe(0.2);
+        expect(requestBody["max_completion_tokens"]).toBe(1024);
+        const messages = requestBody["messages"] as { role: string; content: string }[];
         expect(messages).toHaveLength(2);
         expect(messages[0]!.role).toBe("system");
         expect(messages[0]!.content).toBe("system prompt");

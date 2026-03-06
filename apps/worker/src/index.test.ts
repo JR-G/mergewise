@@ -524,16 +524,16 @@ describe("loadConfig", () => {
   });
 
   test("returns defaults when env is unset", () => {
-    delete process.env.WORKER_POLL_INTERVAL_MS;
-    delete process.env.WORKER_MAX_PROCESSED_KEYS;
-    delete process.env.GITHUB_API_BASE_URL;
-    delete process.env.WORKER_GITHUB_USER_AGENT;
-    delete process.env.WORKER_GITHUB_REQUEST_TIMEOUT_MS;
-    delete process.env.WORKER_GITHUB_FETCH_RETRIES;
-    delete process.env.WORKER_GITHUB_RETRY_DELAY_MS;
-    delete process.env.WORKER_FINDING_CONFIDENCE_THRESHOLD;
-    delete process.env.WORKER_FINDING_MAX_COMMENTS;
-    delete process.env.WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD;
+    delete process.env["WORKER_POLL_INTERVAL_MS"];
+    delete process.env["WORKER_MAX_PROCESSED_KEYS"];
+    delete process.env["GITHUB_API_BASE_URL"];
+    delete process.env["WORKER_GITHUB_USER_AGENT"];
+    delete process.env["WORKER_GITHUB_REQUEST_TIMEOUT_MS"];
+    delete process.env["WORKER_GITHUB_FETCH_RETRIES"];
+    delete process.env["WORKER_GITHUB_RETRY_DELAY_MS"];
+    delete process.env["WORKER_FINDING_CONFIDENCE_THRESHOLD"];
+    delete process.env["WORKER_FINDING_MAX_COMMENTS"];
+    delete process.env["WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD"];
 
     const config = loadConfig();
 
@@ -550,43 +550,43 @@ describe("loadConfig", () => {
   });
 
   test("throws for below-minimum poll interval", () => {
-    process.env.WORKER_POLL_INTERVAL_MS = "100";
+    process.env["WORKER_POLL_INTERVAL_MS"] = "100";
     expect(() => loadConfig()).toThrow("Invalid WORKER_POLL_INTERVAL_MS value");
   });
 
   test("throws for below-minimum max keys", () => {
-    delete process.env.WORKER_POLL_INTERVAL_MS;
-    process.env.WORKER_MAX_PROCESSED_KEYS = "50";
+    delete process.env["WORKER_POLL_INTERVAL_MS"];
+    process.env["WORKER_MAX_PROCESSED_KEYS"] = "50";
     expect(() => loadConfig()).toThrow("Invalid WORKER_MAX_PROCESSED_KEYS value");
   });
 
   test("throws for non-numeric poll interval", () => {
-    process.env.WORKER_POLL_INTERVAL_MS = "abc";
+    process.env["WORKER_POLL_INTERVAL_MS"] = "abc";
     expect(() => loadConfig()).toThrow("Invalid WORKER_POLL_INTERVAL_MS value");
   });
 
   test("throws for negative fetch retries", () => {
-    process.env.WORKER_GITHUB_FETCH_RETRIES = "-1";
+    process.env["WORKER_GITHUB_FETCH_RETRIES"] = "-1";
     expect(() => loadConfig()).toThrow("Invalid WORKER_GITHUB_FETCH_RETRIES value");
   });
 
   test("throws for timeout below minimum", () => {
-    process.env.WORKER_GITHUB_REQUEST_TIMEOUT_MS = "50";
+    process.env["WORKER_GITHUB_REQUEST_TIMEOUT_MS"] = "50";
     expect(() => loadConfig()).toThrow("Invalid WORKER_GITHUB_REQUEST_TIMEOUT_MS value");
   });
 
   test("throws for invalid confidence threshold", () => {
-    process.env.WORKER_FINDING_CONFIDENCE_THRESHOLD = "2";
+    process.env["WORKER_FINDING_CONFIDENCE_THRESHOLD"] = "2";
     expect(() => loadConfig()).toThrow("Invalid WORKER_FINDING_CONFIDENCE_THRESHOLD value");
   });
 
   test("throws for invalid max comments", () => {
-    process.env.WORKER_FINDING_MAX_COMMENTS = "0";
+    process.env["WORKER_FINDING_MAX_COMMENTS"] = "0";
     expect(() => loadConfig()).toThrow("Invalid WORKER_FINDING_MAX_COMMENTS value");
   });
 
   test("throws for invalid test file confidence threshold", () => {
-    process.env.WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD = "1.2";
+    process.env["WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD"] = "1.2";
     expect(() => loadConfig()).toThrow(
       "Invalid WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD value",
     );

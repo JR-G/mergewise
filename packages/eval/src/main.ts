@@ -21,7 +21,7 @@ if (!Number.isFinite(runCount) || runCount < 1) {
   process.exit(1);
 }
 
-const apiKey = process.env.LLM_EVAL_API_KEY;
+const apiKey = process.env["LLM_EVAL_API_KEY"];
 if (!apiKey) {
   console.error("LLM_EVAL_API_KEY is required");
   process.exit(1);
@@ -29,8 +29,8 @@ if (!apiKey) {
 
 const baseClientConfig: ReviewClientConfig = {
   apiKey,
-  baseUrl: process.env.LLM_EVAL_BASE_URL,
-  model: process.env.LLM_EVAL_MODEL ?? "gpt-4o",
+  baseUrl: process.env["LLM_EVAL_BASE_URL"],
+  model: process.env["LLM_EVAL_MODEL"] ?? "gpt-4o",
 };
 
 const BUILT_IN_VARIANTS: readonly EvalVariant[] = [

@@ -10,13 +10,13 @@ import type { WorkerGitHubFetchOptions } from "./config";
 const originalEnv = { ...process.env };
 
 beforeAll(() => {
-  process.env.GITHUB_APP_ID = "12345";
-  process.env.GITHUB_APP_PRIVATE_KEY = "fake-pem-key-for-tests";
+  process.env["GITHUB_APP_ID"] = "12345";
+  process.env["GITHUB_APP_PRIVATE_KEY"] = "fake-pem-key-for-tests";
 });
 
 afterAll(() => {
-  process.env.GITHUB_APP_ID = originalEnv.GITHUB_APP_ID;
-  process.env.GITHUB_APP_PRIVATE_KEY = originalEnv.GITHUB_APP_PRIVATE_KEY;
+  process.env["GITHUB_APP_ID"] = originalEnv["GITHUB_APP_ID"];
+  process.env["GITHUB_APP_PRIVATE_KEY"] = originalEnv["GITHUB_APP_PRIVATE_KEY"];
 });
 
 function makeJob(overrides: Partial<CollectFeedbackJob> = {}): CollectFeedbackJob {
@@ -89,10 +89,10 @@ function baseDependencies(
 describe("processCollectFeedbackJob", () => {
   test("skips processing when feedbackStore is unavailable", async () => {
     const logs: string[] = [];
-    const dependencies = baseDependencies({
-      feedbackStore: undefined,
+    const { feedbackStore: _, ...withoutStore } = baseDependencies({
       logInfo: (message) => logs.push(message),
     });
+    const dependencies = withoutStore;
 
     await processCollectFeedbackJob(makeJob(), dependencies);
 

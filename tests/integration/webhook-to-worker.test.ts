@@ -76,10 +76,10 @@ describe("webhook-to-worker pipeline", () => {
     const jobs = readAllAnalyzePullRequestJobs(queuePath);
     expect(jobs).toHaveLength(1);
 
-    const previousAppId = process.env.GITHUB_APP_ID;
-    const previousPrivateKey = process.env.GITHUB_APP_PRIVATE_KEY;
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "private-key-placeholder";
+    const previousAppId = process.env["GITHUB_APP_ID"];
+    const previousPrivateKey = process.env["GITHUB_APP_PRIVATE_KEY"];
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "private-key-placeholder";
 
     let summary: Awaited<ReturnType<typeof processAnalyzePullRequestJob>>;
     try {
@@ -118,15 +118,15 @@ describe("webhook-to-worker pipeline", () => {
       });
     } finally {
       if (previousAppId === undefined) {
-        delete process.env.GITHUB_APP_ID;
+        delete process.env["GITHUB_APP_ID"];
       } else {
-        process.env.GITHUB_APP_ID = previousAppId;
+        process.env["GITHUB_APP_ID"] = previousAppId;
       }
 
       if (previousPrivateKey === undefined) {
-        delete process.env.GITHUB_APP_PRIVATE_KEY;
+        delete process.env["GITHUB_APP_PRIVATE_KEY"];
       } else {
-        process.env.GITHUB_APP_PRIVATE_KEY = previousPrivateKey;
+        process.env["GITHUB_APP_PRIVATE_KEY"] = previousPrivateKey;
       }
     }
 

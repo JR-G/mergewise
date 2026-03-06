@@ -95,7 +95,7 @@ export async function loadFixture(
 function isValidFileDiff(value: unknown): value is FileDiff {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return typeof candidate.filePath === "string" && Array.isArray(candidate.hunks);
+  return typeof candidate["filePath"] === "string" && Array.isArray(candidate["hunks"]);
 }
 
 function isValidExpectedFinding(
@@ -104,8 +104,8 @@ function isValidExpectedFinding(
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
   return (
-    typeof candidate.description === "string" &&
-    typeof candidate.required === "boolean"
+    typeof candidate["description"] === "string" &&
+    typeof candidate["required"] === "boolean"
   );
 }
 

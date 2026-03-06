@@ -60,14 +60,14 @@ export interface Finding {
   /** Actionable recommendation describing the suggested change. */
   readonly recommendation: string;
   /** Optional structured patch preview for inline suggestions. */
-  readonly patchPreview?: PatchPreview;
+  readonly patchPreview?: PatchPreview | undefined;
   /**
    * Optional patch suggestion policy set by rule authors.
    *
    * @remarks
    * When omitted, the runner derives a policy from `patchPreview`.
    */
-  readonly patchSuggestionPolicy?: PatchSuggestionPolicy;
+  readonly patchSuggestionPolicy?: PatchSuggestionPolicy | undefined;
   /** Confidence score between 0 and 1 inclusive. */
   readonly confidence: number;
   /** Current lifecycle status of the finding. */

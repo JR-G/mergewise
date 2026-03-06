@@ -67,7 +67,7 @@ function buildLlmRules(
   repoLearnings?: RepoLearnings,
 ): readonly Rule[] {
   const llmConfig = mergewiseConfig.llm;
-  const llmApiKey = process.env.LLM_API_KEY;
+  const llmApiKey = process.env["LLM_API_KEY"];
   const llmEnabled = llmConfig.enabled && llmApiKey !== undefined && llmApiKey.length > 0;
 
   if (!llmEnabled || !llmApiKey) {

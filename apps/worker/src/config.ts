@@ -89,25 +89,25 @@ export interface WorkerGitHubFetchOptions {
  * @returns Validated worker configuration.
  */
 export function loadConfig(): WorkerConfig {
-  const pollRaw = process.env.WORKER_POLL_INTERVAL_MS ?? "3000";
+  const pollRaw = process.env["WORKER_POLL_INTERVAL_MS"] ?? "3000";
   const pollIntervalMs = Number.parseInt(pollRaw, 10);
-  const maxKeysRaw = process.env.WORKER_MAX_PROCESSED_KEYS ?? "10000";
+  const maxKeysRaw = process.env["WORKER_MAX_PROCESSED_KEYS"] ?? "10000";
   const maxProcessedKeys = Number.parseInt(maxKeysRaw, 10);
-  const githubApiBaseUrl = process.env.GITHUB_API_BASE_URL ?? "https://api.github.com";
-  const githubUserAgent = process.env.WORKER_GITHUB_USER_AGENT ?? "mergewise-worker";
-  const timeoutRaw = process.env.WORKER_GITHUB_REQUEST_TIMEOUT_MS ?? "10000";
+  const githubApiBaseUrl = process.env["GITHUB_API_BASE_URL"] ?? "https://api.github.com";
+  const githubUserAgent = process.env["WORKER_GITHUB_USER_AGENT"] ?? "mergewise-worker";
+  const timeoutRaw = process.env["WORKER_GITHUB_REQUEST_TIMEOUT_MS"] ?? "10000";
   const githubRequestTimeoutMs = Number.parseInt(timeoutRaw, 10);
-  const retriesRaw = process.env.WORKER_GITHUB_FETCH_RETRIES ?? "2";
+  const retriesRaw = process.env["WORKER_GITHUB_FETCH_RETRIES"] ?? "2";
   const githubFetchRetries = Number.parseInt(retriesRaw, 10);
-  const retryDelayRaw = process.env.WORKER_GITHUB_RETRY_DELAY_MS ?? "250";
+  const retryDelayRaw = process.env["WORKER_GITHUB_RETRY_DELAY_MS"] ?? "250";
   const githubRetryDelayMs = Number.parseInt(retryDelayRaw, 10);
   const confidenceThresholdRaw =
-    process.env.WORKER_FINDING_CONFIDENCE_THRESHOLD ?? "0.78";
+    process.env["WORKER_FINDING_CONFIDENCE_THRESHOLD"] ?? "0.78";
   const confidenceThreshold = Number.parseFloat(confidenceThresholdRaw);
-  const maxCommentsRaw = process.env.WORKER_FINDING_MAX_COMMENTS ?? "5";
+  const maxCommentsRaw = process.env["WORKER_FINDING_MAX_COMMENTS"] ?? "5";
   const maxComments = Number.parseInt(maxCommentsRaw, 10);
   const testFileConfidenceThresholdRaw =
-    process.env.WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD ??
+    process.env["WORKER_FINDING_TEST_FILE_CONFIDENCE_THRESHOLD"] ??
     String(DEFAULT_TEST_FILE_CONFIDENCE_THRESHOLD);
   const testFileConfidenceThreshold = Number.parseFloat(testFileConfidenceThresholdRaw);
 

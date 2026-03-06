@@ -47,7 +47,7 @@ function isAnalyzePullRequestJob(value: unknown): value is AnalyzePullRequestJob
     return false;
   }
 
-  const rawType = (value as Record<string, unknown>).type;
+  const rawType = (value as Record<string, unknown>)["type"];
   if (rawType !== undefined && rawType !== "analyze-pull-request") {
     return false;
   }

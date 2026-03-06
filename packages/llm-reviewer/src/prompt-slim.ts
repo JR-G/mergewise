@@ -115,8 +115,8 @@ export interface DynamicPromptInput {
   readonly fullContent: string | null;
   readonly signals: StructuralSignals;
   readonly knowledge: readonly KnowledgeDocument[];
-  readonly graphContext?: FileGraphContext;
-  readonly learnings?: ReviewLearnings;
+  readonly graphContext?: FileGraphContext | undefined;
+  readonly learnings?: ReviewLearnings | undefined;
 }
 
 /**

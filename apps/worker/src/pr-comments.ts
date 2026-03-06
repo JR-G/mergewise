@@ -34,7 +34,7 @@ export interface ExistingCommentState {
    * All fetched comments (summary + inline review thread) for downstream feedback extraction.
    * Reactions are only available on summary comments; review thread entries have no reactions.
    */
-  readonly allComments: readonly { readonly body: string; readonly reactions?: GitHubReactionCounts }[];
+  readonly allComments: readonly { readonly body: string; readonly reactions?: GitHubReactionCounts | undefined }[];
   /**
    * Dedupe keys belonging to inline comments that GitHub has marked as outdated
    * (the anchored code changed since the comment was posted).
@@ -57,21 +57,21 @@ export interface PostedCommentRequestOptions {
   /** Markdown body sent to GitHub. */
   readonly body: string;
   /** GitHub API base URL. */
-  readonly apiBaseUrl?: string;
+  readonly apiBaseUrl?: string | undefined;
   /** GitHub API user agent. */
-  readonly userAgent?: string;
+  readonly userAgent?: string | undefined;
   /** Request timeout in milliseconds. */
-  readonly requestTimeoutMs?: number;
+  readonly requestTimeoutMs?: number | undefined;
   /** Optional end-to-end trace identifier for observability. */
-  readonly traceId?: string;
+  readonly traceId?: string | undefined;
   /** Inline path for review comments when available. */
-  readonly path?: string;
+  readonly path?: string | undefined;
   /** Inline line for review comments when available. */
-  readonly line?: number;
+  readonly line?: number | undefined;
   /** Commit SHA used for inline anchors when available. */
-  readonly commitId?: string;
+  readonly commitId?: string | undefined;
   /** Posted mode for diagnostics. */
-  readonly mode?: "inline" | "summary";
+  readonly mode?: ("inline" | "summary") | undefined;
 }
 
 /**
@@ -98,8 +98,8 @@ export interface PostedFindingCommentSuccess {
     readonly id: number;
     readonly html_url: string;
     readonly body: string;
-    readonly path?: string;
-    readonly line?: number;
+    readonly path?: string | undefined;
+    readonly line?: number | undefined;
   } | null;
 }
 
@@ -202,18 +202,18 @@ interface PostFindingCommentsOptions {
 }
 
 interface PostFindingCommentsDependencies {
-  readonly logError?: (message: string) => void;
-  readonly logInfo?: (message: string) => void;
-  readonly listPullRequestSummaryCommentsFn?: (
+  readonly logError?: ((message: string) => void) | undefined;
+  readonly logInfo?: ((message: string) => void) | undefined;
+  readonly listPullRequestSummaryCommentsFn?: ((
     options: ListPullRequestCommentsOptions,
-  ) => Promise<GitHubIssueComment[]>;
-  readonly listPullRequestReviewThreadsFn?: (
+  ) => Promise<GitHubIssueComment[]>) | undefined;
+  readonly listPullRequestReviewThreadsFn?: ((
     options: ListPullRequestReviewThreadsOptions,
-  ) => Promise<ReviewThread[]>;
-  readonly createPullRequestReviewFn?: (
+  ) => Promise<ReviewThread[]>) | undefined;
+  readonly createPullRequestReviewFn?: ((
     options: CreatePullRequestReviewOptions,
-  ) => Promise<GitHubPullRequestReview>;
-  readonly existingDedupeKeys?: Set<string>;
+  ) => Promise<GitHubPullRequestReview>) | undefined;
+  readonly existingDedupeKeys?: Set<string> | undefined;
 }
 
 function filterByExistingDedupeKeys(
@@ -388,11 +388,11 @@ export async function resolveOutdatedComments(
     readonly githubFetchOptions: WorkerGitHubFetchOptions;
   },
   dependencies?: {
-    readonly resolveReviewThreadFn?: (
+    readonly resolveReviewThreadFn?: ((
       opts: ResolveReviewThreadOptions,
-    ) => Promise<ResolveReviewThreadResult>;
-    readonly logInfo?: (message: string) => void;
-    readonly logError?: (message: string) => void;
+    ) => Promise<ResolveReviewThreadResult>) | undefined;
+    readonly logInfo?: ((message: string) => void) | undefined;
+    readonly logError?: ((message: string) => void) | undefined;
   },
 ): Promise<{ resolvedCount: number; failedCount: number; resolvedOutdatedDedupeKeys: Set<string> }> {
   const resolveReviewThreadFn = dependencies?.resolveReviewThreadFn ?? resolveReviewThread;
@@ -445,7 +445,7 @@ export async function resolveOutdatedComments(
 interface DedupeKeyAccumulator {
   readonly dedupeKeys: Set<string>;
   readonly dedupeKeyToThreadId: Map<string, string>;
-  readonly allComments: { body: string; reactions?: GitHubReactionCounts }[];
+  readonly allComments: { body: string; reactions?: GitHubReactionCounts | undefined }[];
   readonly outdatedDedupeKeys: Set<string>;
 }
 
@@ -580,7 +580,7 @@ export function extractDedupeKeyFromCommentBody(commentBody: string | undefined)
  * @returns Feedback summary with per-comment records for reacted comments.
  */
 export function collectCommentFeedback(
-  comments: readonly { readonly body: string; readonly reactions?: GitHubReactionCounts }[],
+  comments: readonly { readonly body: string; readonly reactions?: GitHubReactionCounts | undefined }[],
 ): CommentFeedbackSummary {
   const records: CommentFeedbackRecord[] = [];
   let totalComments = 0;

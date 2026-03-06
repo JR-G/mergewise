@@ -35,19 +35,19 @@ export interface CreateCheckRunOptions extends GitHubApiOptions {
    *
    * @defaultValue `"completed"`
    */
-  status?: "queued" | "in_progress" | "completed";
+  status?: "queued" | "in_progress" | "completed" | undefined;
   /**
    * Check run conclusion. Required when status is "completed".
    */
-  conclusion?: "success" | "failure" | "neutral";
+  conclusion?: "success" | "failure" | "neutral" | undefined;
   /**
    * Structured output displayed in the check run details.
    */
   output?: {
     readonly title: string;
     readonly summary: string;
-    readonly text?: string;
-  };
+    readonly text?: string | undefined;
+  } | undefined;
 }
 
 /**
@@ -77,15 +77,15 @@ export interface UpdateCheckRunOptions extends GitHubApiOptions {
   /**
    * Check run conclusion. Required when status is "completed".
    */
-  conclusion?: "success" | "failure" | "neutral";
+  conclusion?: "success" | "failure" | "neutral" | undefined;
   /**
    * Structured output displayed in the check run details.
    */
   output?: {
     readonly title: string;
     readonly summary: string;
-    readonly text?: string;
-  };
+    readonly text?: string | undefined;
+  } | undefined;
 }
 
 /**
@@ -134,10 +134,10 @@ export async function createCheckRun(
     status: options.status ?? "completed",
   };
   if (options.conclusion !== undefined) {
-    requestBody.conclusion = options.conclusion;
+    requestBody["conclusion"] = options.conclusion;
   }
   if (options.output !== undefined) {
-    requestBody.output = options.output;
+    requestBody["output"] = options.output;
   }
   const response = await fetch(endpointUrl, {
     method: "POST",
@@ -175,10 +175,10 @@ export async function updateCheckRun(
     status: options.status,
   };
   if (options.conclusion !== undefined) {
-    requestBody.conclusion = options.conclusion;
+    requestBody["conclusion"] = options.conclusion;
   }
   if (options.output !== undefined) {
-    requestBody.output = options.output;
+    requestBody["output"] = options.output;
   }
   const response = await fetch(endpointUrl, {
     method: "PATCH",

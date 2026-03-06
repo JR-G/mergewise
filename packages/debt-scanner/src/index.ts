@@ -101,9 +101,9 @@ function parseCliArgs(): ParsedArgs {
     dbPath: resolve(values.db),
     compare: values.compare,
     history: values.history,
-    apiKey: values["api-key"] ?? process.env.LLM_EVAL_API_KEY ?? process.env.OPENAI_API_KEY,
-    model: values.model ?? process.env.LLM_EVAL_MODEL,
-    baseUrl: values["base-url"] ?? process.env.LLM_EVAL_BASE_URL,
+    apiKey: values["api-key"] ?? process.env["LLM_EVAL_API_KEY"] ?? process.env["OPENAI_API_KEY"],
+    model: values.model ?? process.env["LLM_EVAL_MODEL"],
+    baseUrl: values["base-url"] ?? process.env["LLM_EVAL_BASE_URL"],
   };
 }
 
@@ -111,7 +111,7 @@ function buildJsonOutput(profile: DebtProfile, comparison: ScanComparison | null
   const payload: Record<string, unknown> = {
     report: JSON.parse(formatJsonReport(profile)) as unknown,
   };
-  if (comparison) payload.comparison = JSON.parse(formatComparisonJson(comparison)) as unknown;
+  if (comparison) payload["comparison"] = JSON.parse(formatComparisonJson(comparison)) as unknown;
   return JSON.stringify(payload, null, 2);
 }
 

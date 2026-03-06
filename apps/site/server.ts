@@ -47,7 +47,7 @@ function buildNotFoundResponse(): Response {
   return new Response("Not Found", { status: 404 });
 }
 
-const serverPort = Number.parseInt(process.env.SITE_PORT ?? "4173", 10);
+const serverPort = Number.parseInt(process.env["SITE_PORT"] ?? "4173", 10);
 
 Bun.serve({
   port: Number.isNaN(serverPort) ? 4173 : serverPort,

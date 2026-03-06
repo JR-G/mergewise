@@ -22,8 +22,8 @@ describe("processAnalyzePullRequestJob", () => {
   });
 
   test("successful fetch feeds rule execution and returns deterministic summary", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     const capturedContexts: unknown[] = [];
 
@@ -98,8 +98,8 @@ describe("processAnalyzePullRequestJob", () => {
   });
 
   test("non-retryable GitHub fetch failure is surfaced", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     let thrownError: unknown;
     try {
@@ -132,9 +132,9 @@ describe("processAnalyzePullRequestJob", () => {
   });
 
   test("supports legacy GITHUB_APP_PRIVATE_KEY_PEM when new key name is unset", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    delete process.env.GITHUB_APP_PRIVATE_KEY;
-    process.env.GITHUB_APP_PRIVATE_KEY_PEM = "legacy-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    delete process.env["GITHUB_APP_PRIVATE_KEY"];
+    process.env["GITHUB_APP_PRIVATE_KEY_PEM"] = "legacy-private-key";
 
     const summary = await processAnalyzePullRequestJob(
       {
@@ -179,14 +179,14 @@ describe("processAnalyzePullRequestJob", () => {
   });
 
   test("supports GITHUB_APP_PRIVATE_KEY_PATH when inline key vars are unset", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    delete process.env.GITHUB_APP_PRIVATE_KEY;
-    delete process.env.GITHUB_APP_PRIVATE_KEY_PEM;
+    process.env["GITHUB_APP_ID"] = "123";
+    delete process.env["GITHUB_APP_PRIVATE_KEY"];
+    delete process.env["GITHUB_APP_PRIVATE_KEY_PEM"];
 
     const temporaryDirectoryPath = mkdtempSync(join(tmpdir(), "mergewise-worker-test-"));
     const privateKeyPath = join(temporaryDirectoryPath, "private-key.pem");
     writeFileSync(privateKeyPath, "path-private-key\n");
-    process.env.GITHUB_APP_PRIVATE_KEY_PATH = privateKeyPath;
+    process.env["GITHUB_APP_PRIVATE_KEY_PATH"] = privateKeyPath;
 
     try {
       const summary = await processAnalyzePullRequestJob(
@@ -230,15 +230,15 @@ describe("processAnalyzePullRequestJob", () => {
       expect(summary.jobId).toBe("job-path-key");
     } finally {
       rmSync(temporaryDirectoryPath, { recursive: true, force: true });
-      delete process.env.GITHUB_APP_PRIVATE_KEY_PATH;
+      delete process.env["GITHUB_APP_PRIVATE_KEY_PATH"];
     }
   });
 
   test("invalid GITHUB_APP_PRIVATE_KEY_PATH surfaces explicit error", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    delete process.env.GITHUB_APP_PRIVATE_KEY;
-    delete process.env.GITHUB_APP_PRIVATE_KEY_PEM;
-    process.env.GITHUB_APP_PRIVATE_KEY_PATH = "/tmp/mergewise-missing-private-key.pem";
+    process.env["GITHUB_APP_ID"] = "123";
+    delete process.env["GITHUB_APP_PRIVATE_KEY"];
+    delete process.env["GITHUB_APP_PRIVATE_KEY_PEM"];
+    process.env["GITHUB_APP_PRIVATE_KEY_PATH"] = "/tmp/mergewise-missing-private-key.pem";
 
     let thrownError: unknown;
     try {
@@ -285,12 +285,12 @@ describe("processAnalyzePullRequestJob", () => {
     expect(thrownError).toBeInstanceOf(Error);
     expect((thrownError as Error).message).toContain("[worker] failed to read GITHUB_APP_PRIVATE_KEY_PATH");
 
-    delete process.env.GITHUB_APP_PRIVATE_KEY_PATH;
+    delete process.env["GITHUB_APP_PRIVATE_KEY_PATH"];
   });
 
   test("invalid GITHUB_APP_ID surfaces explicit error", async () => {
-    process.env.GITHUB_APP_ID = "not-a-number";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "not-a-number";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     let thrownError: unknown;
     try {
@@ -339,8 +339,8 @@ describe("processAnalyzePullRequestJob", () => {
   });
 
   test("applies config-driven rule include/exclude selection", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     const capturedRuleIds: string[][] = [];
     const rules = [createRule("rule-a"), createRule("rule-b"), createRule("rule-c")];
@@ -413,8 +413,8 @@ describe("processAnalyzePullRequestJob", () => {
   });
 
   test("applies confidence gating to execution summary and delivery cap separately", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     const summary = await processAnalyzePullRequestJob(
       {
@@ -486,8 +486,8 @@ describe("processAnalyzePullRequestJob", () => {
   });
 
   test("creates in-progress check run then updates to completed when deliveryMode is github", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     let capturedInProgressCreate: Record<string, unknown> | null = null;
     let capturedCompletedUpdate: Record<string, unknown> | null = null;
@@ -549,18 +549,18 @@ describe("processAnalyzePullRequestJob", () => {
     );
 
     expect(capturedInProgressCreate).not.toBeNull();
-    expect(capturedInProgressCreate!.owner).toBe("acme");
-    expect(capturedInProgressCreate!.name).toBe("Mergewise");
-    expect(capturedInProgressCreate!.status).toBe("in_progress");
+    expect(capturedInProgressCreate!["owner"]).toBe("acme");
+    expect(capturedInProgressCreate!["name"]).toBe("Mergewise");
+    expect(capturedInProgressCreate!["status"]).toBe("in_progress");
     expect(capturedCompletedUpdate).not.toBeNull();
-    expect(capturedCompletedUpdate!.checkRunId).toBe(42);
-    expect(capturedCompletedUpdate!.status).toBe("completed");
-    expect(capturedCompletedUpdate!.conclusion).toBe("success");
+    expect(capturedCompletedUpdate!["checkRunId"]).toBe(42);
+    expect(capturedCompletedUpdate!["status"]).toBe("completed");
+    expect(capturedCompletedUpdate!["conclusion"]).toBe("success");
   });
 
   test("updates existing check run instead of creating when check_run_id is present on job", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     let createCheckRunCalled = false;
     const capturedUpdates: Record<string, unknown>[] = [];
@@ -617,22 +617,22 @@ describe("processAnalyzePullRequestJob", () => {
     expect(createCheckRunCalled).toBe(false);
     expect(
       capturedUpdates.some(
-        (update) => update.checkRunId === 99 && update.status === "in_progress",
+        (update) => update["checkRunId"] === 99 && update["status"] === "in_progress",
       ),
     ).toBe(true);
     expect(
       capturedUpdates.some(
         (update) =>
-          update.checkRunId === 99 &&
-          update.status === "completed" &&
-          update.conclusion === "success",
+          update["checkRunId"] === 99 &&
+          update["status"] === "completed" &&
+          update["conclusion"] === "success",
       ),
     ).toBe(true);
   });
 
   test("skips check run creation when deliveryMode is not github", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     let checkRunCalled = false;
     await processAnalyzePullRequestJob(
@@ -676,8 +676,8 @@ describe("processAnalyzePullRequestJob", () => {
   });
 
   test("continues gracefully when check run creation fails", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     const errors: string[] = [];
     const summary = await processAnalyzePullRequestJob(
@@ -727,8 +727,8 @@ describe("processAnalyzePullRequestJob", () => {
   });
 
   test("skips review submission when there are zero inline comments", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     let reviewCalled = false;
     await processAnalyzePullRequestJob(
@@ -802,8 +802,8 @@ describe("processAnalyzePullRequestJob", () => {
   });
 
   test("skips processing when PR is closed", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     let executeRulesCalled = false;
     const logs: string[] = [];
@@ -857,8 +857,8 @@ describe("processAnalyzePullRequestJob", () => {
   });
 
   test("completes queued check run when PR is closed and check_run_id exists", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     let capturedUpdate: Record<string, unknown> | null = null;
     await processAnalyzePullRequestJob(
@@ -910,14 +910,14 @@ describe("processAnalyzePullRequestJob", () => {
     );
 
     expect(capturedUpdate).not.toBeNull();
-    expect(capturedUpdate!.checkRunId).toBe(200);
-    expect(capturedUpdate!.status).toBe("completed");
-    expect(capturedUpdate!.conclusion).toBe("neutral");
+    expect(capturedUpdate!["checkRunId"]).toBe(200);
+    expect(capturedUpdate!["status"]).toBe("completed");
+    expect(capturedUpdate!["conclusion"]).toBe("neutral");
   });
 
   test("skips processing when PR is merged", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     let executeRulesCalled = false;
     const summary = await processAnalyzePullRequestJob(
@@ -967,8 +967,8 @@ describe("processAnalyzePullRequestJob", () => {
   });
 
   test("continues processing when PR is open", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     let executeRulesCalled = false;
     const summary = await processAnalyzePullRequestJob(
@@ -1019,8 +1019,8 @@ describe("processAnalyzePullRequestJob", () => {
   });
 
   test("resolves outdated threads before posting new ones in github delivery mode", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     const resolvedThreadIds: string[] = [];
     const finding = createFinding("finding-new", 0.95, "clean");
@@ -1104,8 +1104,8 @@ describe("processAnalyzePullRequestJob", () => {
   });
 
   test("transitions queued check run to failure when fetchPullRequest throws", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     let capturedCheckRunUpdate: Record<string, unknown> | null = null;
     let thrownError: unknown;
@@ -1155,9 +1155,9 @@ describe("processAnalyzePullRequestJob", () => {
 
     expect(thrownError).toBeInstanceOf(GitHubApiError);
     expect(capturedCheckRunUpdate).not.toBeNull();
-    expect(capturedCheckRunUpdate!.checkRunId).toBe(777);
-    expect(capturedCheckRunUpdate!.status).toBe("completed");
-    expect(capturedCheckRunUpdate!.conclusion).toBe("failure");
+    expect(capturedCheckRunUpdate!["checkRunId"]).toBe(777);
+    expect(capturedCheckRunUpdate!["status"]).toBe("completed");
+    expect(capturedCheckRunUpdate!["conclusion"]).toBe("failure");
   });
 });
 
@@ -1169,8 +1169,8 @@ describe("processAnalyzePullRequestJob feedback logging", () => {
   });
 
   test("emits feedback_summary when existing comments have reactions", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     const logs: string[] = [];
 
@@ -1244,8 +1244,8 @@ describe("processAnalyzePullRequestJob feedback logging", () => {
   });
 
   test("suppresses feedback_summary log when no mergewise comments exist", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     const logs: string[] = [];
 

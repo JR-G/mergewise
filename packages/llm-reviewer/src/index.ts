@@ -61,7 +61,7 @@ function noop(): void {
  */
 export interface LlmReviewerConfig {
   readonly clientConfig: ReviewClientConfig;
-  readonly tokenBudget?: number;
+  readonly tokenBudget?: number | undefined;
   /**
    * Glob patterns for files to exclude from LLM review.
    *
@@ -69,8 +69,8 @@ export interface LlmReviewerConfig {
    * Matched against file paths alongside built-in skip patterns.
    * When omitted, only built-in patterns apply.
    */
-  readonly userSkipPatterns?: readonly string[];
-  readonly confidenceThreshold?: number;
+  readonly userSkipPatterns?: readonly string[] | undefined;
+  readonly confidenceThreshold?: number | undefined;
   /**
    * Number of independent LLM samples for self-consistency filtering.
    *
@@ -79,39 +79,39 @@ export interface LlmReviewerConfig {
    * temperature and only findings appearing in the majority of runs
    * are kept. Defaults to 1 (single-shot).
    */
-  readonly consistencySamples?: number;
+  readonly consistencySamples?: number | undefined;
   /**
    * Repository-level learnings to inject as review preferences.
    */
-  readonly repoLearnings?: RepoLearnings;
+  readonly repoLearnings?: RepoLearnings | undefined;
   /**
    * When true, uses the three-stage pipeline (triage → review → critic)
    * instead of the single-shot per-file review.
    */
-  readonly usePipeline?: boolean;
+  readonly usePipeline?: boolean | undefined;
   /**
    * Model identifier for the triage and critic stages.
    *
    * @remarks
    * Should be a fast, cheap model. Only used when `usePipeline` is true.
    */
-  readonly triageModel?: string;
+  readonly triageModel?: string | undefined;
   /**
    * Model identifier for the critic stage.
    *
    * @remarks
    * Defaults to `triageModel` if omitted. Only used when `usePipeline` is true.
    */
-  readonly criticModel?: string;
+  readonly criticModel?: string | undefined;
   /**
    * Optional tools for enriching review context (graph, learnings).
    *
    * @remarks
    * Only used when `usePipeline` is true.
    */
-  readonly toolkit?: ReviewToolkit;
-  readonly onFileReviewError?: (filePath: string, error: unknown) => void;
-  readonly onFileReviewComplete?: (filePath: string, findingCount: number, promptTokens: number, completionTokens: number) => void;
+  readonly toolkit?: ReviewToolkit | undefined;
+  readonly onFileReviewError?: ((filePath: string, error: unknown) => void) | undefined;
+  readonly onFileReviewComplete?: ((filePath: string, findingCount: number, promptTokens: number, completionTokens: number) => void) | undefined;
 }
 
 /**

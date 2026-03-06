@@ -45,7 +45,7 @@ export interface PrSummaryInput {
   /** Number of rules that completed without errors. */
   readonly rulesPassed: number;
   /** Delivery skip counters for the collapsed review details section. */
-  readonly deliveryCounters?: DeliveryCounters;
+  readonly deliveryCounters?: DeliveryCounters | undefined;
 }
 
 export const CATEGORY_EMOJI: Readonly<Record<FindingCategory, string>> = {
@@ -473,17 +473,17 @@ export async function upsertPrSummaryComment(
     readonly githubFetchOptions: WorkerGitHubFetchOptions;
   },
   dependencies: {
-    readonly listPullRequestSummaryCommentsFn?: (
+    readonly listPullRequestSummaryCommentsFn?: ((
       opts: ListPullRequestCommentsOptions,
-    ) => Promise<GitHubIssueComment[]>;
-    readonly postPullRequestSummaryCommentFn?: (
+    ) => Promise<GitHubIssueComment[]>) | undefined;
+    readonly postPullRequestSummaryCommentFn?: ((
       opts: PostPullRequestSummaryCommentOptions,
-    ) => Promise<GitHubIssueComment>;
-    readonly updateIssueCommentFn?: (
+    ) => Promise<GitHubIssueComment>) | undefined;
+    readonly updateIssueCommentFn?: ((
       opts: UpdateIssueCommentOptions,
-    ) => Promise<GitHubIssueComment>;
-    readonly logInfo?: (message: string) => void;
-    readonly logError?: (message: string) => void;
+    ) => Promise<GitHubIssueComment>) | undefined;
+    readonly logInfo?: ((message: string) => void) | undefined;
+    readonly logError?: ((message: string) => void) | undefined;
   } = {},
 ): Promise<GitHubIssueComment> {
   const listFn = dependencies.listPullRequestSummaryCommentsFn ?? listPullRequestSummaryComments;
