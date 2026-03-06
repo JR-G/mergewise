@@ -29,6 +29,25 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("not a code issue");
   });
 
+  test("instructs LLM to respect documented design decisions", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("Documented design decisions");
+    expect(prompt).toContain("documented rationale");
+  });
+
+  test("frames anti-pattern catalogue as a recognition aid", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("recognition aid");
+    expect(prompt).toContain("confirm");
+    expect(prompt).not.toContain("Use this table to recognise");
+  });
+
+  test("includes multi-finding breadth example (Example H)", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("Example H");
+    expect(prompt).toContain("StatusDashboard");
+  });
+
   test("includes switch-on-type pattern in the default prompt", () => {
     const prompt = buildSystemPrompt();
     expect(prompt).toContain("switch-on-type");
@@ -51,6 +70,44 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain(
       ".on(), .addEventListener(), or .subscribe() calls on the same target scattered across a function body",
     );
+  });
+
+  test("does not use SRP as a parenthetical suffix in positive examples", () => {
+    const prompt = buildSystemPrompt();
+    const correctOutputSections = prompt.split("Correct output:").slice(1);
+    for (const section of correctOutputSections) {
+      const jsonPart = section.split("`")[1] ?? "";
+      expect(jsonPart).not.toContain("(SRP)");
+    }
+  });
+
+  test("requires concrete engineering cost in recommendation spec", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("concrete engineering cost");
+    expect(prompt).toContain("explain the cost first");
+  });
+
+  test("includes negative few-shot examples for orchestrators and helpers", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("Negative examples");
+    expect(prompt).toContain("orchestrator function (correct output is empty)");
+    expect(prompt).toContain("already-extracted helper (correct output is empty)");
+    expect(prompt).toContain("module-level constants (correct output is empty)");
+  });
+
+  test("includes anti-instructions for orchestrator and wrapper patterns", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("orchestrator, pipeline, or coordinator");
+    expect(prompt).toContain("already the extracted helper");
+    expect(prompt).toContain("module-level constants");
+    expect(prompt).toContain("runInTransaction");
+    expect(prompt).toContain("generic \"split this function\"");
+  });
+
+  test("bad findings include SRP-as-suffix and orchestrator misapplication", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("cites a principle without explaining the concrete cost");
+    expect(prompt).toContain("Orchestration is one responsibility");
   });
 
 });
@@ -143,7 +200,7 @@ describe("buildFileReviewPrompt context windowing", () => {
     expect(prompt).toContain("// line 450:");
   });
 
-  test("small file falls back to full file content", () => {
+  test("small file falls back to full file content with line numbers", () => {
     const fileContent = makeFileContent(80);
     const diff: FileDiff = {
       filePath: "src/small.ts",
@@ -154,6 +211,8 @@ describe("buildFileReviewPrompt context windowing", () => {
 
     expect(prompt).toContain("Full file content");
     expect(prompt).not.toContain("File context (lines");
+    expect(prompt).toContain("// line 1:");
+    expect(prompt).toContain("// line 80:");
   });
 
   test("null fullContent produces no context section", () => {

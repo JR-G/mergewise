@@ -84,6 +84,9 @@ function buildLlmRules(
       },
       tokenBudget: llmConfig.tokenBudget,
       consistencySamples: llmConfig.consistencySamples,
+      usePipeline: llmConfig.usePipeline,
+      triageModel: llmConfig.triageModel,
+      criticModel: llmConfig.criticModel,
       userSkipPatterns: mergewiseConfig.review.skipPatterns.length > 0
         ? mergewiseConfig.review.skipPatterns
         : undefined,

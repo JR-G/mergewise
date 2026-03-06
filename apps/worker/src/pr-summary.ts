@@ -12,6 +12,7 @@ import type {
   FindingCategory,
 } from "@mergewise/shared-types";
 import type { WorkerGitHubFetchOptions } from "./config";
+import { wrapCodeIdentifiers } from "./comment-formatter";
 
 export const PR_SUMMARY_COMMENT_MARKER = "<!-- mergewise-summary -->";
 
@@ -106,7 +107,7 @@ export function buildLocationLink(
   return `[\`${filePath}:${String(line)}\`](${blobUrl})`;
 }
 
-/** Maximum findings shown before the remainder collapse into a nested block. */
+/** Maximum files shown per suggestion in the locations table. */
 export const INLINE_FINDING_LIMIT = 5;
 
 /** Maximum file paths listed inline before the remainder are summarised as a count. */
@@ -125,27 +126,6 @@ export function truncateRecommendation(text: string, maxLength = 80): string {
   return escaped.slice(0, maxLength - 1) + "\u2026";
 }
 
-function buildFindingsTable(
-  findings: readonly Finding[],
-  repositoryFullName: string,
-  headSha: string,
-): string[] {
-  const lines: string[] = [
-    "| | File | Line | Suggestion |",
-    "| --- | --- | --- | --- |",
-  ];
-
-  for (const finding of findings) {
-    const emoji = CATEGORY_EMOJI[finding.category];
-    const blobUrl = buildBlobUrl(repositoryFullName, headSha, finding.filePath, finding.line);
-    const lineLink = `[${String(finding.line)}](${blobUrl})`;
-    const truncated = truncateRecommendation(finding.recommendation);
-    lines.push(`| ${emoji} | \`${finding.filePath}\` | ${lineLink} | ${truncated} |`);
-  }
-
-  return lines;
-}
-
 /**
  * Returns a severity-ordered badge string (e.g. `🔴 2 · 🟡 1`) for the
  * given findings, omitting categories with zero occurrences.
@@ -162,38 +142,243 @@ export function buildCategoryBadges(findings: readonly Finding[]): string {
     .join(" \u00B7 ");
 }
 
+/**
+ * A themed group of findings sharing a rule and recommendation.
+ */
+interface SuggestionGroup {
+  readonly category: FindingCategory;
+  readonly recommendation: string;
+  readonly findings: readonly Finding[];
+}
+
+/**
+ * Groups findings by ruleId and unique recommendation text.
+ *
+ * Static rules produce identical recommendations per rule, yielding one group.
+ * LLM rules produce unique recommendations per finding, yielding separate groups.
+ */
+export function groupFindingsIntoSuggestions(findings: readonly Finding[]): readonly SuggestionGroup[] {
+  const groupMap = new Map<string, { category: FindingCategory; recommendation: string; findings: Finding[] }>();
+
+  for (const finding of findings) {
+    const groupKey = `${finding.ruleId}\0${finding.recommendation}`;
+    const existing = groupMap.get(groupKey);
+    if (existing) {
+      existing.findings.push(finding);
+    } else {
+      groupMap.set(groupKey, {
+        category: finding.category,
+        recommendation: finding.recommendation,
+        findings: [finding],
+      });
+    }
+  }
+
+  const groups = [...groupMap.values()];
+  groups.sort((left, right) => {
+    const severityDiff =
+      CATEGORY_SEVERITY_ORDER.indexOf(left.category) -
+      CATEGORY_SEVERITY_ORDER.indexOf(right.category);
+    if (severityDiff !== 0) return severityDiff;
+    return right.findings.length - left.findings.length;
+  });
+
+  return groups;
+}
+
+/**
+ * Extracts the first sentence from a recommendation for use as a suggestion title.
+ *
+ * Splits on `. ` (period followed by space) and returns the first segment.
+ * Falls back to the full text if no sentence boundary is found.
+ */
+export function extractSuggestionTitle(recommendation: string): string {
+  const periodIndex = recommendation.indexOf(". ");
+  if (periodIndex === -1) {
+    return recommendation.endsWith(".") ? recommendation.slice(0, -1) : recommendation;
+  }
+  return recommendation.slice(0, periodIndex);
+}
+
+/**
+ * Extracts the body text after the first sentence of a recommendation.
+ *
+ * Returns an empty string when the recommendation is a single sentence.
+ */
+export function extractSuggestionBody(recommendation: string): string {
+  const periodIndex = recommendation.indexOf(". ");
+  if (periodIndex === -1) return "";
+  return recommendation.slice(periodIndex + 2);
+}
+
+/**
+ * Builds a blockquote from recommendation text, applying code identifier wrapping.
+ */
+function buildRecommendationBlockquote(recommendation: string): string[] {
+  const wrapped = wrapCodeIdentifiers(escapeTableCell(recommendation));
+  const sentences = wrapped.split(". ");
+  return sentences.map((sentence, index) => {
+    const suffix = index < sentences.length - 1 ? "." : "";
+    return `> ${sentence}${suffix}`;
+  });
+}
+
+/**
+ * Builds the locations table for a suggestion group, grouping by file.
+ */
+function buildLocationsSection(
+  findings: readonly Finding[],
+  repositoryFullName: string,
+  headSha: string,
+): string[] {
+  const fileGroups = new Map<string, Finding[]>();
+  for (const finding of [...findings].sort(compareFindings)) {
+    const existing = fileGroups.get(finding.filePath);
+    if (existing) {
+      existing.push(finding);
+    } else {
+      fileGroups.set(finding.filePath, [finding]);
+    }
+  }
+
+  const fileEntries = [...fileGroups.entries()];
+  const totalFiles = fileEntries.length;
+  const totalLocations = findings.length;
+
+  const singleFinding = totalLocations === 1 ? findings[0] : undefined;
+  if (singleFinding !== undefined) {
+    const blobUrl = buildBlobUrl(repositoryFullName, headSha, singleFinding.filePath, singleFinding.line);
+    return [`\`${singleFinding.filePath}\` \u00B7 [${String(singleFinding.line)}](${blobUrl})`];
+  }
+
+  const displayEntries = fileEntries.slice(0, INLINE_FINDING_LIMIT);
+  const lines: string[] = [
+    "| File | Lines |",
+    "| --- | --- |",
+  ];
+
+  let displayedLocationCount = 0;
+  for (const [filePath, fileFindings] of displayEntries) {
+    const lineLinks = fileFindings.map((finding) => {
+      const blobUrl = buildBlobUrl(repositoryFullName, headSha, finding.filePath, finding.line);
+      return `[${String(finding.line)}](${blobUrl})`;
+    });
+    lines.push(`| \`${filePath}\` | ${lineLinks.join(", ")} |`);
+    displayedLocationCount += fileFindings.length;
+  }
+
+  const remainingFiles = totalFiles - displayEntries.length;
+  const remainingLocations = totalLocations - displayedLocationCount;
+  if (remainingLocations > 0) {
+    lines.push("");
+    const fileSuffix = remainingFiles === 1 ? "file" : "files";
+    lines.push(`<sub>and ${String(remainingLocations)} more location${remainingLocations === 1 ? "" : "s"} across ${String(remainingFiles)} ${fileSuffix}</sub>`);
+  }
+
+  return lines;
+}
+
+/**
+ * Builds a single suggestion `<details>` block.
+ */
+function buildSuggestionBlock(
+  group: SuggestionGroup,
+  repositoryFullName: string,
+  headSha: string,
+): string[] {
+  const emoji = CATEGORY_EMOJI[group.category];
+  const title = escapeTableCell(extractSuggestionTitle(group.recommendation));
+  const locationCount = group.findings.length;
+  const locationNoun = locationCount === 1 ? "location" : "locations";
+
+  const lines: string[] = [
+    "",
+    "<details>",
+    `<summary>${emoji} <strong>${title}</strong> \u00B7 ${String(locationCount)} ${locationNoun}</summary>`,
+    "<br>",
+    "",
+  ];
+
+  lines.push(...buildRecommendationBlockquote(group.recommendation));
+  lines.push("");
+  lines.push(...buildLocationsSection(group.findings, repositoryFullName, headSha));
+  lines.push("");
+  lines.push("</details>");
+
+  return lines;
+}
+
+/**
+ * Builds the full findings section as themed suggestion blocks.
+ */
+function buildFindingsSection(
+  findings: readonly Finding[],
+  repositoryFullName: string,
+  headSha: string,
+): string[] {
+  const groups = groupFindingsIntoSuggestions(findings);
+  const lines: string[] = [];
+  for (const group of groups) {
+    lines.push(...buildSuggestionBlock(group, repositoryFullName, headSha));
+  }
+  return lines;
+}
+
+/**
+ * Builds a truncated findings section that fits within a character budget.
+ *
+ * Includes as many full suggestion blocks as the budget allows,
+ * then appends an overflow note for the remainder.
+ */
+function buildTruncatedFindingsSection(
+  findings: readonly Finding[],
+  repositoryFullName: string,
+  headSha: string,
+  charBudget: number,
+): string[] {
+  const groups = groupFindingsIntoSuggestions(findings);
+  const overflowLine = "\n\n<sub>and __COUNT__ more suggestion(s)</sub>";
+  const overflowOverhead = overflowLine.length + 10;
+
+  const lines: string[] = [];
+  let usedChars = 0;
+  let includedCount = 0;
+
+  for (const group of groups) {
+    const blockLines = buildSuggestionBlock(group, repositoryFullName, headSha);
+    const blockLength = blockLines.join("\n").length;
+
+    if (usedChars + blockLength + overflowOverhead > charBudget && includedCount > 0) {
+      break;
+    }
+
+    lines.push(...blockLines);
+    usedChars += blockLength;
+    includedCount += 1;
+  }
+
+  const remainingCount = groups.length - includedCount;
+  if (remainingCount > 0) {
+    lines.push("");
+    lines.push(`<sub>and ${String(remainingCount)} more suggestion${remainingCount === 1 ? "" : "s"}</sub>`);
+  }
+
+  return lines;
+}
+
 function buildReviewDetailsSection(
   rulesPassed: number,
   rulesRan: number,
-  deliveryCounters: DeliveryCounters | undefined,
   filePaths: readonly string[],
 ): string[] {
   const lines: string[] = [
     "",
     "<details>",
     "<summary>\u2699\uFE0F Review details</summary>",
+    "<br>",
     "",
     `**Rules:** ${String(rulesPassed)}/${String(rulesRan)} passed`,
   ];
-
-  const deliveryEntries: [string, number][] = deliveryCounters
-    ? [
-        ["Skipped by confidence", deliveryCounters.skippedByConfidence],
-        ["Skipped by deduplication", deliveryCounters.skippedByDeduplication],
-        ["Skipped by policy", deliveryCounters.skippedByPolicy],
-        ["Skipped by grouping", deliveryCounters.skippedByGrouping],
-        ["Skipped by similarity", deliveryCounters.skippedBySimilarity],
-        ["Skipped by cap", deliveryCounters.skippedByCap],
-      ]
-    : [];
-  const nonZeroDelivery = deliveryEntries.filter(([, count]) => count > 0);
-  if (nonZeroDelivery.length > 0) {
-    lines.push("");
-    lines.push("**Delivery:**");
-    for (const [label, count] of nonZeroDelivery) {
-      lines.push(`- ${label}: ${String(count)}`);
-    }
-  }
 
   if (filePaths.length > 0) {
     lines.push("");
@@ -210,131 +395,25 @@ function buildReviewDetailsSection(
   return lines;
 }
 
-function buildFindingsSection(
-  findings: readonly Finding[],
-  repositoryFullName: string,
-  headSha: string,
-): string[] {
-  const sortedFindings = [...findings].sort(compareFindings);
-
-  const badges = buildCategoryBadges(findings);
-  const lines: string[] = [
-    "",
-    "<details>",
-    `<summary>\u{1F4CB} Suggestions | ${badges}</summary>`,
-    "",
-  ];
-
-  const inlineFindings = sortedFindings.slice(0, INLINE_FINDING_LIMIT);
-  const overflowFindings = sortedFindings.slice(INLINE_FINDING_LIMIT);
-
-  lines.push(...buildFindingsTable(inlineFindings, repositoryFullName, headSha));
-
-  if (overflowFindings.length > 0) {
-    lines.push("");
-    lines.push("<details>");
-    lines.push(`<summary>and ${String(overflowFindings.length)} more</summary>`);
-    lines.push("");
-    lines.push(...buildFindingsTable(overflowFindings, repositoryFullName, headSha));
-    lines.push("");
-    lines.push("</details>");
-  }
-
-  lines.push("");
-  lines.push("</details>");
-  return lines;
-}
-
-/**
- * Builds a truncated findings section that fits within a character budget.
- *
- * Shows as many table rows as possible inline, then collapses the
- * remainder into a nested `<details>` block with a count summary.
- */
-function buildTruncatedFindingsSection(
-  findings: readonly Finding[],
-  repositoryFullName: string,
-  headSha: string,
-  charBudget: number,
-): string[] {
-  const sortedFindings = [...findings].sort(compareFindings);
-
-  const badges = buildCategoryBadges(findings);
-  const preamble = [
-    "",
-    "<details>",
-    `<summary>\u{1F4CB} Suggestions | ${badges}</summary>`,
-    "",
-    "| | File | Line | Suggestion |",
-    "| --- | --- | --- | --- |",
-  ];
-  const epilogue = ["", "</details>"];
-
-  const overflowTemplate = [
-    "",
-    "<details>",
-    `<summary>and __COUNT__ more</summary>`,
-    "",
-    "Remaining findings truncated for brevity.",
-    "",
-    "</details>",
-  ];
-  const overflowOverhead = overflowTemplate.join("\n").length + 10;
-
-  const baseLength = [...preamble, ...epilogue].join("\n").length + overflowOverhead;
-  let remaining = charBudget - baseLength;
-
-  const inlineRows: string[] = [];
-  let overflowCount = 0;
-
-  for (const [findingIndex, finding] of sortedFindings.entries()) {
-    const emoji = CATEGORY_EMOJI[finding.category];
-    const blobUrl = buildBlobUrl(repositoryFullName, headSha, finding.filePath, finding.line);
-    const lineLink = `[${String(finding.line)}](${blobUrl})`;
-    const truncated = truncateRecommendation(finding.recommendation);
-    const row = `| ${emoji} | \`${finding.filePath}\` | ${lineLink} | ${truncated} |`;
-
-    if (remaining - row.length - 1 > 0) {
-      inlineRows.push(row);
-      remaining -= row.length + 1;
-    } else {
-      overflowCount = sortedFindings.length - findingIndex;
-      break;
-    }
-  }
-
-  const lines = [...preamble, ...inlineRows];
-
-  if (overflowCount > 0) {
-    lines.push("");
-    lines.push("<details>");
-    lines.push(`<summary>and ${String(overflowCount)} more</summary>`);
-    lines.push("");
-    lines.push("Remaining findings truncated for brevity.");
-    lines.push("");
-    lines.push("</details>");
-  }
-
-  lines.push(...epilogue);
-  return lines;
-}
-
 /**
  * Builds the Markdown body for the PR summary comment.
  *
- * All sections are collapsed by default for a compact appearance similar
- * to CodeRabbit/Greptile. The header gives a one-line verdict; findings
- * and review details are expandable `<details>` blocks.
+ * Findings are grouped by rule and recommendation into themed suggestion
+ * blocks. Each block is a collapsible `<details>` element with a blockquote
+ * explanation and a locations table. Review details are a separate collapsed
+ * section at the bottom.
  */
 export function buildPrSummaryComment(input: PrSummaryInput): string {
-  const { filePaths, findings, repositoryFullName, headSha, rulesRan, rulesPassed, deliveryCounters } = input;
+  const { filePaths, findings, repositoryFullName, headSha, rulesRan, rulesPassed } = input;
   const fileCount = filePaths.length;
   const headerLines: string[] = [PR_SUMMARY_COMMENT_MARKER];
 
   if (findings.length > 0) {
-    const noun = findings.length === 1 ? "suggestion" : "suggestions";
+    const groups = groupFindingsIntoSuggestions(findings);
+    const groupCount = groups.length;
+    const noun = groupCount === 1 ? "suggestion" : "suggestions";
     headerLines.push(
-      `**Mergewise** \u00B7 Reviewed ${String(fileCount)} file${fileCount === 1 ? "" : "s"} \u2014 ${String(findings.length)} ${noun}`,
+      `**Mergewise** \u00B7 Reviewed ${String(fileCount)} file${fileCount === 1 ? "" : "s"} \u2014 ${String(groupCount)} ${noun}`,
     );
   } else {
     headerLines.push(
@@ -342,7 +421,7 @@ export function buildPrSummaryComment(input: PrSummaryInput): string {
     );
   }
 
-  const reviewDetailsLines = buildReviewDetailsSection(rulesPassed, rulesRan, deliveryCounters, filePaths);
+  const reviewDetailsLines = buildReviewDetailsSection(rulesPassed, rulesRan, filePaths);
   const baseContent = [...headerLines, ...reviewDetailsLines].join("\n");
 
   if (findings.length === 0) {

@@ -94,6 +94,26 @@ export class ReviewClient {
 }
 
 /**
+ * Merges two optional usage values into one.
+ *
+ * @param left - First usage value.
+ * @param right - Second usage value.
+ * @returns Combined usage, or undefined if both inputs are undefined.
+ */
+export function mergeUsage(
+  left: CompletionUsage | undefined,
+  right: CompletionUsage | undefined,
+): CompletionUsage | undefined {
+  if (!left) return right;
+  if (!right) return left;
+  return {
+    promptTokens: left.promptTokens + right.promptTokens,
+    completionTokens: left.completionTokens + right.completionTokens,
+    totalTokens: left.totalTokens + right.totalTokens,
+  };
+}
+
+/**
  * Creates a review client from configuration.
  *
  * @param config - Client configuration with API key and optional provider settings.
