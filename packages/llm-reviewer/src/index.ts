@@ -2,10 +2,11 @@ import type {
   AnalysisContext,
   CodebaseAwareRule,
   CodebaseContext,
+  FileDiff,
   Finding,
   RepoLearnings,
 } from "@mergewise/shared-types";
-import { createReviewClient, type ReviewClientConfig } from "./client";
+import { createReviewClient, type ReviewClientConfig, type ReviewClient } from "./client";
 import { selectFilesForReview } from "./file-selection";
 import { reviewFile } from "./review-file";
 import { runReviewPipeline } from "./pipeline";
@@ -170,7 +171,7 @@ export function createLlmReviewerRule(
 
 async function analysePipeline(
   config: LlmReviewerConfig,
-  selectedFiles: readonly import("@mergewise/shared-types").FileDiff[],
+  selectedFiles: readonly FileDiff[],
   context: AnalysisContext,
   codebaseContext: CodebaseContext,
 ): Promise<readonly Finding[]> {
@@ -216,10 +217,10 @@ async function analysePipeline(
 }
 
 interface PerFileAnalysisOptions {
-  readonly selectedFiles: readonly import("@mergewise/shared-types").FileDiff[];
+  readonly selectedFiles: readonly FileDiff[];
   readonly context: AnalysisContext;
   readonly codebaseContext: CodebaseContext;
-  readonly client: import("./client").ReviewClient;
+  readonly client: ReviewClient;
   readonly config: LlmReviewerConfig;
   readonly onFileReviewError: (filePath: string, error: unknown) => void;
 }

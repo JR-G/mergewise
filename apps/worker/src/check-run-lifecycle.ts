@@ -11,7 +11,7 @@ import type { AnalyzePullRequestJob } from "@mergewise/shared-types";
 import type { WorkerGitHubFetchOptions } from "./config";
 import type { AnalyzePullRequestJobSummary } from "./job-utils";
 import { buildSkippedJobSummary } from "./job-utils";
-import { buildWorkerCheckOutput } from "./delivery";
+import type { buildWorkerCheckOutput } from "./delivery";
 import type { GitHubAnalysisContextResult } from "./github-fetch";
 import type { WorkerProcessingDependencies, ResolvedLoggers } from "./process-job-types";
 

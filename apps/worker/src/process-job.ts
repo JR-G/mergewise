@@ -178,7 +178,7 @@ function buildCodebaseContext(
   return {
     symbols: [],
     conventions: new Map<string, string>(),
-    readFile: async (relativePath: string) => {
+    readFile: async (relativePath: string): Promise<string | null> => {
       try {
         return await fetchFileContent({
           owner: ctx.githubAnalysisContext.owner,
@@ -306,7 +306,7 @@ async function buildProcessingSummary(
     job,
     config.key,
     gatedExecutionResult,
-    (dependencies.now ?? (() => new Date()))().toISOString(),
+    (dependencies.now ?? ((): Date => new Date()))().toISOString(),
   );
 
   config.loggers.infoLogger(

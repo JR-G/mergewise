@@ -109,10 +109,10 @@ export function createPollingLoopController(
 ): PollingLoopController {
   const setIntervalFn: NonNullable<PollingLoopDependencies["setIntervalFn"]> =
     dependencies.setIntervalFn ??
-    ((callback, delayMs) => setInterval(callback, delayMs));
+    ((callback: () => void, delayMs: number): WorkerPollingTimerHandle => setInterval(callback, delayMs));
   const clearIntervalFn: NonNullable<PollingLoopDependencies["clearIntervalFn"]> =
     dependencies.clearIntervalFn ??
-    ((timerHandle) => { clearInterval(timerHandle); });
+    ((timerHandle: WorkerPollingTimerHandle): void => { clearInterval(timerHandle); });
   const errorLogger = dependencies.logError ?? console.error;
 
   let timerHandle: WorkerPollingTimerHandle | null = null;
@@ -153,7 +153,7 @@ export function createPollingLoopController(
       return;
     }
 
-    shutdownPromise = (async () => {
+    shutdownPromise = (async (): Promise<void> => {
       isShutdownRequested = true;
       if (timerHandle !== null) {
         clearIntervalFn(timerHandle);

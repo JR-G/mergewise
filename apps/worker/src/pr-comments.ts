@@ -293,7 +293,7 @@ export async function postPreparedFindingComments(
   dependencies: PostFindingCommentsDependencies = {},
 ): Promise<PostPreparedFindingCommentsResult> {
   const errorLogger = dependencies.logError ?? console.error;
-  const infoLogger = dependencies.logInfo ?? ((message: string) => {
+  const infoLogger = dependencies.logInfo ?? ((message: string): void => {
     void message;
   });
   const createPullRequestReviewFn =

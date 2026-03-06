@@ -231,26 +231,26 @@ export function openFeedbackStore(databasePath = DEFAULT_DATABASE_PATH): Feedbac
   const MAX_BATCH_SIZE = 500;
 
   return {
-    saveFeedback(records) {
+    saveFeedback(records): void {
       for (let offset = 0; offset < records.length; offset += MAX_BATCH_SIZE) {
         insertManyFeedback(records.slice(offset, offset + MAX_BATCH_SIZE));
       }
     },
-    saveInstructions(instructions) {
+    saveInstructions(instructions): void {
       for (let offset = 0; offset < instructions.length; offset += MAX_BATCH_SIZE) {
         insertManyInstructions(instructions.slice(offset, offset + MAX_BATCH_SIZE));
       }
     },
-    queryInstructions(repoFullName) {
+    queryInstructions(repoFullName): RepoInstruction[] {
       return (queryInstructionsStmt.all(repoFullName) as InstructionRow[]).map(mapInstructionRow);
     },
-    queryRuleSentiment(repoFullName) {
+    queryRuleSentiment(repoFullName): RuleSentiment[] {
       return (queryRuleSentimentStmt.all(repoFullName) as SentimentRow[]).map(mapSentimentRow);
     },
-    queryCategorySentiment(repoFullName) {
+    queryCategorySentiment(repoFullName): CategorySentiment[] {
       return (queryCategorySentimentStmt.all(repoFullName) as CategoryRow[]).map(mapCategoryRow);
     },
-    close() {
+    close(): void {
       database.close();
     },
   };
