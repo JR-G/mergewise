@@ -43,9 +43,9 @@ function createPipelineClients(config: ReviewPipelineConfig): PipelineClients {
   const baseConfig = { apiKey: config.apiKey, baseUrl: config.baseUrl };
 
   return {
-    triageClient: createReviewClient({ ...baseConfig, model: config.triageModel ?? "gpt-4o-mini" }),
+    triageClient: createReviewClient({ ...baseConfig, model: config.triageModel ?? "gpt-4.1-mini" }),
     reviewClient: createReviewClient({ ...baseConfig, model: config.reviewModel }),
-    criticClient: createReviewClient({ ...baseConfig, model: config.criticModel ?? config.triageModel ?? "gpt-4o-mini" }),
+    criticClient: createReviewClient({ ...baseConfig, model: config.criticModel ?? config.triageModel ?? "gpt-4.1-mini" }),
   };
 }
 

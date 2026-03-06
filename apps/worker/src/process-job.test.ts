@@ -371,8 +371,8 @@ describe("processAnalyzePullRequestJob", () => {
           llm: {
             enabled: false,
             model: "gpt-4o",
-            triageModel: "gpt-4o-mini",
-            criticModel: "gpt-4o-mini",
+            triageModel: "gpt-4.1-mini",
+            criticModel: "gpt-4.1-mini",
             usePipeline: true,
             tokenBudget: 30_000,
             baseUrl: "https://api.openai.com/v1",
@@ -441,8 +441,8 @@ describe("processAnalyzePullRequestJob", () => {
           llm: {
             enabled: false,
             model: "gpt-4o",
-            triageModel: "gpt-4o-mini",
-            criticModel: "gpt-4o-mini",
+            triageModel: "gpt-4.1-mini",
+            criticModel: "gpt-4.1-mini",
             usePipeline: true,
             tokenBudget: 30_000,
             baseUrl: "https://api.openai.com/v1",
