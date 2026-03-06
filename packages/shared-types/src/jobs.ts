@@ -83,6 +83,44 @@ export interface CollectFeedbackJob {
 }
 
 /**
+ * Queue job payload for indexing a repository's dependency graph and debt profile.
+ */
+export interface IndexRepoJob {
+  /**
+   * Job type discriminator.
+   */
+  type: "index-repo";
+  /**
+   * Stable unique identifier for this queue item.
+   */
+  job_id: string;
+  /**
+   * GitHub App installation id for API token resolution.
+   */
+  installation_id: number | null;
+  /**
+   * Repository full name in `owner/name` format.
+   */
+  repo_full_name: string;
+  /**
+   * Default branch name for the repository (e.g. `main`).
+   */
+  default_branch: string;
+  /**
+   * Head commit SHA on the default branch at the time of the push.
+   */
+  head_sha: string;
+  /**
+   * Optional end-to-end trace identifier propagated from webhook intake.
+   */
+  trace_id?: string;
+  /**
+   * ISO timestamp indicating when the job was queued.
+   */
+  queued_at: string;
+}
+
+/**
  * Discriminated union of all queue job types.
  */
-export type QueueJob = AnalyzePullRequestJob | CollectFeedbackJob;
+export type QueueJob = AnalyzePullRequestJob | CollectFeedbackJob | IndexRepoJob;

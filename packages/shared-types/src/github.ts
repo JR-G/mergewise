@@ -52,6 +52,45 @@ export interface GitHubPullRequest {
 }
 
 /**
+ * Extended repository shape that includes the default branch name.
+ */
+export interface GitHubRepositoryWithDefaultBranch extends GitHubRepository {
+  /**
+   * Default branch name (e.g. `main`, `master`).
+   */
+  default_branch: string;
+}
+
+/**
+ * Minimal `push` webhook payload shape consumed by Mergewise.
+ *
+ * Models only the fields required for default-branch indexing.
+ */
+export interface GitHubPushWebhookEvent {
+  /**
+   * Full git ref that was pushed (e.g. `refs/heads/main`).
+   */
+  ref: string;
+  /**
+   * SHA of the most recent commit on the ref after the push.
+   */
+  after: string;
+  /**
+   * Repository metadata including default branch.
+   */
+  repository: GitHubRepositoryWithDefaultBranch;
+  /**
+   * Optional installation context for GitHub App events.
+   */
+  installation?: {
+    /**
+     * GitHub App installation identifier.
+     */
+    id: number;
+  };
+}
+
+/**
  * Minimal `pull_request` webhook payload shape consumed by Mergewise.
  *
  * This intentionally models only the fields required by the current
