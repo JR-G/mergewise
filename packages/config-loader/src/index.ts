@@ -272,8 +272,8 @@ export const DEFAULT_MERGEWISE_CONFIG: MergewiseConfig = {
     tokenBudget: 30_000,
     baseUrl: "https://api.openai.com/v1",
     consistencySamples: 1,
-    triageModel: "gpt-4o-mini",
-    criticModel: "gpt-4o-mini",
+    triageModel: "gpt-4.1-mini",
+    criticModel: "gpt-4.1-mini",
     usePipeline: true,
   },
 };
