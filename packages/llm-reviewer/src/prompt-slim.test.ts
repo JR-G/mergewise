@@ -54,10 +54,9 @@ function makeDocument(overrides: Partial<KnowledgeDocument> = {}): KnowledgeDocu
 describe("buildSlimSystemPrompt", () => {
   const prompt = buildSlimSystemPrompt();
 
-  test("is language-agnostic", () => {
-    expect(prompt).not.toContain("TypeScript");
-    expect(prompt).not.toContain("React");
-    expect(prompt).not.toContain("JavaScript");
+  test("covers TypeScript and React focus areas", () => {
+    expect(prompt).toContain("TypeScript");
+    expect(prompt).toContain("React");
   });
 
   test("contains principal-level persona", () => {
@@ -74,6 +73,13 @@ describe("buildSlimSystemPrompt", () => {
   test("does not impose finding caps", () => {
     expect(prompt).not.toContain("max 8");
     expect(prompt).not.toContain("maximum of");
+  });
+
+  test("contains anti-instructions against defensive coding noise", () => {
+    expect(prompt).toContain("Anti-instructions");
+    expect(prompt).toContain("Do NOT suggest adding null checks");
+    expect(prompt).toContain("Do NOT act as a linter, bug finder, or security scanner");
+    expect(prompt).toContain("Do NOT suggest error handling additions unless");
   });
 });
 
