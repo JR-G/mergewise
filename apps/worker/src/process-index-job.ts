@@ -11,12 +11,15 @@ import type { IndexRepoJob } from "@mergewise/shared-types";
 
 import { loadGitHubAppCredentials } from "./github-auth";
 
+const DEFAULT_GITHUB_API_BASE_URL = "https://api.github.com";
+
 /**
- * Resolved clone target: public URL plus optional auth token.
+ * Resolved clone target: public URL plus optional auth token and host.
  */
 interface CloneTarget {
   readonly url: string;
   readonly token?: string;
+  readonly host: string;
 }
 
 /**
@@ -24,9 +27,10 @@ interface CloneTarget {
  */
 export interface IndexJobDependencies {
   readonly debtStore: DebtStore;
+  readonly githubApiBaseUrl?: string;
   readonly createGitHubAppJwtFn?: typeof createGitHubAppJwt;
   readonly exchangeInstallationAccessTokenFn?: typeof exchangeInstallationAccessToken;
-  readonly spawnClone?: (url: string, targetDir: string, token?: string) => Promise<void>;
+  readonly spawnClone?: (url: string, targetDir: string, sha: string, token?: string) => Promise<void>;
   readonly logInfo?: (message: string) => void;
   readonly logError?: (message: string) => void;
 }
@@ -45,8 +49,8 @@ export interface IndexJobSummary {
 const CLONE_TIMEOUT_MS = 120_000;
 
 /**
- * Shallow-clones a repository and runs the debt scanner to index its
- * dependency graph and hotspots.
+ * Shallow-clones a repository at a specific commit and runs the debt
+ * scanner to index its dependency graph and hotspots.
  *
  * @param job - The index-repo job to process.
  * @param dependencies - Dependency overrides for testing.
@@ -69,7 +73,7 @@ export async function processIndexRepoJob(
   try {
     const cloneTarget = await resolveCloneTarget(job, dependencies);
     const cloneFn = dependencies.spawnClone ?? spawnShallowClone;
-    await cloneFn(cloneTarget.url, cloneDir, cloneTarget.token);
+    await cloneFn(cloneTarget.url, cloneDir, job.head_sha, cloneTarget.token);
 
     logInfo(
       `[worker] index_clone_complete trace=${traceId} repo=${job.repo_full_name}`,
@@ -114,14 +118,31 @@ export async function processIndexRepoJob(
   }
 }
 
+/**
+ * Derives the git clone host from a GitHub API base URL.
+ */
+export function resolveCloneHost(apiBaseUrl: string): string {
+  try {
+    const url = new URL(apiBaseUrl);
+    if (url.hostname === "api.github.com") {
+      return "github.com";
+    }
+    return url.hostname;
+  } catch {
+    return "github.com";
+  }
+}
+
 async function resolveCloneTarget(
   job: IndexRepoJob,
   dependencies: IndexJobDependencies,
 ): Promise<CloneTarget> {
-  const url = `https://github.com/${job.repo_full_name}.git`;
+  const apiBaseUrl = dependencies.githubApiBaseUrl ?? DEFAULT_GITHUB_API_BASE_URL;
+  const host = resolveCloneHost(apiBaseUrl);
+  const url = `https://${host}/${job.repo_full_name}.git`;
 
   if (job.installation_id === null) {
-    return { url };
+    return { url, host };
   }
 
   const credentials = loadGitHubAppCredentials();
@@ -132,9 +153,9 @@ async function resolveCloneTarget(
     appId: credentials.appId,
     privateKeyPem: credentials.privateKeyPem,
   });
-  const tokenResponse = await exchangeTokenFn(jwt, job.installation_id);
+  const tokenResponse = await exchangeTokenFn(jwt, job.installation_id, { apiBaseUrl });
 
-  return { url, token: tokenResponse.token };
+  return { url, token: tokenResponse.token, host };
 }
 
 /**
@@ -144,22 +165,54 @@ export function buildAuthHeader(token: string): string {
   return `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`;
 }
 
+function buildAuthEnv(token: string, host: string): Record<string, string> {
+  return {
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: `http.https://${host}/.extraheader`,
+    GIT_CONFIG_VALUE_0: buildAuthHeader(token),
+  };
+}
+
 async function spawnShallowClone(
   cloneUrl: string,
   targetDir: string,
+  sha: string,
   token?: string,
 ): Promise<void> {
+  const host = extractHostFromUrl(cloneUrl);
   const env: Record<string, string> = { ...process.env } as Record<string, string>;
   if (token) {
-    env.GIT_CONFIG_COUNT = "1";
-    env.GIT_CONFIG_KEY_0 = "http.https://github.com/.extraheader";
-    env.GIT_CONFIG_VALUE_0 = buildAuthHeader(token);
+    Object.assign(env, buildAuthEnv(token, host));
   }
 
-  const proc = Bun.spawn(
-    ["git", "clone", "--depth", "1", "--single-branch", cloneUrl, targetDir],
-    { stdout: "ignore", stderr: "pipe", env },
+  await runGitCommand(["git", "init", targetDir], env);
+  await runGitCommand(
+    ["git", "-C", targetDir, "remote", "add", "origin", cloneUrl],
+    env,
   );
+  await runGitCommand(
+    ["git", "-C", targetDir, "fetch", "--depth", "1", "origin", sha],
+    env,
+  );
+  await runGitCommand(
+    ["git", "-C", targetDir, "checkout", "FETCH_HEAD"],
+    env,
+  );
+}
+
+function extractHostFromUrl(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "github.com";
+  }
+}
+
+async function runGitCommand(
+  args: string[],
+  env: Record<string, string>,
+): Promise<void> {
+  const proc = Bun.spawn(args, { stdout: "ignore", stderr: "pipe", env });
 
   let timer: ReturnType<typeof setTimeout>;
   const exitCode = await Promise.race([
@@ -170,14 +223,14 @@ async function spawnShallowClone(
     new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
         proc.kill();
-        reject(new Error(`git clone timed out after ${CLONE_TIMEOUT_MS}ms`));
+        reject(new Error(`git command timed out after ${CLONE_TIMEOUT_MS}ms: ${args.join(" ")}`));
       }, CLONE_TIMEOUT_MS);
     }),
   ]);
 
   if (exitCode !== 0) {
     const stderr = scrubCredentials(await new Response(proc.stderr).text());
-    throw new Error(`git clone failed with exit code ${exitCode}: ${stderr.slice(0, 500)}`);
+    throw new Error(`git command failed with exit code ${exitCode}: ${args.join(" ")}: ${stderr.slice(0, 500)}`);
   }
 }
 

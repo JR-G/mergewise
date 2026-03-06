@@ -81,13 +81,15 @@ export interface GitHubPushWebhookEvent {
   repository: GitHubRepositoryWithDefaultBranch;
   /**
    * Optional installation context for GitHub App events.
+   *
+   * GitHub sends `null` when no App installation is associated with the event.
    */
   installation?: {
     /**
      * GitHub App installation identifier.
      */
     id: number;
-  };
+  } | null;
 }
 
 /**

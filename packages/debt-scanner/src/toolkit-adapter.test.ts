@@ -149,4 +149,29 @@ describe("buildReviewToolkit", () => {
     expect(result.callers).not.toContain("src/derived.ts");
   });
 
+  test("passes through negative centrality without clamping", () => {
+    const graph = makeGraph([makeNode("src/neg.ts", -0.5)], []);
+    const toolkit = buildReviewToolkit(graph, []);
+    const result = toolkit.getCallers!("src/neg.ts");
+
+    expect(result.centrality).toBe(-0.5);
+  });
+
+  test("passes through very large centrality values", () => {
+    const graph = makeGraph([makeNode("src/huge.ts", Number.MAX_VALUE)], []);
+    const toolkit = buildReviewToolkit(graph, []);
+    const result = toolkit.getCallers!("src/huge.ts");
+
+    expect(Number.isFinite(result.centrality)).toBe(true);
+    expect(result.centrality).toBe(Number.MAX_VALUE);
+  });
+
+  test("passes through NaN centrality without coercing", () => {
+    const graph = makeGraph([makeNode("src/nan.ts", NaN)], []);
+    const toolkit = buildReviewToolkit(graph, []);
+    const result = toolkit.getCallers!("src/nan.ts");
+
+    expect(result.centrality).toBeNaN();
+  });
+
 });

@@ -613,8 +613,14 @@ describe("startWorkerProcess", () => {
     runPollCycle?.();
     await Promise.resolve();
 
-    expect(infoLogs.some((log) => log.includes("skipping index job=idx-2"))).toBe(true);
+    const skipCount = infoLogs.filter((log) => log.includes("skipping index job=idx-2")).length;
+    expect(skipCount).toBe(1);
     expect(infoLogs.some((log) => log.includes("debt store unavailable"))).toBe(true);
+
+    runPollCycle?.();
+    await Promise.resolve();
+    const skipCountAfterSecondPoll = infoLogs.filter((log) => log.includes("skipping index job=idx-2")).length;
+    expect(skipCountAfterSecondPoll).toBe(1);
 
     await processHandle.shutdown();
   });

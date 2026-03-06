@@ -278,7 +278,8 @@ export function startWorkerProcess(
         if (isIndexRepoJob(queuedJob)) {
           await handleIndexJob(
             queuedJob, debtStore, processedKeyState, config.maxProcessedKeys,
-            processIndexRepoJobFn, infoLogger, errorLogger,
+            processIndexRepoJobFn, config.githubApiBaseUrl,
+            infoLogger, errorLogger,
           );
           continue;
         }
@@ -439,17 +440,25 @@ async function handleIndexJob(
   processedKeyState: ReturnType<typeof createProcessedKeyState>,
   maxProcessedKeys: number,
   processIndexRepoJobFn: typeof processIndexRepoJob,
+  githubApiBaseUrl: string,
   infoLogger: (message: string) => void,
   errorLogger: (message: string) => void,
 ): Promise<void> {
+  const indexIdempotencyKey = `index:${queuedJob.repo_full_name}@${queuedJob.head_sha}`;
+  if (processedKeyState.keys.has(indexIdempotencyKey)) {
+    return;
+  }
+
   if (!debtStore) {
     infoLogger(`[worker] skipping index job=${queuedJob.job_id}: debt store unavailable`);
+    trackProcessedKey(indexIdempotencyKey, processedKeyState, maxProcessedKeys);
     return;
   }
 
   await processIndexJobEntry(
     queuedJob, processedKeyState, maxProcessedKeys,
-    processIndexRepoJobFn, debtStore, infoLogger, errorLogger,
+    processIndexRepoJobFn, debtStore, githubApiBaseUrl,
+    infoLogger, errorLogger,
   );
 }
 
@@ -459,6 +468,7 @@ async function processIndexJobEntry(
   maxProcessedKeys: number,
   processIndexRepoJobFn: typeof processIndexRepoJob,
   debtStore: DebtStore,
+  githubApiBaseUrl: string,
   infoLogger: (message: string) => void,
   errorLogger: (message: string) => void,
 ): Promise<void> {
@@ -470,6 +480,7 @@ async function processIndexJobEntry(
   try {
     await processIndexRepoJobFn(queuedJob, {
       debtStore,
+      githubApiBaseUrl,
       logInfo: infoLogger,
       logError: errorLogger,
     });

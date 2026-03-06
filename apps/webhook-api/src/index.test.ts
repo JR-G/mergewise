@@ -678,6 +678,14 @@ describe("isPushWebhookEvent", () => {
     const { installation: _, ...withoutInstallation } = validPayload;
     expect(isPushWebhookEvent(withoutInstallation)).toBe(true);
   });
+
+  test("rejects payload with null installation", () => {
+    expect(isPushWebhookEvent({ ...validPayload, installation: null })).toBe(false);
+  });
+
+  test("rejects payload with non-object installation", () => {
+    expect(isPushWebhookEvent({ ...validPayload, installation: "string" })).toBe(false);
+  });
 });
 
 describe("isDefaultBranchPush", () => {

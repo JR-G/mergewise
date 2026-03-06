@@ -8,6 +8,7 @@ import type { DebtProfile, DebtStore } from "@mergewise/debt-scanner";
 import {
   buildAuthHeader,
   processIndexRepoJob,
+  resolveCloneHost,
   scrubCredentials,
   type IndexJobDependencies,
 } from "./process-index-job";
@@ -89,7 +90,7 @@ function baseDependencies(
       token: "ghs_test_token",
       expires_at: "",
     }),
-    spawnClone: async () => {},
+    spawnClone: async () => { /* no-op stub */ },
     logInfo: () => {},
     logError: () => {},
     ...overrides,
@@ -179,22 +180,25 @@ describe("processIndexRepoJob", () => {
   describe("clone URL resolution", () => {
     test("passes auth token separately when installation_id is present", async () => {
       let capturedUrl = "";
+      let capturedSha = "";
       let capturedToken: string | undefined;
       const dependencies = baseDependencies({
         exchangeInstallationAccessTokenFn: async () => ({
           token: "ghs_secret_token",
           expires_at: "",
         }),
-        spawnClone: async (cloneUrl, _dir, token) => {
+        spawnClone: async (cloneUrl, _dir, sha, token) => {
           capturedUrl = cloneUrl;
+          capturedSha = sha;
           capturedToken = token;
         },
       });
 
-      await processIndexRepoJob(makeJob({ installation_id: 42 }), dependencies);
+      await processIndexRepoJob(makeJob({ installation_id: 42, head_sha: "sha999" }), dependencies);
 
       expect(capturedUrl).toBe("https://github.com/acme/widget.git");
       expect(capturedUrl).not.toContain("x-access-token");
+      expect(capturedSha).toBe("sha999");
       expect(capturedToken).toBe("ghs_secret_token");
     });
 
@@ -202,7 +206,7 @@ describe("processIndexRepoJob", () => {
       let capturedUrl = "";
       let capturedToken: string | undefined;
       const dependencies = baseDependencies({
-        spawnClone: async (cloneUrl, _dir, token) => {
+        spawnClone: async (cloneUrl, _dir, _sha, token) => {
           capturedUrl = cloneUrl;
           capturedToken = token;
         },
@@ -215,6 +219,36 @@ describe("processIndexRepoJob", () => {
 
       expect(capturedUrl).toBe("https://github.com/acme/widget.git");
       expect(capturedToken).toBeUndefined();
+    });
+
+    test("derives clone URL from configured githubApiBaseUrl", async () => {
+      let capturedUrl = "";
+      const dependencies = baseDependencies({
+        githubApiBaseUrl: "https://github.mycompany.com/api/v3",
+        spawnClone: async (cloneUrl) => {
+          capturedUrl = cloneUrl;
+        },
+      });
+
+      await processIndexRepoJob(makeJob({ installation_id: null }), dependencies);
+
+      expect(capturedUrl).toBe("https://github.mycompany.com/acme/widget.git");
+    });
+
+    test("passes apiBaseUrl to token exchange", async () => {
+      let receivedOptions: Record<string, unknown> | undefined;
+      const dependencies = baseDependencies({
+        githubApiBaseUrl: "https://ghes.corp.io/api/v3",
+        exchangeInstallationAccessTokenFn: async (_jwt, _id, options) => {
+          receivedOptions = options as Record<string, unknown>;
+          return { token: "ghs_test", expires_at: "" };
+        },
+      });
+
+      await processIndexRepoJob(makeJob({ installation_id: 42 }), dependencies);
+
+      expect(receivedOptions).toBeDefined();
+      expect(receivedOptions!.apiBaseUrl).toBe("https://ghes.corp.io/api/v3");
     });
 
     test("passes installation_id to token exchange", async () => {
@@ -273,7 +307,7 @@ describe("processIndexRepoJob", () => {
     test("cleans up temp directory when clone throws", async () => {
       let capturedTargetDir = "";
       const dependencies = baseDependencies({
-        spawnClone: async (_url, targetDir) => {
+        spawnClone: async (_url, targetDir, _sha) => {
           capturedTargetDir = targetDir;
           throw new Error("clone failed");
         },
@@ -331,7 +365,7 @@ describe("processIndexRepoJob", () => {
       );
 
       const dependencies = baseDependencies({
-        spawnClone: async (_url, targetDir) => {
+        spawnClone: async (_url, targetDir, _sha) => {
           capturedTargetDir = targetDir;
         },
       });
@@ -355,7 +389,7 @@ describe("processIndexRepoJob", () => {
     test("removes temp directory on success", async () => {
       let capturedTargetDir = "";
       const dependencies = baseDependencies({
-        spawnClone: async (_url, targetDir) => {
+        spawnClone: async (_url, targetDir, _sha) => {
           capturedTargetDir = targetDir;
         },
       });
@@ -369,7 +403,7 @@ describe("processIndexRepoJob", () => {
     test("temp directory is created under system tmpdir", async () => {
       let capturedTargetDir = "";
       const dependencies = baseDependencies({
-        spawnClone: async (_url, targetDir) => {
+        spawnClone: async (_url, targetDir, _sha) => {
           capturedTargetDir = targetDir;
         },
       });
@@ -532,5 +566,23 @@ describe("buildAuthHeader", () => {
     const decoded = Buffer.from(encoded, "base64").toString("utf-8");
 
     expect(decoded).toBe("x-access-token:token/with+special=chars");
+  });
+});
+
+describe("resolveCloneHost", () => {
+  test("returns github.com for default API URL", () => {
+    expect(resolveCloneHost("https://api.github.com")).toBe("github.com");
+  });
+
+  test("returns hostname for GHES API URL", () => {
+    expect(resolveCloneHost("https://github.mycompany.com/api/v3")).toBe("github.mycompany.com");
+  });
+
+  test("returns github.com for invalid URL", () => {
+    expect(resolveCloneHost("not-a-url")).toBe("github.com");
+  });
+
+  test("returns github.com for empty string", () => {
+    expect(resolveCloneHost("")).toBe("github.com");
   });
 });

@@ -306,9 +306,14 @@ export function isPushWebhookEvent(
     return false;
   }
 
+  if (event.installation === null) {
+    return false;
+  }
+
   if (
     event.installation !== undefined &&
-    (typeof event.installation.id !== "number" ||
+    (typeof event.installation !== "object" ||
+      typeof event.installation.id !== "number" ||
       !Number.isInteger(event.installation.id) ||
       event.installation.id <= 0)
   ) {
