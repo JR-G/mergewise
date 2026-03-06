@@ -496,6 +496,7 @@ describe("startWorkerProcess", () => {
   test("handles empty job queue without errors", async () => {
     const errorLogs: string[] = [];
     const intervalCallbacks: (() => void)[] = [];
+    let cyclePromise: Promise<void> = Promise.resolve();
 
     const workerHandle = startWorkerProcess({
       loadConfigFn: () => ({
@@ -530,7 +531,7 @@ describe("startWorkerProcess", () => {
       createPollingLoopControllerFn: (_pollIntervalMs, pollCycle) => ({
         start: () => {
           intervalCallbacks.push(() => {
-            pollCycle().then(() => undefined, () => undefined);
+            cyclePromise = pollCycle().then(() => undefined, () => undefined);
           });
         },
         stop: async () => {},
@@ -545,7 +546,7 @@ describe("startWorkerProcess", () => {
 
     const [runPollCycle] = intervalCallbacks;
     runPollCycle?.();
-    await Promise.resolve();
+    await cyclePromise;
 
     expect(errorLogs).toHaveLength(0);
     await workerHandle.shutdown();
