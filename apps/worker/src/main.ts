@@ -217,13 +217,12 @@ export function startWorkerProcess(
   }
 
   const openDebtStoreFn = dependencies.openDebtStoreFn ?? (() => openStore(DEFAULT_DEBT_DB_PATH));
-  let debtStore: DebtStore;
+  let debtStore: DebtStore | undefined;
   try {
     debtStore = openDebtStoreFn();
   } catch (storeError) {
     const details = storeError instanceof Error ? storeError.stack ?? storeError.message : String(storeError);
-    errorLogger(`[worker] debt_store_open_failed: ${details}`);
-    throw storeError;
+    errorLogger(`[worker] debt_store_open_failed (continuing without graph context): ${details}`);
   }
 
   const processedKeyState = createProcessedKeyState();
@@ -277,10 +276,9 @@ export function startWorkerProcess(
         }
 
         if (isIndexRepoJob(queuedJob)) {
-          await processIndexJobEntry(
-            queuedJob, processedKeyState, config.maxProcessedKeys,
-            processIndexRepoJobFn, debtStore,
-            infoLogger, errorLogger,
+          await handleIndexJob(
+            queuedJob, debtStore, processedKeyState, config.maxProcessedKeys,
+            processIndexRepoJobFn, infoLogger, errorLogger,
           );
           continue;
         }
@@ -337,6 +335,9 @@ export function startWorkerProcess(
   };
 
   const closeDebtStore = (): void => {
+    if (!debtStore) {
+      return;
+    }
     try {
       debtStore.close();
     } catch (closeError) {
@@ -430,6 +431,26 @@ async function processFeedbackJobEntry(
     );
     return false;
   }
+}
+
+async function handleIndexJob(
+  queuedJob: IndexRepoJob,
+  debtStore: DebtStore | undefined,
+  processedKeyState: ReturnType<typeof createProcessedKeyState>,
+  maxProcessedKeys: number,
+  processIndexRepoJobFn: typeof processIndexRepoJob,
+  infoLogger: (message: string) => void,
+  errorLogger: (message: string) => void,
+): Promise<void> {
+  if (!debtStore) {
+    infoLogger(`[worker] skipping index job=${queuedJob.job_id}: debt store unavailable`);
+    return;
+  }
+
+  await processIndexJobEntry(
+    queuedJob, processedKeyState, maxProcessedKeys,
+    processIndexRepoJobFn, debtStore, infoLogger, errorLogger,
+  );
 }
 
 async function processIndexJobEntry(

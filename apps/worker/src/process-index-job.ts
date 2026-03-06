@@ -12,13 +12,21 @@ import type { IndexRepoJob } from "@mergewise/shared-types";
 import { loadGitHubAppCredentials } from "./github-auth";
 
 /**
+ * Resolved clone target: public URL plus optional auth token.
+ */
+interface CloneTarget {
+  readonly url: string;
+  readonly token?: string;
+}
+
+/**
  * Dependency overrides for index-repo job processing.
  */
 export interface IndexJobDependencies {
   readonly debtStore: DebtStore;
   readonly createGitHubAppJwtFn?: typeof createGitHubAppJwt;
   readonly exchangeInstallationAccessTokenFn?: typeof exchangeInstallationAccessToken;
-  readonly spawnClone?: (cloneUrl: string, targetDir: string) => Promise<void>;
+  readonly spawnClone?: (url: string, targetDir: string, token?: string) => Promise<void>;
   readonly logInfo?: (message: string) => void;
   readonly logError?: (message: string) => void;
 }
@@ -59,9 +67,9 @@ export async function processIndexRepoJob(
   const cloneDir = mkdtempSync(join(tmpdir(), "mergewise-index-"));
 
   try {
-    const cloneUrl = await resolveCloneUrl(job, dependencies);
+    const cloneTarget = await resolveCloneTarget(job, dependencies);
     const cloneFn = dependencies.spawnClone ?? spawnShallowClone;
-    await cloneFn(cloneUrl, cloneDir);
+    await cloneFn(cloneTarget.url, cloneDir, cloneTarget.token);
 
     logInfo(
       `[worker] index_clone_complete trace=${traceId} repo=${job.repo_full_name}`,
@@ -106,12 +114,14 @@ export async function processIndexRepoJob(
   }
 }
 
-async function resolveCloneUrl(
+async function resolveCloneTarget(
   job: IndexRepoJob,
   dependencies: IndexJobDependencies,
-): Promise<string> {
+): Promise<CloneTarget> {
+  const url = `https://github.com/${job.repo_full_name}.git`;
+
   if (job.installation_id === null) {
-    return `https://github.com/${job.repo_full_name}.git`;
+    return { url };
   }
 
   const credentials = loadGitHubAppCredentials();
@@ -124,16 +134,31 @@ async function resolveCloneUrl(
   });
   const tokenResponse = await exchangeTokenFn(jwt, job.installation_id);
 
-  return `https://x-access-token:${tokenResponse.token}@github.com/${job.repo_full_name}.git`;
+  return { url, token: tokenResponse.token };
+}
+
+/**
+ * Builds a base64-encoded basic auth header value for git HTTP auth.
+ */
+function buildAuthHeader(token: string): string {
+  return `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`;
 }
 
 async function spawnShallowClone(
   cloneUrl: string,
   targetDir: string,
+  token?: string,
 ): Promise<void> {
+  const env: Record<string, string> = { ...process.env } as Record<string, string>;
+  if (token) {
+    env.GIT_CONFIG_COUNT = "1";
+    env.GIT_CONFIG_KEY_0 = "http.https://github.com/.extraheader";
+    env.GIT_CONFIG_VALUE_0 = buildAuthHeader(token);
+  }
+
   const proc = Bun.spawn(
     ["git", "clone", "--depth", "1", "--single-branch", cloneUrl, targetDir],
-    { stdout: "ignore", stderr: "pipe" },
+    { stdout: "ignore", stderr: "pipe", env },
   );
 
   let timer: ReturnType<typeof setTimeout>;

@@ -175,29 +175,34 @@ describe("processIndexRepoJob", () => {
   });
 
   describe("clone URL resolution", () => {
-    test("includes auth token when installation_id is present", async () => {
+    test("passes auth token separately when installation_id is present", async () => {
       let capturedUrl = "";
+      let capturedToken: string | undefined;
       const dependencies = baseDependencies({
         exchangeInstallationAccessTokenFn: async () => ({
           token: "ghs_secret_token",
           expires_at: "",
         }),
-        spawnClone: async (cloneUrl) => {
+        spawnClone: async (cloneUrl, _dir, token) => {
           capturedUrl = cloneUrl;
+          capturedToken = token;
         },
       });
 
       await processIndexRepoJob(makeJob({ installation_id: 42 }), dependencies);
 
-      expect(capturedUrl).toContain("x-access-token:ghs_secret_token@");
-      expect(capturedUrl).toContain("github.com/acme/widget.git");
+      expect(capturedUrl).toBe("https://github.com/acme/widget.git");
+      expect(capturedUrl).not.toContain("x-access-token");
+      expect(capturedToken).toBe("ghs_secret_token");
     });
 
-    test("uses plain HTTPS URL when installation_id is null", async () => {
+    test("uses plain HTTPS URL with no token when installation_id is null", async () => {
       let capturedUrl = "";
+      let capturedToken: string | undefined;
       const dependencies = baseDependencies({
-        spawnClone: async (cloneUrl) => {
+        spawnClone: async (cloneUrl, _dir, token) => {
           capturedUrl = cloneUrl;
+          capturedToken = token;
         },
       });
 
@@ -207,7 +212,7 @@ describe("processIndexRepoJob", () => {
       );
 
       expect(capturedUrl).toBe("https://github.com/acme/widget.git");
-      expect(capturedUrl).not.toContain("x-access-token");
+      expect(capturedToken).toBeUndefined();
     });
 
     test("passes installation_id to token exchange", async () => {
