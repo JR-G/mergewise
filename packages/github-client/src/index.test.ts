@@ -1047,6 +1047,44 @@ describe("github-client", () => {
     expect(threads[0]!.comments[0]!.authorIsBot).toBe(false);
   });
 
+  test("listPullRequestReviewThreadsWithReplies classifies bot by login suffix when GraphQL id is absent", async () => {
+    const fetchMock: FetchMock = async () =>
+      makeJsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: "PRT_bot_suffix",
+                    comments: {
+                      nodes: [
+                        { body: "automated comment", author: { login: "github-actions[bot]" } },
+                        { body: "human reply", author: { login: "alice" } },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const threads = await listPullRequestReviewThreadsWithReplies({
+      owner: "acme",
+      repository: "widget",
+      pullRequestNumber: 1,
+      installationAccessToken: "ghs_token",
+    });
+
+    expect(threads[0]!.comments[0]!.authorLogin).toBe("github-actions[bot]");
+    expect(threads[0]!.comments[0]!.authorIsBot).toBe(true);
+    expect(threads[0]!.comments[1]!.authorIsBot).toBe(false);
+  });
+
   test("listPullRequestReviewThreadsWithReplies throws GitHubApiError on non-2xx response", async () => {
     const fetchMock: FetchMock = async () =>
       new Response(JSON.stringify({ message: "Bad credentials" }), { status: 401 });

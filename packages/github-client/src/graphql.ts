@@ -397,7 +397,7 @@ function mapRawComment(raw: RawThreadComment): ReviewThreadComment {
   return {
     body: raw.body ?? "",
     authorLogin: raw.author?.login ?? "",
-    authorIsBot: raw.author?.id !== undefined,
+    authorIsBot: raw.author?.id !== undefined || (raw.author?.login ?? "").endsWith("[bot]"),
   };
 }
 
