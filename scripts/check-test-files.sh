@@ -32,3 +32,25 @@ if [ -n "$missing" ]; then
   echo "Every changed source file must have a colocated .test.ts file."
   exit 1
 fi
+
+# Check that test files in the diff contain at least one empty/boundary test
+BOUNDARY_PATTERN='(empty|no |zero|missing|without|undefined|null|none|invalid|malformed|duplicate)'
+no_boundary=""
+
+while IFS= read -r test_file; do
+  case "$test_file" in
+    *.test.ts|*.test.tsx) ;;
+    *) continue ;;
+  esac
+
+  if ! grep -iEq "test\(['\"].*${BOUNDARY_PATTERN}" "$test_file" 2>/dev/null; then
+    echo "No empty/boundary test found in: $test_file"
+    no_boundary="yes"
+  fi
+done < <(git diff --cached --diff-filter=AMR --name-only | grep -E '\.(ts|tsx)$' || true)
+
+if [ -n "$no_boundary" ]; then
+  echo ""
+  echo "Every test file must include at least one test for empty, missing, or invalid input."
+  exit 1
+fi
