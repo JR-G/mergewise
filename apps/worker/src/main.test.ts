@@ -106,7 +106,7 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => [],
+      readAllQueueJobsFn: async () => ({ jobs: [], byteOffset: 0 }),
       processAnalyzePullRequestJobFn: async () => {
         throw new Error("should not run");
       },
@@ -187,7 +187,7 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => queuedJobs,
+      readAllQueueJobsFn: async () => ({ jobs: queuedJobs, byteOffset: 100 }),
       processAnalyzePullRequestJobFn: async (job) => {
         processedJobIds.push(job.job_id);
         return {
@@ -350,7 +350,7 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => [queuedJob],
+      readAllQueueJobsFn: async () => ({ jobs: [queuedJob], byteOffset: 100 }),
       processAnalyzePullRequestJobFn: async () => {
         await processingGate;
         throw new Error("processing failed");
@@ -441,7 +441,7 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => [feedbackJob],
+      readAllQueueJobsFn: async () => ({ jobs: [feedbackJob], byteOffset: 100 }),
       processAnalyzePullRequestJobFn: async (job) => {
         analyzeJobIds.push(job.job_id);
         return {
@@ -544,7 +544,7 @@ describe("startWorkerProcess", () => {
             consistencySamples: 1,
           },
         }),
-        readAllQueueJobsFn: async () => [],
+        readAllQueueJobsFn: async () => ({ jobs: [], byteOffset: 0 }),
         processAnalyzePullRequestJobFn: async () => {
           throw new Error("should not run");
         },
@@ -567,5 +567,187 @@ describe("startWorkerProcess", () => {
       process.on = originalProcessOn;
       process.exit = originalProcessExit;
     }
+  });
+
+  test("persists byte offset after poll cycle and skips already-read jobs on restart", async () => {
+    const processedJobIds: string[] = [];
+    const writtenOffsets: number[] = [];
+    const intervalCallbacks: (() => void)[] = [];
+    let pollCallCount = 0;
+
+    const processHandle = startWorkerProcess({
+      loadConfigFn: () => ({
+        pollIntervalMs: 3000,
+        maxProcessedKeys: 1000,
+        githubApiBaseUrl: "https://api.github.com",
+        githubUserAgent: "mergewise-worker-test",
+        githubRequestTimeoutMs: 1000,
+        githubFetchRetries: 2,
+        githubRetryDelayMs: 10,
+        confidenceThreshold: 0.78,
+        maxComments: 20,
+        testFileConfidenceThreshold: 0.98,
+      }),
+      loadMergewiseConfigFn: () => ({
+        gating: {
+          confidenceThreshold: 0.8,
+          maxComments: 10,
+        },
+        rules: {
+          include: [],
+          exclude: [],
+        },
+        review: { skipPatterns: [] },
+        llm: {
+          enabled: false,
+          model: "gpt-4o",
+          ...DEFAULT_LLM_MODELS,
+          tokenBudget: 30_000,
+          baseUrl: "https://api.openai.com/v1",
+          consistencySamples: 1,
+        },
+      }),
+      readQueueOffsetFn: () => 0,
+      writeQueueOffsetFn: (_path, offset) => {
+        writtenOffsets.push(offset);
+      },
+      readAllQueueJobsFn: async (_filePath, _onSkipped, startByteOffset = 0) => {
+        pollCallCount++;
+        if (startByteOffset === 0) {
+          return {
+            jobs: [
+              {
+                job_id: "job-1",
+                installation_id: 9,
+                repo_full_name: "acme/widget",
+                pr_number: 10,
+                head_sha: "abc123",
+                queued_at: "2026-02-01T00:00:00.000Z",
+              },
+            ],
+            byteOffset: 150,
+          };
+        }
+        return { jobs: [], byteOffset: startByteOffset };
+      },
+      processAnalyzePullRequestJobFn: async (job) => {
+        processedJobIds.push(job.job_id);
+        return {
+          jobId: job.job_id,
+          idempotencyKey: `${job.repo_full_name}#${job.pr_number}@${job.head_sha}`,
+          repository: job.repo_full_name,
+          pullRequestNumber: job.pr_number,
+          headSha: job.head_sha,
+          totalFindings: 0,
+          findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          totalRules: 0,
+          successfulRules: 0,
+          failedRules: 0,
+          failedRuleIds: [],
+          processedAt: "2026-02-01T00:00:00.000Z",
+          traceId: job.job_id,
+        };
+      },
+      createPollingLoopControllerFn: (_pollIntervalMs, pollCycle) => ({
+        start: () => {
+          intervalCallbacks.push(() => {
+            pollCycle().then(() => undefined, () => undefined);
+          });
+        },
+        stop: async () => {},
+        isRunning: () => true,
+      }),
+      registerSignalHandlerFn: () => {},
+      logInfo: () => {},
+      logError: () => {},
+    });
+
+    const drainMicrotasks = (): Promise<void> =>
+      new Promise((resolve) => { setTimeout(resolve, 0); });
+
+    const [runPollCycle] = intervalCallbacks;
+    runPollCycle?.();
+    await drainMicrotasks();
+
+    expect(processedJobIds).toEqual(["job-1"]);
+    expect(writtenOffsets).toEqual([150]);
+
+    runPollCycle?.();
+    await drainMicrotasks();
+
+    expect(processedJobIds).toEqual(["job-1"]);
+    expect(pollCallCount).toBe(2);
+
+    await processHandle.shutdown();
+  });
+
+  test("does not persist offset when no new data was read", async () => {
+    const writtenOffsets: number[] = [];
+    const intervalCallbacks: (() => void)[] = [];
+
+    const processHandle = startWorkerProcess({
+      loadConfigFn: () => ({
+        pollIntervalMs: 3000,
+        maxProcessedKeys: 1000,
+        githubApiBaseUrl: "https://api.github.com",
+        githubUserAgent: "mergewise-worker-test",
+        githubRequestTimeoutMs: 1000,
+        githubFetchRetries: 2,
+        githubRetryDelayMs: 10,
+        confidenceThreshold: 0.78,
+        maxComments: 20,
+        testFileConfidenceThreshold: 0.98,
+      }),
+      loadMergewiseConfigFn: () => ({
+        gating: {
+          confidenceThreshold: 0.8,
+          maxComments: 10,
+        },
+        rules: {
+          include: [],
+          exclude: [],
+        },
+        review: { skipPatterns: [] },
+        llm: {
+          enabled: false,
+          model: "gpt-4o",
+          ...DEFAULT_LLM_MODELS,
+          tokenBudget: 30_000,
+          baseUrl: "https://api.openai.com/v1",
+          consistencySamples: 1,
+        },
+      }),
+      readQueueOffsetFn: () => 500,
+      writeQueueOffsetFn: (_path, offset) => {
+        writtenOffsets.push(offset);
+      },
+      readAllQueueJobsFn: async () => ({ jobs: [], byteOffset: 500 }),
+      processAnalyzePullRequestJobFn: async () => {
+        throw new Error("should not run");
+      },
+      createPollingLoopControllerFn: (_pollIntervalMs, pollCycle) => ({
+        start: () => {
+          intervalCallbacks.push(() => {
+            pollCycle().then(() => undefined, () => undefined);
+          });
+        },
+        stop: async () => {},
+        isRunning: () => true,
+      }),
+      registerSignalHandlerFn: () => {},
+      logInfo: () => {},
+      logError: () => {},
+    });
+
+    const drainMicrotasks = (): Promise<void> =>
+      new Promise((resolve) => { setTimeout(resolve, 0); });
+
+    const [runPollCycle] = intervalCallbacks;
+    runPollCycle?.();
+    await drainMicrotasks();
+
+    expect(writtenOffsets).toEqual([]);
+
+    await processHandle.shutdown();
   });
 });

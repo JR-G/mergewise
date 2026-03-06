@@ -1,11 +1,14 @@
 import {
   DEFAULT_JOB_FILE_PATH,
+  deriveOffsetFilePath,
   isCollectFeedbackJob,
   readAllQueueJobs,
+  readQueueOffset,
+  writeQueueOffset,
 } from "@mergewise/job-store";
 import { loadMergewiseConfig } from "@mergewise/config-loader";
 import { openFeedbackStore, type FeedbackStore } from "@mergewise/feedback-store";
-import type { CollectFeedbackJob, QueueJob } from "@mergewise/shared-types";
+import type { CollectFeedbackJob } from "@mergewise/shared-types";
 
 import {
   buildIdempotencyKey,
@@ -90,6 +93,14 @@ export interface StartWorkerProcessDependencies {
     listener: (signal: WorkerShutdownSignal) => void,
   ) => void;
   /**
+   * Queue offset reader for resuming from the last read position.
+   */
+  readonly readQueueOffsetFn?: typeof readQueueOffset;
+  /**
+   * Queue offset writer for persisting the current read position.
+   */
+  readonly writeQueueOffsetFn?: typeof writeQueueOffset;
+  /**
    * Feedback store factory override for testing.
    */
   readonly openFeedbackStoreFn?: () => FeedbackStore;
@@ -168,6 +179,8 @@ export function startWorkerProcess(
     dependencies.processCollectFeedbackJobFn ?? processCollectFeedbackJob;
   const createPollingLoopControllerFn =
     dependencies.createPollingLoopControllerFn ?? createPollingLoopController;
+  const readQueueOffsetFn = dependencies.readQueueOffsetFn ?? readQueueOffset;
+  const writeQueueOffsetFn = dependencies.writeQueueOffsetFn ?? writeQueueOffset;
   const registerSignalHandlerFn =
     dependencies.registerSignalHandlerFn ??
     ((signal, listener) => process.on(signal, listener));
@@ -187,17 +200,21 @@ export function startWorkerProcess(
   }
   const processedKeyState = createProcessedKeyState();
   const pollCycleState = { isPollInFlight: false };
+  const offsetFilePath = deriveOffsetFilePath(DEFAULT_JOB_FILE_PATH);
+  let currentByteOffset = readQueueOffsetFn(offsetFilePath);
 
   const pollAndProcessJobs = async (): Promise<void> => {
     const didRun = await runPollCycleWithInFlightGuard(pollCycleState, async () => {
-      let queuedJobs: QueueJob[];
+      let readResult: Awaited<ReturnType<typeof readAllQueueJobs>>;
       try {
-        queuedJobs = await readAllQueueJobsFn();
+        readResult = await readAllQueueJobsFn(undefined, undefined, currentByteOffset);
       } catch (error) {
         const details = error instanceof Error ? error.stack ?? error.message : String(error);
         errorLogger(`[worker] failed to read queued jobs: ${details}`);
         return;
       }
+
+      const { jobs: queuedJobs, byteOffset: newByteOffset } = readResult;
 
       const findingDeliveryOptions: WorkerFindingDeliveryOptions = {
         confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
@@ -244,6 +261,16 @@ export function startWorkerProcess(
           );
         }
       }
+
+      if (newByteOffset !== currentByteOffset) {
+        currentByteOffset = newByteOffset;
+        try {
+          writeQueueOffsetFn(offsetFilePath, currentByteOffset);
+        } catch (writeError) {
+          const details = writeError instanceof Error ? writeError.message : String(writeError);
+          errorLogger(`[worker] failed to write queue offset: ${details}`);
+        }
+      }
     });
 
     if (!didRun) {
@@ -273,7 +300,7 @@ export function startWorkerProcess(
   });
 
   infoLogger(
-    `[worker] started (poll=${config.pollIntervalMs}ms, max_keys=${config.maxProcessedKeys}, source=${DEFAULT_JOB_FILE_PATH})`,
+    `[worker] started (poll=${config.pollIntervalMs}ms, max_keys=${config.maxProcessedKeys}, source=${DEFAULT_JOB_FILE_PATH}, offset=${currentByteOffset})`,
   );
   pollingLoop.start();
   registerSignalHandlerFn("SIGTERM", shutdownSignalHandler);
