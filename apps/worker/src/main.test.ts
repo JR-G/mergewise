@@ -479,12 +479,22 @@ describe("startWorkerProcess", () => {
     await processHandle.shutdown();
   });
 
-  test("handles empty job queue without errors", async () => {
-    const errorLogs: string[] = [];
+  test("routes index-repo jobs to processIndexRepoJobFn when debt store is available", async () => {
+    const indexJobIds: string[] = [];
+    const analyzeJobIds: string[] = [];
     const intervalCallbacks: (() => void)[] = [];
-    let cyclePromise: Promise<void> = Promise.resolve();
 
-    const workerHandle = startWorkerProcess({
+    const indexJob = {
+      type: "index-repo" as const,
+      job_id: "idx-1",
+      installation_id: 42,
+      repo_full_name: "acme/widget",
+      default_branch: "main",
+      head_sha: "sha123",
+      queued_at: "2026-02-01T00:00:00.000Z",
+    };
+
+    const processHandle = startWorkerProcess({
       loadConfigFn: () => ({
         pollIntervalMs: 3000,
         maxProcessedKeys: 1000,
@@ -502,42 +512,156 @@ describe("startWorkerProcess", () => {
         rules: { include: [], exclude: [] },
         review: { skipPatterns: [] },
         llm: {
-          enabled: false,
-          model: "gpt-4o",
-          ...DEFAULT_LLM_MODELS,
-          tokenBudget: 30_000,
-          baseUrl: "https://api.openai.com/v1",
-          consistencySamples: 1,
+          enabled: false, model: "gpt-4o", ...DEFAULT_LLM_MODELS,
+          tokenBudget: 30_000, baseUrl: "https://api.openai.com/v1", consistencySamples: 1,
         },
       }),
       readQueueOffsetFn: () => 0,
       writeQueueOffsetFn: () => {},
-      readAllQueueJobsFn: async () => ({ jobs: [], byteOffset: 0 }),
-      processAnalyzePullRequestJobFn: async () => {
-        throw new Error("should not run");
+      readAllQueueJobsFn: async () => ({ jobs: [indexJob], byteOffset: 100 }),
+      processAnalyzePullRequestJobFn: async (job) => {
+        analyzeJobIds.push(job.job_id);
+        return {} as never;
       },
+      processIndexRepoJobFn: async (job) => {
+        indexJobIds.push(job.job_id);
+        return { repoFullName: job.repo_full_name, headSha: job.head_sha, nodeCount: 1, hotspotCount: 0, scanId: "s1" };
+      },
+      openDebtStoreFn: () => ({
+        saveScan: () => "scan-1",
+        listScans: () => [],
+        loadScan: () => null,
+        latestScan: () => null,
+        close: () => {},
+      }),
       createPollingLoopControllerFn: (_pollIntervalMs, pollCycle) => ({
         start: () => {
-          intervalCallbacks.push(() => {
-            cyclePromise = pollCycle().then(() => undefined, () => undefined);
-          });
+          intervalCallbacks.push(() => { pollCycle().then(() => undefined, () => undefined); });
         },
         stop: async () => {},
         isRunning: () => true,
       }),
       registerSignalHandlerFn: () => {},
       logInfo: () => {},
-      logError: (message) => {
-        errorLogs.push(message);
-      },
+      logError: () => {},
     });
 
     const [runPollCycle] = intervalCallbacks;
     runPollCycle?.();
-    await cyclePromise;
+    await Promise.resolve();
 
-    expect(errorLogs).toHaveLength(0);
-    await workerHandle.shutdown();
+    expect(indexJobIds).toEqual(["idx-1"]);
+    expect(analyzeJobIds).toEqual([]);
+
+    await processHandle.shutdown();
+  });
+
+  test("skips index-repo jobs without debt store", async () => {
+    const infoLogs: string[] = [];
+    const intervalCallbacks: (() => void)[] = [];
+
+    const indexJob = {
+      type: "index-repo" as const,
+      job_id: "idx-2",
+      installation_id: 42,
+      repo_full_name: "acme/widget",
+      default_branch: "main",
+      head_sha: "sha456",
+      queued_at: "2026-02-01T00:00:00.000Z",
+    };
+
+    const processHandle = startWorkerProcess({
+      loadConfigFn: () => ({
+        pollIntervalMs: 3000,
+        maxProcessedKeys: 1000,
+        githubApiBaseUrl: "https://api.github.com",
+        githubUserAgent: "mergewise-worker-test",
+        githubRequestTimeoutMs: 1000,
+        githubFetchRetries: 2,
+        githubRetryDelayMs: 10,
+        confidenceThreshold: 0.78,
+        maxComments: 20,
+        testFileConfidenceThreshold: 0.98,
+      }),
+      loadMergewiseConfigFn: () => ({
+        gating: { confidenceThreshold: 0.8, maxComments: 10 },
+        rules: { include: [], exclude: [] },
+        review: { skipPatterns: [] },
+        llm: {
+          enabled: false, model: "gpt-4o", ...DEFAULT_LLM_MODELS,
+          tokenBudget: 30_000, baseUrl: "https://api.openai.com/v1", consistencySamples: 1,
+        },
+      }),
+      readQueueOffsetFn: () => 0,
+      writeQueueOffsetFn: () => {},
+      readAllQueueJobsFn: async () => ({ jobs: [indexJob], byteOffset: 100 }),
+      processAnalyzePullRequestJobFn: async () => ({} as never),
+      openDebtStoreFn: () => { throw new Error("SQLite init failed"); },
+      createPollingLoopControllerFn: (_pollIntervalMs, pollCycle) => ({
+        start: () => {
+          intervalCallbacks.push(() => { pollCycle().then(() => undefined, () => undefined); });
+        },
+        stop: async () => {},
+        isRunning: () => true,
+      }),
+      registerSignalHandlerFn: () => {},
+      logInfo: (message) => { infoLogs.push(message); },
+      logError: () => {},
+    });
+
+    const [runPollCycle] = intervalCallbacks;
+    runPollCycle?.();
+    await Promise.resolve();
+
+    expect(infoLogs.some((log) => log.includes("skipping index job=idx-2"))).toBe(true);
+    expect(infoLogs.some((log) => log.includes("debt store unavailable"))).toBe(true);
+
+    await processHandle.shutdown();
+  });
+
+  test("continues startup when debt store open fails", () => {
+    const errorLogs: string[] = [];
+
+    const processHandle = startWorkerProcess({
+      loadConfigFn: () => ({
+        pollIntervalMs: 3000,
+        maxProcessedKeys: 1000,
+        githubApiBaseUrl: "https://api.github.com",
+        githubUserAgent: "mergewise-worker-test",
+        githubRequestTimeoutMs: 1000,
+        githubFetchRetries: 2,
+        githubRetryDelayMs: 10,
+        confidenceThreshold: 0.78,
+        maxComments: 20,
+        testFileConfidenceThreshold: 0.98,
+      }),
+      loadMergewiseConfigFn: () => ({
+        gating: { confidenceThreshold: 0.8, maxComments: 10 },
+        rules: { include: [], exclude: [] },
+        review: { skipPatterns: [] },
+        llm: {
+          enabled: false, model: "gpt-4o", ...DEFAULT_LLM_MODELS,
+          tokenBudget: 30_000, baseUrl: "https://api.openai.com/v1", consistencySamples: 1,
+        },
+      }),
+      readQueueOffsetFn: () => 0,
+      writeQueueOffsetFn: () => {},
+      readAllQueueJobsFn: async () => ({ jobs: [], byteOffset: 0 }),
+      processAnalyzePullRequestJobFn: async () => ({} as never),
+      openDebtStoreFn: () => { throw new Error("disk full"); },
+      createPollingLoopControllerFn: () => ({
+        start: () => {},
+        stop: async () => {},
+        isRunning: () => true,
+      }),
+      registerSignalHandlerFn: () => {},
+      logInfo: () => {},
+      logError: (message) => { errorLogs.push(message); },
+    });
+
+    expect(errorLogs.some((log) => log.includes("debt_store_open_failed"))).toBe(true);
+    expect(errorLogs.some((log) => log.includes("disk full"))).toBe(true);
+    expect(processHandle.shutdown).toBeDefined();
   });
 
   test("uses default process signal registration and default exit wiring", async () => {

@@ -6,7 +6,9 @@ import type { IndexRepoJob } from "@mergewise/shared-types";
 import type { DebtProfile, DebtStore } from "@mergewise/debt-scanner";
 
 import {
+  buildAuthHeader,
   processIndexRepoJob,
+  scrubCredentials,
   type IndexJobDependencies,
 } from "./process-index-job";
 
@@ -484,5 +486,51 @@ describe("processIndexRepoJob", () => {
       expect(jwtCalled).toBe(false);
       expect(tokenExchangeCalled).toBe(false);
     });
+  });
+});
+
+describe("scrubCredentials", () => {
+  test("replaces token in embedded credential URL", () => {
+    const input = "fatal: https://x-access-token:ghs_secret123@github.com/acme/repo.git not found";
+    const result = scrubCredentials(input);
+
+    expect(result).toContain("x-access-token:***@");
+    expect(result).not.toContain("ghs_secret123");
+  });
+
+  test("handles multiple credential occurrences", () => {
+    const input = "x-access-token:abc@host1 and x-access-token:def@host2";
+    const result = scrubCredentials(input);
+
+    expect(result).toBe("x-access-token:***@host1 and x-access-token:***@host2");
+  });
+
+  test("returns input unchanged when no credentials present", () => {
+    const input = "fatal: repository not found";
+
+    expect(scrubCredentials(input)).toBe(input);
+  });
+
+  test("returns empty string for empty input", () => {
+    expect(scrubCredentials("")).toBe("");
+  });
+});
+
+describe("buildAuthHeader", () => {
+  test("produces base64-encoded basic auth header", () => {
+    const header = buildAuthHeader("ghs_test_token");
+
+    expect(header).toContain("AUTHORIZATION: basic ");
+    const encoded = header.replace("AUTHORIZATION: basic ", "");
+    const decoded = Buffer.from(encoded, "base64").toString("utf-8");
+    expect(decoded).toBe("x-access-token:ghs_test_token");
+  });
+
+  test("encodes special characters in token", () => {
+    const header = buildAuthHeader("token/with+special=chars");
+    const encoded = header.replace("AUTHORIZATION: basic ", "");
+    const decoded = Buffer.from(encoded, "base64").toString("utf-8");
+
+    expect(decoded).toBe("x-access-token:token/with+special=chars");
   });
 });

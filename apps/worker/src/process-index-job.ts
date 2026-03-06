@@ -140,7 +140,7 @@ async function resolveCloneTarget(
 /**
  * Builds a base64-encoded basic auth header value for git HTTP auth.
  */
-function buildAuthHeader(token: string): string {
+export function buildAuthHeader(token: string): string {
   return `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`;
 }
 
@@ -184,6 +184,6 @@ async function spawnShallowClone(
 /**
  * Removes embedded access tokens from clone URLs in error output.
  */
-function scrubCredentials(text: string): string {
+export function scrubCredentials(text: string): string {
   return text.replace(/x-access-token:[^@]+@/g, "x-access-token:***@");
 }
