@@ -2,13 +2,15 @@ import {
   DEFAULT_JOB_FILE_PATH,
   deriveOffsetFilePath,
   isCollectFeedbackJob,
+  isIndexRepoJob,
   readAllQueueJobs,
   readQueueOffset,
   writeQueueOffset,
 } from "@mergewise/job-store";
 import { loadMergewiseConfig } from "@mergewise/config-loader";
 import { openFeedbackStore, type FeedbackStore } from "@mergewise/feedback-store";
-import type { CollectFeedbackJob } from "@mergewise/shared-types";
+import { openStore, type DebtStore } from "@mergewise/debt-scanner";
+import type { CollectFeedbackJob, IndexRepoJob, QueueJob } from "@mergewise/shared-types";
 
 import {
   buildIdempotencyKey,
@@ -25,6 +27,7 @@ import {
   type WorkerGitHubFetchOptions,
 } from "./index";
 import { processCollectFeedbackJob } from "./process-feedback-job";
+import { processIndexRepoJob } from "./process-index-job";
 
 /**
  * Supported shutdown signals for graceful worker termination.
@@ -104,6 +107,14 @@ export interface StartWorkerProcessDependencies {
    * Feedback store factory override for testing.
    */
   readonly openFeedbackStoreFn?: () => FeedbackStore;
+  /**
+   * Debt store factory override for testing.
+   */
+  readonly openDebtStoreFn?: () => DebtStore;
+  /**
+   * Index-repo job processing implementation.
+   */
+  readonly processIndexRepoJobFn?: typeof processIndexRepoJob;
   /**
    * Info logger for startup and lifecycle events.
    */
@@ -189,6 +200,7 @@ export function startWorkerProcess(
 
   const config = loadConfigFn();
   const mergewiseConfig = loadMergewiseConfigFn();
+  const processIndexRepoJobFn = dependencies.processIndexRepoJobFn ?? processIndexRepoJob;
   const openFeedbackStoreFn = dependencies.openFeedbackStoreFn ?? openFeedbackStore;
   let feedbackStore: FeedbackStore;
   try {
@@ -198,6 +210,18 @@ export function startWorkerProcess(
     errorLogger(`[worker] feedback_store_open_failed: ${details}`);
     throw storeError;
   }
+
+  const DEFAULT_DEBT_DB_PATH = ".mergewise-runtime/debt.db";
+  const openDebtStoreFn = dependencies.openDebtStoreFn ?? (() => openStore(DEFAULT_DEBT_DB_PATH));
+  let debtStore: DebtStore;
+  try {
+    debtStore = openDebtStoreFn();
+  } catch (storeError) {
+    const details = storeError instanceof Error ? storeError.stack ?? storeError.message : String(storeError);
+    errorLogger(`[worker] debt_store_open_failed: ${details}`);
+    throw storeError;
+  }
+
   const processedKeyState = createProcessedKeyState();
   const pollCycleState = { isPollInFlight: false };
   const offsetFilePath = deriveOffsetFilePath(DEFAULT_JOB_FILE_PATH);
@@ -248,6 +272,15 @@ export function startWorkerProcess(
           continue;
         }
 
+        if (isIndexRepoJob(queuedJob)) {
+          await processIndexJobEntry(
+            queuedJob, processedKeyState, config.maxProcessedKeys,
+            processIndexRepoJobFn, debtStore,
+            infoLogger, errorLogger,
+          );
+          continue;
+        }
+
         const idempotencyKey = buildIdempotencyKey(queuedJob);
         if (processedKeyState.keys.has(idempotencyKey)) {
           continue;
@@ -260,6 +293,7 @@ export function startWorkerProcess(
             mergewiseConfig,
             githubFetchOptions,
             feedbackStore,
+            debtStore,
           });
           trackProcessedKey(idempotencyKey, processedKeyState, config.maxProcessedKeys);
         } catch (error) {
@@ -298,10 +332,20 @@ export function startWorkerProcess(
     }
   };
 
+  const closeDebtStore = (): void => {
+    try {
+      debtStore.close();
+    } catch (closeError) {
+      const details = closeError instanceof Error ? closeError.message : String(closeError);
+      errorLogger(`[worker] debt_store_close_failed: ${details}`);
+    }
+  };
+
   const shutdownSignalHandler = createShutdownSignalHandler({
     shutdown: async () => {
       await pollingLoop.stop();
       closeFeedbackStore();
+      closeDebtStore();
     },
     logInfo: infoLogger,
     logError: errorLogger,
@@ -318,6 +362,7 @@ export function startWorkerProcess(
     shutdown: async (): Promise<void> => {
       await pollingLoop.stop();
       closeFeedbackStore();
+      closeDebtStore();
     },
     handleSignal: shutdownSignalHandler,
   };
@@ -380,6 +425,35 @@ async function processFeedbackJobEntry(
       `[worker] failed to process feedback job=${queuedJob.job_id}: ${details}`,
     );
     return false;
+  }
+}
+
+async function processIndexJobEntry(
+  queuedJob: IndexRepoJob,
+  processedKeyState: ReturnType<typeof createProcessedKeyState>,
+  maxProcessedKeys: number,
+  processIndexRepoJobFn: typeof processIndexRepoJob,
+  debtStore: DebtStore,
+  infoLogger: (message: string) => void,
+  errorLogger: (message: string) => void,
+): Promise<void> {
+  const indexIdempotencyKey = `index:${queuedJob.repo_full_name}@${queuedJob.head_sha}`;
+  if (processedKeyState.keys.has(indexIdempotencyKey)) {
+    return;
+  }
+
+  try {
+    await processIndexRepoJobFn(queuedJob, {
+      debtStore,
+      logInfo: infoLogger,
+      logError: errorLogger,
+    });
+    trackProcessedKey(indexIdempotencyKey, processedKeyState, maxProcessedKeys);
+  } catch (error) {
+    const details = error instanceof Error ? error.stack ?? error.message : String(error);
+    errorLogger(
+      `[worker] failed to process index job=${queuedJob.job_id}: ${details}`,
+    );
   }
 }
 
