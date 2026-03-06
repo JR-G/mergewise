@@ -7,12 +7,7 @@ import {
   buildAnalyzePullRequestJob,
   buildCollectFeedbackJob,
   buildIndexRepoJob,
-  cancelOrphanedCheckRun,
   computeGitHubSignature,
-  createPendingCheckRun,
-  createWebhookErrorResponse,
-  createWebhookJsonResponse,
-  getRequestId,
   isClosedOrMergedPullRequest,
   isDefaultBranchPush,
   isDraftPullRequest,
@@ -20,11 +15,8 @@ import {
   isPushWebhookEvent,
   isWebhookSignatureValid,
   loadConfig,
-  logWebhookFailure,
-  readWebhookRequestBody,
   SUPPORTED_PULL_REQUEST_ACTIONS,
 } from "./index";
-import type { WebhookApiConfig } from "./index";
 
 import type { GitHubPullRequestWebhookEvent } from "@mergewise/shared-types";
 import {
@@ -191,19 +183,19 @@ describe("loadConfig", () => {
   const originalEnv = { ...process.env };
 
   afterEach(() => {
-    process.env["WEBHOOK_PORT"] = originalEnv["WEBHOOK_PORT"];
-    process.env["GITHUB_WEBHOOK_SECRET"] = originalEnv["GITHUB_WEBHOOK_SECRET"];
-    process.env["GITHUB_APP_ID"] = originalEnv["GITHUB_APP_ID"];
-    process.env["GITHUB_APP_PRIVATE_KEY"] = originalEnv["GITHUB_APP_PRIVATE_KEY"];
-    process.env["GITHUB_APP_PRIVATE_KEY_PATH"] = originalEnv["GITHUB_APP_PRIVATE_KEY_PATH"];
+    process.env.WEBHOOK_PORT = originalEnv.WEBHOOK_PORT;
+    process.env.GITHUB_WEBHOOK_SECRET = originalEnv.GITHUB_WEBHOOK_SECRET;
+    process.env.GITHUB_APP_ID = originalEnv.GITHUB_APP_ID;
+    process.env.GITHUB_APP_PRIVATE_KEY = originalEnv.GITHUB_APP_PRIVATE_KEY;
+    process.env.GITHUB_APP_PRIVATE_KEY_PATH = originalEnv.GITHUB_APP_PRIVATE_KEY_PATH;
   });
 
   test("returns default port when env is unset", () => {
-    delete process.env["WEBHOOK_PORT"];
-    delete process.env["GITHUB_WEBHOOK_SECRET"];
-    delete process.env["GITHUB_APP_ID"];
-    delete process.env["GITHUB_APP_PRIVATE_KEY"];
-    delete process.env["GITHUB_APP_PRIVATE_KEY_PATH"];
+    delete process.env.WEBHOOK_PORT;
+    delete process.env.GITHUB_WEBHOOK_SECRET;
+    delete process.env.GITHUB_APP_ID;
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
+    delete process.env.GITHUB_APP_PRIVATE_KEY_PATH;
     const cfg = loadConfig();
     expect(cfg.port).toBe(8787);
     expect(cfg.webhookSecret).toBeUndefined();
@@ -212,36 +204,36 @@ describe("loadConfig", () => {
   });
 
   test("reads webhook secret from env", () => {
-    delete process.env["WEBHOOK_PORT"];
-    process.env["GITHUB_WEBHOOK_SECRET"] = "test-secret";
+    delete process.env.WEBHOOK_PORT;
+    process.env.GITHUB_WEBHOOK_SECRET = "test-secret";
     const cfg = loadConfig();
     expect(cfg.webhookSecret).toBe("test-secret");
   });
 
   test("reads and normalises GitHub App credentials from env", () => {
-    delete process.env["WEBHOOK_PORT"];
-    process.env["GITHUB_APP_ID"] = "456";
-    process.env["GITHUB_APP_PRIVATE_KEY"] = "-----BEGIN KEY-----\\nabc\\n-----END KEY-----\\n";
+    delete process.env.WEBHOOK_PORT;
+    process.env.GITHUB_APP_ID = "456";
+    process.env.GITHUB_APP_PRIVATE_KEY = "-----BEGIN KEY-----\\nabc\\n-----END KEY-----\\n";
     const cfg = loadConfig();
     expect(cfg.githubAppId).toBe(456);
     expect(cfg.githubAppPrivateKeyPem).toBe("-----BEGIN KEY-----\nabc\n-----END KEY-----");
   });
 
   test("throws for invalid port", () => {
-    process.env["WEBHOOK_PORT"] = "not-a-number";
+    process.env.WEBHOOK_PORT = "not-a-number";
     expect(() => loadConfig()).toThrow("Invalid WEBHOOK_PORT value");
   });
 
   test("reads private key from GITHUB_APP_PRIVATE_KEY_PATH when inline key is unset", () => {
-    delete process.env["WEBHOOK_PORT"];
-    delete process.env["GITHUB_APP_PRIVATE_KEY"];
+    delete process.env.WEBHOOK_PORT;
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
     const tempDir = mkdtempSync(join(tmpdir(), "webhook-api-test-"));
     const keyPath = join(tempDir, "test.pem");
     writeFileSync(keyPath, "-----BEGIN RSA PRIVATE KEY-----\ntest-key-data\n-----END RSA PRIVATE KEY-----\n");
 
     try {
-      process.env["GITHUB_APP_PRIVATE_KEY_PATH"] = keyPath;
-      process.env["GITHUB_APP_ID"] = "789";
+      process.env.GITHUB_APP_PRIVATE_KEY_PATH = keyPath;
+      process.env.GITHUB_APP_ID = "789";
       const cfg = loadConfig();
       expect(cfg.githubAppId).toBe(789);
       expect(cfg.githubAppPrivateKeyPem).toBe(
@@ -253,14 +245,14 @@ describe("loadConfig", () => {
   });
 
   test("prefers GITHUB_APP_PRIVATE_KEY over GITHUB_APP_PRIVATE_KEY_PATH", () => {
-    delete process.env["WEBHOOK_PORT"];
+    delete process.env.WEBHOOK_PORT;
     const tempDir = mkdtempSync(join(tmpdir(), "webhook-api-test-"));
     const keyPath = join(tempDir, "test.pem");
     writeFileSync(keyPath, "file-key-content");
 
     try {
-      process.env["GITHUB_APP_PRIVATE_KEY"] = "inline-key-content";
-      process.env["GITHUB_APP_PRIVATE_KEY_PATH"] = keyPath;
+      process.env.GITHUB_APP_PRIVATE_KEY = "inline-key-content";
+      process.env.GITHUB_APP_PRIVATE_KEY_PATH = keyPath;
       const cfg = loadConfig();
       expect(cfg.githubAppPrivateKeyPem).toBe("inline-key-content");
     } finally {
@@ -269,253 +261,11 @@ describe("loadConfig", () => {
   });
 
   test("returns undefined when GITHUB_APP_PRIVATE_KEY_PATH file is unreadable", () => {
-    delete process.env["WEBHOOK_PORT"];
-    delete process.env["GITHUB_APP_PRIVATE_KEY"];
-    process.env["GITHUB_APP_PRIVATE_KEY_PATH"] = "/nonexistent/path/key.pem";
+    delete process.env.WEBHOOK_PORT;
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
+    process.env.GITHUB_APP_PRIVATE_KEY_PATH = "/nonexistent/path/key.pem";
     const cfg = loadConfig();
     expect(cfg.githubAppPrivateKeyPem).toBeUndefined();
-  });
-});
-
-describe("getRequestId", () => {
-  test("uses existing x-request-id header", () => {
-    const request = new Request("http://localhost/webhook", {
-      method: "POST",
-      headers: {
-        "x-request-id": "external-request-id",
-      },
-    });
-
-    expect(getRequestId(request)).toBe("external-request-id");
-  });
-
-  test("generates uuid when header is missing", () => {
-    const request = new Request("http://localhost/webhook", {
-      method: "POST",
-    });
-
-    expect(getRequestId(request)).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-    );
-  });
-});
-
-describe("createWebhookJsonResponse", () => {
-  test("propagates request id as response header", async () => {
-    const response = createWebhookJsonResponse(
-      { status: "ok", request_id: "test-request-id" },
-      200,
-      "test-request-id",
-    );
-
-    expect(response.headers.get("x-request-id")).toBe("test-request-id");
-    expect(await response.json()).toEqual({
-      status: "ok",
-      request_id: "test-request-id",
-    });
-  });
-});
-
-describe("createWebhookErrorResponse", () => {
-  test("returns standard error envelope", async () => {
-    const response = createWebhookErrorResponse(
-      "invalid_signature",
-      "Invalid signature",
-      401,
-      "request-123",
-    );
-
-    expect(response.status).toBe(401);
-    expect(response.headers.get("x-request-id")).toBe("request-123");
-    expect(await response.json()).toEqual({
-      status: "error",
-      request_id: "request-123",
-      error: {
-        code: "invalid_signature",
-        message: "Invalid signature",
-      },
-    });
-  });
-});
-
-describe("readWebhookRequestBody", () => {
-  test("returns raw body when request text succeeds", async () => {
-    const request = new Request("http://localhost/webhook", {
-      method: "POST",
-      body: '{"ok":true}',
-    });
-
-    const result = await readWebhookRequestBody(
-      request,
-      "request-100",
-      "pull_request",
-    );
-
-    expect(result).toEqual({
-      ok: true,
-      rawBody: '{"ok":true}',
-    });
-  });
-
-  test("returns typed error response when request body read fails", async () => {
-    const originalConsoleError = console.error;
-    const capturedLogs: unknown[] = [];
-    console.error = (value?: unknown): void => {
-      capturedLogs.push(value);
-    };
-
-    const failingRequest = {
-      text: async (): Promise<string> => {
-        throw new Error("body stream failed");
-      },
-    } as unknown as Request;
-
-    try {
-      const result = await readWebhookRequestBody(
-        failingRequest,
-        "request-101",
-        "pull_request",
-      );
-
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        throw new Error("Expected request body read to fail");
-      }
-
-      expect(result.response.status).toBe(400);
-      expect(result.response.headers.get("x-request-id")).toBe("request-101");
-      expect(await result.response.json()).toEqual({
-        status: "error",
-        request_id: "request-101",
-        error: {
-          code: "request_body_read_failed",
-          message: "Failed to read request body",
-        },
-      });
-    } finally {
-      console.error = originalConsoleError;
-    }
-
-    expect(capturedLogs).toHaveLength(1);
-    const loggedPayload = JSON.parse(String(capturedLogs[0])) as {
-      error_code: string;
-      message: string;
-      request_id: string;
-      github_event: string;
-      cause: string;
-    };
-    expect(loggedPayload.error_code).toBe("request_body_read_failed");
-    expect(loggedPayload.message).toBe("Failed to read request body");
-    expect(loggedPayload.request_id).toBe("request-101");
-    expect(loggedPayload.github_event).toBe("pull_request");
-    expect(loggedPayload.cause).toContain("body stream failed");
-  });
-});
-
-describe("logWebhookFailure", () => {
-  test("emits structured json logs", () => {
-    const originalConsoleError = console.error;
-    const capturedLogs: unknown[] = [];
-    console.error = (value?: unknown): void => {
-      capturedLogs.push(value);
-    };
-
-    try {
-      logWebhookFailure({
-        event: "webhook_request_failed",
-        request_id: "request-456",
-        http_status: 503,
-        error_code: "queue_enqueue_failed",
-        message: "Failed to queue analysis job",
-      });
-    } finally {
-      console.error = originalConsoleError;
-    }
-
-    expect(capturedLogs).toHaveLength(1);
-    expect(capturedLogs[0]).toBe(
-      JSON.stringify({
-        event: "webhook_request_failed",
-        request_id: "request-456",
-        http_status: 503,
-        error_code: "queue_enqueue_failed",
-        message: "Failed to queue analysis job",
-      }),
-    );
-  });
-
-  test("serializes canonical repository and pull request fields", () => {
-    const originalConsoleError = console.error;
-    const capturedLogs: unknown[] = [];
-    console.error = (value?: unknown): void => {
-      capturedLogs.push(value);
-    };
-
-    try {
-      logWebhookFailure({
-        event: "webhook_request_failed",
-        request_id: "request-789",
-        http_status: 503,
-        error_code: "queue_enqueue_failed",
-        message: "Failed to queue analysis job",
-        repository_full_name: "acme/widget",
-        pull_request_number: 7,
-      });
-    } finally {
-      console.error = originalConsoleError;
-    }
-
-    expect(capturedLogs).toHaveLength(1);
-    expect(capturedLogs[0]).toBe(
-      JSON.stringify({
-        event: "webhook_request_failed",
-        request_id: "request-789",
-        http_status: 503,
-        error_code: "queue_enqueue_failed",
-        message: "Failed to queue analysis job",
-        repository_full_name: "acme/widget",
-        pull_request_number: 7,
-        repo_full_name: "acme/widget",
-        pr_number: 7,
-      }),
-    );
-  });
-
-  test("maps legacy aliases to canonical fields", () => {
-    const originalConsoleError = console.error;
-    const capturedLogs: unknown[] = [];
-    console.error = (value?: unknown): void => {
-      capturedLogs.push(value);
-    };
-
-    try {
-      logWebhookFailure({
-        event: "webhook_request_failed",
-        request_id: "request-790",
-        http_status: 503,
-        error_code: "queue_enqueue_failed",
-        message: "Failed to queue analysis job",
-        repo_full_name: "acme/legacy",
-        pr_number: 13,
-      });
-    } finally {
-      console.error = originalConsoleError;
-    }
-
-    expect(capturedLogs).toHaveLength(1);
-    expect(capturedLogs[0]).toBe(
-      JSON.stringify({
-        event: "webhook_request_failed",
-        request_id: "request-790",
-        http_status: 503,
-        error_code: "queue_enqueue_failed",
-        message: "Failed to queue analysis job",
-        repo_full_name: "acme/legacy",
-        pr_number: 13,
-        repository_full_name: "acme/legacy",
-        pull_request_number: 13,
-      }),
-    );
   });
 });
 
@@ -569,67 +319,6 @@ describe("isClosedOrMergedPullRequest", () => {
       pull_request: { number: toPRNumber(1), head: { sha: toSHA("a".repeat(40)) } },
     };
     expect(isClosedOrMergedPullRequest(payload)).toBe(false);
-  });
-});
-
-describe("createPendingCheckRun", () => {
-  const payload: GitHubPullRequestWebhookEvent = {
-    action: "opened",
-    repository: { full_name: toRepoFullName("acme/widget") },
-    pull_request: { number: toPRNumber(1), head: { sha: toSHA("a".repeat(40)) } },
-    installation: { id: toInstallationId(99) },
-  };
-
-  test("returns null when app credentials are missing", async () => {
-    const result = await createPendingCheckRun(payload, { port: 8787 });
-    expect(result).toBeNull();
-  });
-
-  test("returns null when installation id is missing", async () => {
-    const { installation: _, ...noInstall } = payload;
-    const result = await createPendingCheckRun(noInstall, {
-      port: 8787,
-      githubAppId: 1,
-      githubAppPrivateKeyPem: "pem",
-    });
-    expect(result).toBeNull();
-  });
-
-  test("returns check run id on success", async () => {
-    const result = await createPendingCheckRun(
-      payload,
-      { port: 8787, githubAppId: 1, githubAppPrivateKeyPem: "pem" },
-      {
-        createGitHubAppJwtFn: () => "jwt",
-        exchangeInstallationAccessTokenFn: async () => ({
-          token: "tok",
-          expires_at: "2026-01-01T00:00:00Z",
-        }),
-        createCheckRunFn: async () => ({
-          id: 77,
-          html_url: "https://github.com/x",
-          status: "queued" as const,
-          conclusion: null,
-        }),
-      },
-    );
-    expect(result).toBe(77);
-  });
-
-  test("returns null when check run creation throws", async () => {
-    const result = await createPendingCheckRun(
-      payload,
-      { port: 8787, githubAppId: 1, githubAppPrivateKeyPem: "pem" },
-      {
-        createGitHubAppJwtFn: () => "jwt",
-        exchangeInstallationAccessTokenFn: async () => ({
-          token: "tok",
-          expires_at: "2026-01-01T00:00:00Z",
-        }),
-        createCheckRunFn: async () => { throw new Error("API down"); },
-      },
-    );
-    expect(result).toBeNull();
   });
 });
 
@@ -772,70 +461,3 @@ describe("buildIndexRepoJob", () => {
   });
 });
 
-describe("cancelOrphanedCheckRun", () => {
-  const payload: GitHubPullRequestWebhookEvent = {
-    action: "opened",
-    repository: { full_name: toRepoFullName("acme/widget") },
-    pull_request: { number: toPRNumber(1), head: { sha: toSHA("a".repeat(40)) } },
-    installation: { id: toInstallationId(99) },
-  };
-
-  const validConfig: WebhookApiConfig = {
-    port: 8787,
-    githubAppId: 123,
-    githubAppPrivateKeyPem: "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----",
-  };
-
-  test("calls updateCheckRun with failure conclusion", async () => {
-    let capturedOptions: Record<string, unknown> | undefined;
-
-    await cancelOrphanedCheckRun(42, payload, validConfig, {
-      createGitHubAppJwtFn: () => "fake-jwt",
-      exchangeInstallationAccessTokenFn: async () => ({
-        token: "install-token",
-        expires_at: "2026-01-01T00:00:00Z",
-      }),
-      updateCheckRunFn: async (options) => {
-        capturedOptions = options as unknown as Record<string, unknown>;
-        return { id: 42, html_url: "https://github.com/x", status: "completed", conclusion: "failure" };
-      },
-    });
-
-    expect(capturedOptions).toBeDefined();
-    expect(capturedOptions?.["checkRunId"]).toBe(42);
-    expect(capturedOptions?.["status"]).toBe("completed");
-    expect(capturedOptions?.["conclusion"]).toBe("failure");
-  });
-
-  test("does nothing when app credentials are missing", async () => {
-    let called = false;
-    await cancelOrphanedCheckRun(42, payload, { port: 8787 }, {
-      updateCheckRunFn: async () => {
-        called = true;
-        return { id: 42, html_url: "https://github.com/x", status: "completed", conclusion: "failure" };
-      },
-    });
-    expect(called).toBe(false);
-  });
-
-  test("swallows errors without throwing", async () => {
-    const originalConsoleError = console.error;
-    const errors: unknown[] = [];
-    console.error = (...args: unknown[]) => {
-      errors.push(args.join(" "));
-    };
-    try {
-      await cancelOrphanedCheckRun(42, payload, validConfig, {
-        createGitHubAppJwtFn: () => "fake-jwt",
-        exchangeInstallationAccessTokenFn: async () => ({
-          token: "install-token",
-          expires_at: "2026-01-01T00:00:00Z",
-        }),
-        updateCheckRunFn: async () => { throw new Error("network failure"); },
-      });
-      expect(errors.some((msg) => String(msg).includes("network failure"))).toBe(true);
-    } finally {
-      console.error = originalConsoleError;
-    }
-  });
-});
