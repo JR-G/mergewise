@@ -176,7 +176,7 @@ describe("processCollectFeedbackJob", () => {
     expect(store.savedInstructions[0]!.some((instruction) => instruction.instruction.includes("skip SRP"))).toBe(true);
   });
 
-  test("handles auth failure gracefully without throwing", async () => {
+  test("rethrows auth failure after logging", async () => {
     const errors: string[] = [];
     const dependencies = baseDependencies({
       createGitHubAppJwtFn: () => {
@@ -185,12 +185,19 @@ describe("processCollectFeedbackJob", () => {
       logError: (message) => errors.push(message),
     });
 
-    await processCollectFeedbackJob(makeJob(), dependencies);
+    let thrownError: unknown;
+    try {
+      await processCollectFeedbackJob(makeJob(), dependencies);
+    } catch (error) {
+      thrownError = error;
+    }
 
+    expect(thrownError).toBeInstanceOf(Error);
+    expect((thrownError as Error).message).toBe("missing credentials");
     expect(errors.some((log) => log.includes("feedback_auth_failed"))).toBe(true);
   });
 
-  test("handles fetch failure gracefully without throwing", async () => {
+  test("rethrows fetch failure after logging", async () => {
     const errors: string[] = [];
     const dependencies = baseDependencies({
       listPullRequestSummaryCommentsFn: async () => {
@@ -199,12 +206,19 @@ describe("processCollectFeedbackJob", () => {
       logError: (message) => errors.push(message),
     });
 
-    await processCollectFeedbackJob(makeJob(), dependencies);
+    let thrownError: unknown;
+    try {
+      await processCollectFeedbackJob(makeJob(), dependencies);
+    } catch (error) {
+      thrownError = error;
+    }
 
+    expect(thrownError).toBeInstanceOf(Error);
+    expect((thrownError as Error).message).toBe("network failure");
     expect(errors.some((log) => log.includes("feedback_fetch_failed"))).toBe(true);
   });
 
-  test("re-throws when feedback persistence fails", async () => {
+  test("rethrows when feedback persistence fails", async () => {
     const failingStore = makeFeedbackStore();
     failingStore.saveFeedback = () => {
       throw new Error("disk full");
@@ -234,5 +248,18 @@ describe("processCollectFeedbackJob", () => {
 
     expect(thrownError).toBeInstanceOf(Error);
     expect((thrownError as Error).message).toBe("disk full");
+  });
+
+  test("propagates TypeError from extractInstructions when pr_number is zero", async () => {
+    const dependencies = baseDependencies();
+
+    let thrownError: unknown;
+    try {
+      await processCollectFeedbackJob(makeJob({ pr_number: 0 }), dependencies);
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(TypeError);
   });
 });

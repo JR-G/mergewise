@@ -161,7 +161,7 @@ export async function processCollectFeedbackJob(
   } catch (authError) {
     const detail = authError instanceof Error ? authError.message : String(authError);
     errorLogger(`[worker] feedback_auth_failed trace=${traceId} job=${job.job_id}: ${detail}`);
-    return;
+    throw authError;
   }
 
   const commonOptions = {
@@ -185,7 +185,7 @@ export async function processCollectFeedbackJob(
   } catch (fetchError) {
     const detail = fetchError instanceof Error ? fetchError.message : String(fetchError);
     errorLogger(`[worker] feedback_fetch_failed trace=${traceId} job=${job.job_id}: ${detail}`);
-    return;
+    throw fetchError;
   }
 
   const ctx: FeedbackJobContext = { job, traceId, feedbackStore: dependencies.feedbackStore, infoLogger, errorLogger };

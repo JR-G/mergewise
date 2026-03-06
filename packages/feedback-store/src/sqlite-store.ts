@@ -26,8 +26,6 @@ CREATE TABLE IF NOT EXISTS comment_feedback (
   trace_id TEXT NOT NULL,
   recorded_at TEXT NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_unique_finding
-  ON comment_feedback (repo_full_name, pr_number, finding_id);
 CREATE INDEX IF NOT EXISTS idx_feedback_repo_pr
   ON comment_feedback (repo_full_name, pr_number);
 
@@ -44,6 +42,18 @@ CREATE INDEX IF NOT EXISTS idx_instructions_repo
   ON repo_instructions (repo_full_name);
 `;
 
+const DEDUPLICATE_FEEDBACK_SQL = `
+DELETE FROM comment_feedback
+WHERE id NOT IN (
+  SELECT MIN(id) FROM comment_feedback GROUP BY repo_full_name, pr_number, finding_id LIMIT 2147483647
+)
+`;
+
+const CREATE_UNIQUE_INDEX_SQL = `
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_unique_finding
+  ON comment_feedback (repo_full_name, pr_number, finding_id)
+`;
+
 const INSERT_FEEDBACK_SQL = `
 INSERT INTO comment_feedback (
   finding_id, rule_id, category, confidence,
@@ -51,9 +61,13 @@ INSERT INTO comment_feedback (
   repo_full_name, pr_number, trace_id, recorded_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (repo_full_name, pr_number, finding_id) DO UPDATE SET
+  rule_id = excluded.rule_id,
+  category = excluded.category,
+  confidence = excluded.confidence,
   thumbs_up = excluded.thumbs_up,
   thumbs_down = excluded.thumbs_down,
   other_reactions = excluded.other_reactions,
+  trace_id = excluded.trace_id,
   recorded_at = excluded.recorded_at
 `;
 
@@ -65,16 +79,16 @@ INSERT INTO repo_instructions (
 `;
 
 const QUERY_INSTRUCTIONS_SQL = `
-SELECT ri.repo_full_name, ri.instruction, ri.rule_id, ri.category,
-       ri.source_pr_number, ri.created_at
-FROM repo_instructions ri
-INNER JOIN (
-  SELECT instruction, MAX(id) AS max_id
+SELECT repo_full_name, instruction, rule_id, category,
+       source_pr_number, created_at
+FROM (
+  SELECT *,
+    ROW_NUMBER() OVER (PARTITION BY instruction ORDER BY created_at DESC, id DESC) AS rn
   FROM repo_instructions
   WHERE repo_full_name = ?
-  GROUP BY instruction
-) grouped ON ri.id = grouped.max_id
-ORDER BY ri.created_at DESC, ri.id DESC
+)
+WHERE rn = 1
+ORDER BY created_at DESC, id DESC
 LIMIT 30
 `;
 
@@ -172,6 +186,8 @@ export function openFeedbackStore(databasePath = DEFAULT_DATABASE_PATH): Feedbac
   const database = new Database(databasePath);
   database.run("PRAGMA journal_mode = WAL;");
   database.run(SCHEMA_SQL);
+  database.run(DEDUPLICATE_FEEDBACK_SQL);
+  database.run(CREATE_UNIQUE_INDEX_SQL);
 
   const insertFeedbackStatement = database.prepare(INSERT_FEEDBACK_SQL);
   const insertManyFeedback = database.transaction((records: readonly FeedbackRecord[]) => {

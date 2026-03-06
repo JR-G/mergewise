@@ -23,8 +23,8 @@ async function paginateGraphqlQuery<T>(
 ): Promise<T[]> {
   const rawPerPage = options.perPage ?? 100;
   const rawMaxPages = options.maxPages ?? 20;
-  if (!Number.isFinite(rawPerPage) || !Number.isFinite(rawMaxPages)) {
-    throw new RangeError(`perPage and maxPages must be finite numbers (got perPage=${rawPerPage}, maxPages=${rawMaxPages})`);
+  if (!Number.isInteger(rawPerPage) || !Number.isInteger(rawMaxPages) || rawPerPage <= 0 || rawMaxPages <= 0) {
+    throw new RangeError(`perPage and maxPages must be positive integers (got perPage=${rawPerPage}, maxPages=${rawMaxPages})`);
   }
   const perPage = clamp(rawPerPage, 1, 100);
   const maxPages = clamp(rawMaxPages, 1, 50);
@@ -174,11 +174,13 @@ export interface ReviewThreadComment {
 }
 
 /**
- * Review thread data with up to 20 replies per thread for feedback extraction.
+ * Review thread data with up to 20 comments per thread for feedback extraction.
  *
  * @remarks
- * The underlying GraphQL query fetches `comments(first: 20)` per thread,
- * so threads with more than 20 replies will have their newest replies unavailable.
+ * The underlying GraphQL query fetches `comments(first: 20)` per thread.
+ * The comments array includes the first comment (the review comment itself)
+ * plus subsequent replies, so threads with more than 20 total comments will
+ * have their newest comments unavailable.
  */
 export interface ReviewThreadWithReplies {
   readonly id: string;

@@ -53,16 +53,27 @@ function isAnalyzePullRequestJob(value: unknown): value is AnalyzePullRequestJob
   }
 
   const candidate = value as Partial<AnalyzePullRequestJob>;
-  return (
-    typeof candidate.job_id === "string" &&
-    (typeof candidate.installation_id === "number" ||
-      candidate.installation_id === null) &&
-    typeof candidate.repo_full_name === "string" &&
-    typeof candidate.pr_number === "number" &&
-    typeof candidate.head_sha === "string" &&
-    (candidate.trace_id === undefined || typeof candidate.trace_id === "string") &&
-    typeof candidate.queued_at === "string"
-  );
+  if (
+    typeof candidate.job_id !== "string" ||
+    typeof candidate.repo_full_name !== "string" ||
+    typeof candidate.head_sha !== "string" ||
+    typeof candidate.queued_at !== "string"
+  ) {
+    return false;
+  }
+  if (candidate.trace_id !== undefined && typeof candidate.trace_id !== "string") {
+    return false;
+  }
+  if (
+    candidate.installation_id !== null &&
+    (typeof candidate.installation_id !== "number" || !Number.isInteger(candidate.installation_id) || candidate.installation_id <= 0)
+  ) {
+    return false;
+  }
+  if (typeof candidate.pr_number !== "number" || !Number.isInteger(candidate.pr_number) || candidate.pr_number <= 0) {
+    return false;
+  }
+  return true;
 }
 
 /**

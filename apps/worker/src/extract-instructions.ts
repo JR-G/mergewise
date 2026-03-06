@@ -4,6 +4,8 @@ import { sanitiseInstruction } from "@mergewise/feedback-store";
 
 import { MERGEWISE_META_REGEX } from "./comment-formatter";
 
+const MAX_INSTRUCTIONS = 100;
+
 /**
  * Extracts safe, sanitised instructions from review thread replies.
  *
@@ -33,6 +35,9 @@ export function extractInstructionsFromThreads(
   const now = new Date().toISOString();
 
   for (const thread of threads) {
+    if (instructions.length >= MAX_INSTRUCTIONS) {
+      break;
+    }
     if (thread.comments.length === 0) {
       continue;
     }
@@ -50,6 +55,9 @@ export function extractInstructionsFromThreads(
     const category = metaMatch[3] ?? null;
 
     for (let commentIndex = 1; commentIndex < thread.comments.length; commentIndex++) {
+      if (instructions.length >= MAX_INSTRUCTIONS) {
+        break;
+      }
       const reply = thread.comments[commentIndex];
       if (!reply || reply.authorIsBot) {
         continue;
