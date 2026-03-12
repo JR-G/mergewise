@@ -51,6 +51,8 @@ pre-commit:
       run: bash scripts/check-parse-int-validation.sh
     no-unsafe-type-assertions:
       run: bash scripts/check-type-assertions.sh
+    no-unhandled-force-delete:
+      run: bash scripts/check-force-delete.sh
 
 pre-push:
   parallel: true
