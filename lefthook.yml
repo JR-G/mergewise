@@ -47,6 +47,8 @@ pre-commit:
       run: bun run typecheck
     test:
       run: bun run test
+    no-unvalidated-parse-int:
+      run: bash scripts/check-parse-int-validation.sh
 
 pre-push:
   parallel: true
