@@ -191,4 +191,49 @@ while IFS= read -r source_file; do
   check_double_writes_in_file "$source_file"
 done < <("${double_write_command[@]}" 2>/dev/null || true)
 
+unvalidated_env=""
+while IFS= read -r source_file; do
+  case "$source_file" in
+    *.test.ts|*.test.tsx) continue ;;
+  esac
+
+  if [ ! -f "$source_file" ]; then
+    continue
+  fi
+
+  line_count=$(wc -l < "$source_file" | tr -d ' ')
+
+  perl -ne '
+    if (/process\.env\.([A-Z_]+)/ && $1 ne "NODE_ENV") {
+      print "$.\n";
+    }
+  ' "$source_file" | while read -r line_number; do
+    line=$(sed -n "${line_number}p" "$source_file")
+
+    if echo "$line" | grep -qE '(\?\?|\|\|)'; then
+      continue
+    fi
+
+    window_end=$((line_number + 5))
+    if [ "$window_end" -gt "$line_count" ]; then
+      window_end=$line_count
+    fi
+    window=$(sed -n "${line_number},${window_end}p" "$source_file")
+
+    if echo "$window" | grep -qE '(if\s*\(|!\w|===\s*undefined|\?\?|\|\||\.trim\(\))'; then
+      continue
+    fi
+
+    echo "Unvalidated process.env read at $source_file:$line_number" >&2
+    echo "  $line" >&2
+    echo "yes" >> /tmp/mergewise-quality-env-flag.txt
+  done
+done < <(git diff --name-only "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD~1)" HEAD | grep -E '\.(ts|tsx)$' || true)
+
+if [ -s /tmp/mergewise-quality-env-flag.txt ]; then
+  rm -f /tmp/mergewise-quality-env-flag.txt
+  fail "process.env reads must have a fallback (??, ||) or validation (if check) within 5 lines"
+fi
+rm -f /tmp/mergewise-quality-env-flag.txt
+
 echo "quality-gates passed"
