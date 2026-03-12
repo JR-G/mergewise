@@ -6,7 +6,7 @@ import {
   type WorkerShutdownSignal,
 } from "./main";
 
-const DEFAULT_LLM_MODELS = { triageModel: "gpt-4o-mini", criticModel: "gpt-4o-mini", usePipeline: true };
+const DEFAULT_LLM_MODELS = { triageModel: "gpt-4.1-mini", criticModel: "gpt-4.1-mini", usePipeline: true };
 
 function invokeSignalHandler(
   handler: (signal: WorkerShutdownSignal) => void,
@@ -497,6 +497,65 @@ describe("startWorkerProcess", () => {
     expect(feedbackJobIds).toEqual(["fb-1"]);
 
     await processHandle.shutdown();
+  });
+
+  test("handles empty job queue without errors", async () => {
+    const errorLogs: string[] = [];
+    const intervalCallbacks: (() => void)[] = [];
+    let cyclePromise: Promise<void> = Promise.resolve();
+
+    const workerHandle = startWorkerProcess({
+      loadConfigFn: () => ({
+        pollIntervalMs: 3000,
+        maxProcessedKeys: 1000,
+        githubApiBaseUrl: "https://api.github.com",
+        githubUserAgent: "mergewise-worker-test",
+        githubRequestTimeoutMs: 1000,
+        githubFetchRetries: 2,
+        githubRetryDelayMs: 10,
+        confidenceThreshold: 0.78,
+        maxComments: 20,
+        testFileConfidenceThreshold: 0.98,
+      }),
+      loadMergewiseConfigFn: () => ({
+        gating: { confidenceThreshold: 0.8, maxComments: 10 },
+        rules: { include: [], exclude: [] },
+        review: { skipPatterns: [] },
+        llm: {
+          enabled: false,
+          model: "gpt-4o",
+          ...DEFAULT_LLM_MODELS,
+          tokenBudget: 30_000,
+          baseUrl: "https://api.openai.com/v1",
+          consistencySamples: 1,
+        },
+      }),
+      readAllQueueJobsFn: async () => [],
+      processAnalyzePullRequestJobFn: async () => {
+        throw new Error("should not run");
+      },
+      createPollingLoopControllerFn: (_pollIntervalMs, pollCycle) => ({
+        start: () => {
+          intervalCallbacks.push(() => {
+            cyclePromise = pollCycle().then(() => undefined, () => undefined);
+          });
+        },
+        stop: async () => {},
+        isRunning: () => true,
+      }),
+      registerSignalHandlerFn: () => {},
+      logInfo: () => {},
+      logError: (message) => {
+        errorLogs.push(message);
+      },
+    });
+
+    const [runPollCycle] = intervalCallbacks;
+    runPollCycle?.();
+    await cyclePromise;
+
+    expect(errorLogs).toHaveLength(0);
+    await workerHandle.shutdown();
   });
 
   test("uses default process signal registration and default exit wiring", async () => {

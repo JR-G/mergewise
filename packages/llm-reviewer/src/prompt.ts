@@ -346,6 +346,7 @@ function buildExclusionSection(): string {
 - Type errors (handled by TypeScript compiler)
 - Unused variables or imports (handled by linters)
 - Missing null checks on external input boundaries (unless clearly wrong)
+- **Defensive coding suggestions**: Do not suggest adding null checks, optional chaining, defensive validation, or input sanitisation for internal code that is already type-safe. Do not suggest adding try-catch to internal function calls between trusted modules. Do not suggest "validate before casting" for type-safe code. This tool is a refactoring reviewer, not a bug finder or security scanner.
 - Style preferences without clear engineering justification
 - Things that are already flagged by the structural signals provided
 - **Non-code content**: Never flag comments (TSDoc, JSDoc, //), string literals, or template literal content. Anti-patterns apply to code structure — not to the text inside strings, comments, or documentation. If a string literal or comment mentions null, undefined, or optional, that is content, not a code issue. Only flag the line if it is executable code exhibiting the anti-pattern.
