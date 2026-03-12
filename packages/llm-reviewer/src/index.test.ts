@@ -1736,8 +1736,8 @@ describe("createLlmReviewerRule", () => {
         expect(completions[0]!.filePath).toBe("src/app.ts");
         const totalPromptTokens = completions.reduce((sum, completion) => sum + completion.promptTokens, 0);
         const totalCompletionTokens = completions.reduce((sum, completion) => sum + completion.completionTokens, 0);
-        expect(totalPromptTokens).toBeGreaterThan(0);
-        expect(totalCompletionTokens).toBeGreaterThan(0);
+        expect(totalPromptTokens).toBe(700);
+        expect(totalCompletionTokens).toBe(200);
       },
     );
   });
@@ -1788,9 +1788,12 @@ describe("createLlmReviewerRule", () => {
         await rule.analyse(context, makeMockCodebaseContext());
 
         expect(completions).toHaveLength(2);
-        const filesWithUsage = completions.filter((completion) => completion.promptTokens > 0 || completion.completionTokens > 0);
-        expect(filesWithUsage).toHaveLength(1);
-        expect(completions.some((completion) => completion.promptTokens === 0 && completion.completionTokens === 0)).toBe(true);
+        const aCompletion = completions.find((completion) => completion.filePath === "src/a.ts");
+        const bCompletion = completions.find((completion) => completion.filePath === "src/b.ts");
+        expect(aCompletion!.promptTokens).toBeGreaterThan(0);
+        expect(aCompletion!.completionTokens).toBeGreaterThan(0);
+        expect(bCompletion!.promptTokens).toBe(0);
+        expect(bCompletion!.completionTokens).toBe(0);
       },
     );
   });
