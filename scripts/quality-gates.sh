@@ -127,4 +127,29 @@ if rg -n --glob '**/*.ts' --glob '**/*.tsx' --glob '!node_modules/**' --glob '!d
   fi
 fi
 
+FAILURE_MODE_PATTERN='(throw|reject|fail|error|invalid|missing|empty|undefined|null|timeout|crash|corrupt)'
+
+command -v perl >/dev/null 2>&1 || fail "quality-gates.sh requires perl (not found in PATH)"
+
+no_failure_tests=""
+while IFS= read -r test_file; do
+  case "$test_file" in
+    *.test.ts|*.test.tsx) ;;
+    *) continue ;;
+  esac
+
+  case "$test_file" in
+    *fixture*) continue ;;
+  esac
+
+  if ! perl -0777 -ne "exit 0 if /(test|it)(?:\.[a-z]+(?:\([^)]*\))?)?\s*\(\s*(?:'[^']*?${FAILURE_MODE_PATTERN}|\"[^\"]*?${FAILURE_MODE_PATTERN}|\`[^\`]*?${FAILURE_MODE_PATTERN})/si; exit 1" "$test_file"; then
+    echo "No failure-mode test found in: $test_file" >&2
+    no_failure_tests="yes"
+  fi
+done < <(git diff --name-only "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD~1)" HEAD | grep -E '\.(ts|tsx)$' || true)
+
+if [ -n "$no_failure_tests" ]; then
+  fail "test files must contain at least one failure-mode test (throw, reject, error, invalid, etc.)"
+fi
+
 echo "quality-gates passed"
