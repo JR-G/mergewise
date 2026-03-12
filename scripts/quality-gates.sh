@@ -152,4 +152,43 @@ if [ -n "$no_failure_tests" ]; then
   fail "test files must contain at least one failure-mode test (throw, reject, error, invalid, etc.)"
 fi
 
+check_double_writes_in_file() {
+  local file_path="$1"
+  if [ ! -f "$file_path" ]; then
+    return 0
+  fi
+
+  awk -v file_path="$file_path" '
+    {
+      lines[NR] = $0
+    }
+    END {
+      for (line_number = 1; line_number <= NR; line_number += 1) {
+        if (lines[line_number] ~ /\.(save|saveScan|insert)\s*\(/) {
+          match(lines[line_number], /\.(save|saveScan|insert)\s*\(/)
+          method = substr(lines[line_number], RSTART + 1, RLENGTH - 2)
+          gsub(/\s*\($/, "", method)
+
+          for (candidate = line_number + 1; candidate <= NR && candidate <= line_number + 20; candidate += 1) {
+            if (lines[candidate] ~ ("\\." method "\\s*\\(")) {
+              printf("possible double-write of .%s() at %s:%d and %s:%d\n", method, file_path, line_number, file_path, candidate) > "/dev/stderr"
+              exit 1
+            }
+          }
+        }
+      }
+    }
+  ' "$file_path" || fail "remove duplicate .save()/.insert() calls in $file_path"
+}
+
+if command -v rg >/dev/null 2>&1; then
+  double_write_command=(rg -l --glob '**/*.ts' --glob '**/*.tsx' --glob '!node_modules/**' --glob '!dist/**' --glob '!.mergewise-runtime/**' --glob '!**/*.test.ts' --glob '!**/*.test.tsx' '\.(save|saveScan|insert)\(' apps packages)
+else
+  double_write_command=(grep -Rl --include='*.ts' --include='*.tsx' --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.mergewise-runtime '\.\(save\|saveScan\|insert\)(' apps packages)
+fi
+
+while IFS= read -r source_file; do
+  check_double_writes_in_file "$source_file"
+done < <("${double_write_command[@]}" 2>/dev/null || true)
+
 echo "quality-gates passed"
