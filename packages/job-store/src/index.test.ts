@@ -332,7 +332,9 @@ describe("readAllQueueJobs", () => {
 
     const result = await readAllQueueJobs(filePath);
 
-    expect(result.jobs.length).toBeLessThanOrEqual(10_000);
+    expect(result.jobs.length).toBe(10_000);
+    const fileSize = readFileSync(filePath).byteLength;
+    expect(result.byteOffset).toBeLessThan(fileSize);
   });
 
   test("returns byte offset matching file size after reading all jobs", async () => {
@@ -379,12 +381,17 @@ describe("readAllQueueJobs", () => {
     expect(result.byteOffset).toBeGreaterThan(0);
   });
 
-  test("resets to start when offset is negative", async () => {
+  test("throws on negative startByteOffset", async () => {
     enqueueAnalyzePullRequestJob(makeJob({ job_id: "neg-offset" }), filePath);
+    expect(readAllQueueJobs(filePath, undefined, -10)).rejects.toThrow(RangeError);
+  });
 
-    const result = await readAllQueueJobs(filePath, undefined, -10);
-    expect(result.jobs).toHaveLength(1);
-    expect(result.jobs[0]!.job_id).toBe("neg-offset");
+  test("throws on NaN startByteOffset", () => {
+    expect(readAllQueueJobs(filePath, undefined, NaN)).rejects.toThrow(RangeError);
+  });
+
+  test("throws on fractional startByteOffset", () => {
+    expect(readAllQueueJobs(filePath, undefined, 1.5)).rejects.toThrow(RangeError);
   });
 
   test("returns zero offset when file does not exist", async () => {

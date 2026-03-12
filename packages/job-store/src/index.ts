@@ -40,11 +40,13 @@ export function deriveOffsetFilePath(queueFilePath: string): string {
  * @returns Non-negative integer byte offset.
  */
 export function readQueueOffset(offsetFilePath: string): number {
-  if (!existsSync(offsetFilePath)) {
+  let raw: string;
+  try {
+    raw = readFileSync(offsetFilePath, "utf8").trim();
+  } catch {
     return 0;
   }
 
-  const raw = readFileSync(offsetFilePath, "utf8").trim();
   if (!raw) {
     return 0;
   }
@@ -302,6 +304,10 @@ export async function readAllQueueJobs(
   onSkippedLine: OnSkippedLine = defaultOnSkippedLine,
   startByteOffset = 0,
 ): Promise<QueueReadResult> {
+  if (startByteOffset !== 0 && (!Number.isFinite(startByteOffset) || !Number.isInteger(startByteOffset) || startByteOffset < 0)) {
+    throw new RangeError(`readAllQueueJobs: startByteOffset must be a finite non-negative integer, got ${startByteOffset}`);
+  }
+
   if (!existsSync(filePath)) {
     return { jobs: [], byteOffset: 0 };
   }
