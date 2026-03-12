@@ -36,15 +36,12 @@ export function compileLearnings(
 
   const categorySentiments = feedbackStore.queryCategorySentiment(repoFullName);
 
-  const preferredCategories: string[] = [];
-  const dislikedCategories: string[] = [];
-  for (const sentiment of categorySentiments) {
-    if (sentiment.thumbsUp > sentiment.thumbsDown) {
-      preferredCategories.push(sentiment.category);
-    } else if (sentiment.thumbsDown > sentiment.thumbsUp) {
-      dislikedCategories.push(sentiment.category);
-    }
-  }
+  const preferredCategories = categorySentiments
+    .filter((sentiment) => sentiment.thumbsUp > sentiment.thumbsDown)
+    .map((sentiment) => sentiment.category);
+  const dislikedCategories = categorySentiments
+    .filter((sentiment) => sentiment.thumbsDown > sentiment.thumbsUp)
+    .map((sentiment) => sentiment.category);
 
   const summaryParts: string[] = [];
   if (instructions.length > 0) {

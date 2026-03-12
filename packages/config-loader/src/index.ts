@@ -419,23 +419,25 @@ function applyReview(
   }
 
   const skipPatterns = rawConfig.review.skipPatterns;
-  const hasSkipPatterns = skipPatterns !== undefined;
-  if (hasSkipPatterns && !Array.isArray(skipPatterns)) {
+  if (skipPatterns === undefined) {
+    return;
+  }
+
+  if (!Array.isArray(skipPatterns)) {
     throw new MergewiseConfigValidationError(filePath, "review.skipPatterns must be an array of strings");
   }
-  if (hasSkipPatterns) {
-    const patterns = skipPatterns as unknown[];
-    for (let index = 0; index < patterns.length; index++) {
-      const entry = patterns[index];
-      if (typeof entry !== "string" || !entry.trim()) {
-        throw new MergewiseConfigValidationError(
-          filePath,
-          `review.skipPatterns[${index}] must be a non-empty string`,
-        );
-      }
+
+  const patterns = skipPatterns as unknown[];
+  for (let index = 0; index < patterns.length; index++) {
+    const entry = patterns[index];
+    if (typeof entry !== "string" || !entry.trim()) {
+      throw new MergewiseConfigValidationError(
+        filePath,
+        `review.skipPatterns[${index}] must be a non-empty string`,
+      );
     }
-    normalizedConfig.review.skipPatterns = (patterns as string[]).map((entry) => entry.trim());
   }
+  normalizedConfig.review.skipPatterns = (patterns as string[]).map((entry) => entry.trim());
 }
 
 function applyLlmCoreFields(

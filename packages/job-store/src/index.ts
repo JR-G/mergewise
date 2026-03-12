@@ -219,6 +219,12 @@ const MAX_SCAN_LINES = 50_000;
  * @param onSkippedLine - Optional callback for skipped lines. Defaults to stderr logging.
  * @returns Parsed queue jobs in file order.
  */
+function parseQueueJob(value: unknown): QueueJob | undefined {
+  if (isCollectFeedbackJob(value)) return value;
+  if (isAnalyzePullRequestJob(value)) return value;
+  return undefined;
+}
+
 export async function readAllQueueJobs(
   filePath = DEFAULT_JOB_FILE_PATH,
   onSkippedLine: OnSkippedLine = defaultOnSkippedLine,
@@ -241,11 +247,11 @@ export async function readAllQueueJobs(
 
       try {
         const parsed = JSON.parse(line) as unknown;
-        if (isCollectFeedbackJob(parsed)) {
-          jobs.push(parsed);
-        } else if (isAnalyzePullRequestJob(parsed)) {
-          jobs.push(parsed);
-        } else {
+        const job = parseQueueJob(parsed);
+        if (job) {
+          jobs.push(job);
+        }
+        if (!job) {
           onSkippedLine(lineNumber, "shape mismatch");
         }
       } catch (error) {

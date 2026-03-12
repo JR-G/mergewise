@@ -58,44 +58,48 @@ export function formatMarkdownReport(profile: DebtProfile): string {
     parts.push(`| | *(${omittedHotspots} more omitted)* | | | | |`);
   }
 
-  if (profile.findings.length > 0) {
-    parts.push("");
-    parts.push("## Findings");
-    parts.push("");
+  appendProfileFindings(parts, profile.findings);
 
-    const groupedByFile = new Map<string, DebtFinding[]>();
-    for (const finding of profile.findings) {
-      const existing = groupedByFile.get(finding.nodeId);
-      if (existing) {
-        existing.push(finding);
-      } else {
-        groupedByFile.set(finding.nodeId, [finding]);
-      }
-    }
+  return parts.join("\n");
+}
 
-    for (const [nodeId, fileFindings] of groupedByFile) {
-      parts.push(`### ${nodeId}`);
-      parts.push("");
+function appendProfileFindings(parts: string[], findings: readonly DebtFinding[]): void {
+  if (findings.length === 0) return;
 
-      const cappedFindings = fileFindings.slice(0, MAX_FINDINGS_PER_FILE);
-      for (const finding of cappedFindings) {
-        parts.push(`- **[${finding.category}]** L${finding.lineRange[0]}–${finding.lineRange[1]} (${(finding.confidence * 100).toFixed(0)}%)`);
-        parts.push(`  ${finding.recommendation}`);
-        if (finding.patternId !== "custom") {
-          parts.push(`  Pattern: \`${finding.patternId}\``);
-        }
-        parts.push("");
-      }
+  parts.push("");
+  parts.push("## Findings");
+  parts.push("");
 
-      const omittedFindings = fileFindings.length - cappedFindings.length;
-      if (omittedFindings > 0) {
-        parts.push(`*(${omittedFindings} more findings omitted)*`);
-        parts.push("");
-      }
+  const groupedByFile = new Map<string, DebtFinding[]>();
+  for (const finding of findings) {
+    const existing = groupedByFile.get(finding.nodeId);
+    if (existing) {
+      existing.push(finding);
+    } else {
+      groupedByFile.set(finding.nodeId, [finding]);
     }
   }
 
-  return parts.join("\n");
+  for (const [nodeId, fileFindings] of groupedByFile) {
+    parts.push(`### ${nodeId}`);
+    parts.push("");
+
+    const cappedFindings = fileFindings.slice(0, MAX_FINDINGS_PER_FILE);
+    for (const finding of cappedFindings) {
+      parts.push(`- **[${finding.category}]** L${finding.lineRange[0]}–${finding.lineRange[1]} (${(finding.confidence * 100).toFixed(0)}%)`);
+      parts.push(`  ${finding.recommendation}`);
+      if (finding.patternId !== "custom") {
+        parts.push(`  Pattern: \`${finding.patternId}\``);
+      }
+      parts.push("");
+    }
+
+    const omittedFindings = fileFindings.length - cappedFindings.length;
+    if (omittedFindings > 0) {
+      parts.push(`*(${omittedFindings} more findings omitted)*`);
+      parts.push("");
+    }
+  }
 }
 
 const DIRECTION_LABEL: Record<ScanComparison["direction"], string> = {

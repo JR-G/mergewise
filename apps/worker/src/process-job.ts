@@ -3,7 +3,7 @@ import { DEFAULT_MERGEWISE_CONFIG, type MergewiseConfig } from "@mergewise/confi
 import { executeRules } from "@mergewise/rule-engine";
 import { tsReactRules } from "@mergewise/rule-ts-react";
 import { createLlmReviewerRule } from "@mergewise/llm-reviewer";
-import { compileLearnings } from "@mergewise/feedback-store";
+import { compileLearnings, type FeedbackStore } from "@mergewise/feedback-store";
 import type {
   AnalyzePullRequestJob,
   CodebaseContext,
@@ -61,6 +61,30 @@ function resolveLoggers(dependencies: WorkerProcessingDependencies): ResolvedLog
   return { infoLogger, errorLogger, warnLogger };
 }
 
+function tryLoadLearnings(
+  feedbackStore: FeedbackStore | undefined,
+  repoFullName: string,
+  traceId: string,
+  loggers: ResolvedLoggers,
+): RepoLearnings | undefined {
+  if (!feedbackStore) return undefined;
+  try {
+    const learnings = compileLearnings(repoFullName, feedbackStore);
+    if (learnings.summary !== "no learnings") {
+      loggers.infoLogger(
+        `[worker] learnings trace=${traceId} repo=${repoFullName} ${learnings.summary}`,
+      );
+    }
+    return learnings;
+  } catch (learningError) {
+    const detail = learningError instanceof Error ? learningError.message : String(learningError);
+    loggers.errorLogger(
+      `[worker] compile_learnings_failed trace=${traceId} repo=${repoFullName}: ${detail}`,
+    );
+    return undefined;
+  }
+}
+
 function buildLlmRules(
   mergewiseConfig: MergewiseConfig,
   traceId: string,
@@ -115,22 +139,12 @@ function resolveProcessingConfig(
   const loggers = resolveLoggers(dependencies);
   const mergewiseConfig = dependencies.mergewiseConfig ?? DEFAULT_MERGEWISE_CONFIG;
 
-  let repoLearnings: RepoLearnings | undefined;
-  if (dependencies.feedbackStore) {
-    try {
-      repoLearnings = compileLearnings(job.repo_full_name, dependencies.feedbackStore);
-      if (repoLearnings.summary !== "no learnings") {
-        loggers.infoLogger(
-          `[worker] learnings trace=${traceId} repo=${job.repo_full_name} ${repoLearnings.summary}`,
-        );
-      }
-    } catch (learningError) {
-      const detail = learningError instanceof Error ? learningError.message : String(learningError);
-      loggers.errorLogger(
-        `[worker] compile_learnings_failed trace=${traceId} repo=${job.repo_full_name}: ${detail}`,
-      );
-    }
-  }
+  const repoLearnings = tryLoadLearnings(
+    dependencies.feedbackStore,
+    job.repo_full_name,
+    traceId,
+    loggers,
+  );
 
   const baseLlmRules = buildLlmRules(mergewiseConfig, traceId, loggers, repoLearnings);
   const rules = dependencies.rules ?? [...tsReactRules, ...baseLlmRules];
@@ -138,15 +152,10 @@ function resolveProcessingConfig(
   const baseBlockedRuleIds = dependencies.findingDeliveryOptions?.blockedRuleIds
     ?? DEFAULT_BLOCKED_POST_RULE_IDS;
   const blockedRuleIds = [...baseBlockedRuleIds];
-  if (repoLearnings) {
-    const blockedSet = new Set(blockedRuleIds);
-    for (const suppressedRuleId of repoLearnings.suppressedRules) {
-      if (!blockedSet.has(suppressedRuleId)) {
-        blockedRuleIds.push(suppressedRuleId);
-        blockedSet.add(suppressedRuleId);
-      }
-    }
-  }
+  const suppressedRules = repoLearnings?.suppressedRules ?? [];
+  const blockedSet = new Set(blockedRuleIds);
+  const newSuppressions = suppressedRules.filter((ruleId) => !blockedSet.has(ruleId));
+  blockedRuleIds.push(...newSuppressions);
 
   const baseFindingDeliveryOptions = dependencies.findingDeliveryOptions ?? {
     confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,

@@ -97,7 +97,8 @@ for (let run = 0; run < runCount; run++) {
 
 if (runCount > 1) {
   printMultiRunReport(allResults);
-} else if (allResults[0]) {
+}
+if (runCount === 1 && allResults[0]) {
   printReport(allResults[0]);
 }
 
@@ -117,8 +118,10 @@ for (let runIndex = 0; runIndex < allResults.length; runIndex++) {
 if (failedAppends.length === allResults.length) {
   console.error("All run records failed to write");
   process.exit(1);
-} else if (failedAppends.length > 0) {
+}
+if (failedAppends.length > 0 && failedAppends.length < allResults.length) {
   console.error(`Failed to write ${failedAppends.length} of ${allResults.length} run records`);
-} else {
+}
+if (failedAppends.length === 0) {
   console.log("Results appended to packages/eval/results/runs.ndjson");
 }

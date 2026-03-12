@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { appendFile, mkdir } from "node:fs/promises";
+import type { Finding } from "@mergewise/shared-types";
 import type { EvalResult, RunRecord } from "./types";
 
 const RESULTS_DIR = join(import.meta.dirname, "..", "results");
@@ -50,23 +51,31 @@ export function printReport(results: readonly EvalResult[]): void {
     }
 
     if (score.unmatchedFindings.length > 0) {
-      console.log(
-        `\n${YELLOW}Unmatched findings${RESET} [${result.fixtureId}/${result.variant}]:`,
-      );
-      for (const finding of score.unmatchedFindings) {
-        console.log(
-          `  L${finding.line} [${finding.category}] ${finding.evidence.slice(0, 80)}`,
-        );
-        if (finding.recommendation) {
-          console.log(
-            `  ${DIM}→ ${finding.recommendation.slice(0, 100)}${RESET}`,
-          );
-        }
-      }
+      printUnmatchedFindings(result.fixtureId, result.variant, score.unmatchedFindings);
     }
   }
 
   console.log();
+}
+
+function printUnmatchedFindings(
+  fixtureId: string,
+  variant: string,
+  findings: readonly Finding[],
+): void {
+  console.log(
+    `\n${YELLOW}Unmatched findings${RESET} [${fixtureId}/${variant}]:`,
+  );
+  for (const finding of findings) {
+    console.log(
+      `  L${finding.line} [${finding.category}] ${finding.evidence.slice(0, 80)}`,
+    );
+    if (finding.recommendation) {
+      console.log(
+        `  ${DIM}→ ${finding.recommendation.slice(0, 100)}${RESET}`,
+      );
+    }
+  }
 }
 
 interface MultiRunSummary {

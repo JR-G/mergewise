@@ -197,8 +197,8 @@ async function analysePipeline(
 
     if (onComplete) {
       const failedPaths = new Set(result.failedFiles.map((failure) => failure.filePath));
-      for (const file of selectedFiles) {
-        if (failedPaths.has(file.filePath)) continue;
+      const successfulFiles = selectedFiles.filter((file) => !failedPaths.has(file.filePath));
+      for (const file of successfulFiles) {
         const count = result.findings.filter((finding) => finding.filePath === file.filePath).length;
         onComplete(file.filePath, count, 0, 0);
       }

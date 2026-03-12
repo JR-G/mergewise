@@ -38,16 +38,9 @@ export default [
       "no-restricted-syntax": [
         "error",
         {
-          selector:
-            "IfStatement > IfStatement.consequent, IfStatement > BlockStatement.consequent > IfStatement",
+          selector: "IfStatement IfStatement",
           message:
-            "Nested if statements are not allowed. Prefer guard clauses or early returns.",
-        },
-        {
-          selector:
-            "IfStatement > IfStatement.alternate[alternate.type='IfStatement']",
-          message:
-            "More than one else-if branch detected. Prefer a switch statement when branching on one value.",
+            "Nested if statements are not allowed. Use guard clauses and early returns.",
         },
       ],
       "no-restricted-imports": [
