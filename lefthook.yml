@@ -53,6 +53,8 @@ pre-commit:
       run: bash scripts/check-type-assertions.sh
     no-unhandled-force-delete:
       run: bash scripts/check-force-delete.sh
+    no-deep-nesting:
+      run: bash scripts/check-nesting-depth.sh
 
 pre-push:
   parallel: true
