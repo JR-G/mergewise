@@ -165,13 +165,13 @@ check_double_writes_in_file() {
     END {
       for (line_number = 1; line_number <= NR; line_number += 1) {
         if (lines[line_number] ~ /\.(save|saveScan|insert)\s*\(/) {
-          match(lines[line_number], /\.(save|saveScan|insert)\s*\(/)
-          method = substr(lines[line_number], RSTART + 1, RLENGTH - 2)
-          gsub(/\s*\($/, "", method)
+          match(lines[line_number], /[A-Za-z0-9_]+\.(save|saveScan|insert)\s*\(/)
+          call_expr = substr(lines[line_number], RSTART, RLENGTH - 1)
+          gsub(/\s*$/, "", call_expr)
 
           for (candidate = line_number + 1; candidate <= NR && candidate <= line_number + 20; candidate += 1) {
-            if (lines[candidate] ~ ("\\." method "\\s*\\(")) {
-              printf("possible double-write of .%s() at %s:%d and %s:%d\n", method, file_path, line_number, file_path, candidate) > "/dev/stderr"
+            if (index(lines[candidate], call_expr) > 0) {
+              printf("possible double-write of %s at %s:%d and %s:%d\n", call_expr, file_path, line_number, file_path, candidate) > "/dev/stderr"
               exit 1
             }
           }

@@ -21,7 +21,7 @@ while IFS= read -r file; do
         next;
       }
       if (/^\+/ && !/^\+\+\+/) {
-        if (/\bas\s+[A-Z]/ && !/\bas\s+const\b/ && !/\bas\s+unknown\b/) {
+        if (/\bas\s+[A-Z]/ && !/\bas\s+const\b/ && !/\bas\s+unknown\b/ && !/^\+\s*import\b/ && !/^\+\s*\/\//) {
           print "$new_line\n";
         }
         $new_line++;

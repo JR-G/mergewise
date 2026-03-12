@@ -12,39 +12,32 @@ while IFS= read -r file; do
   esac
 
   staged_content=$(git show ":$file" 2>/dev/null) || continue
+  line_count=$(echo "$staged_content" | wc -l | tr -d ' ')
 
-  git diff --cached -U0 -- "$file" | perl -e '
-    my $new_line = 0;
-    while (<STDIN>) {
-      if (/^\@\@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,(\d+))?\s+\@\@/) {
-        $new_line = $1;
-        next;
-      }
-      if (/^\+/ && !/^\+\+\+/) {
-        if (/(rmSync|unlinkSync)\s*\(/ && /force\s*:\s*true/) {
-          print "$new_line\n";
-        }
-        $new_line++;
-        next;
-      }
-      if (/^-/ && !/^---/) {
-        next;
-      }
+  echo "$staged_content" | perl -ne '
+    if (/\b(rmSync|unlinkSync)\s*\(/) {
+      print "$.\n";
     }
   ' | while read -r line_number; do
-    line_count=$(echo "$staged_content" | wc -l | tr -d ' ')
-    window_start=$((line_number - 5))
-    if [ "$window_start" -lt 1 ]; then
-      window_start=1
-    fi
     window_end=$((line_number + 5))
     if [ "$window_end" -gt "$line_count" ]; then
       window_end=$line_count
     fi
 
-    window=$(echo "$staged_content" | sed -n "${window_start},${window_end}p")
+    call_window=$(echo "$staged_content" | sed -n "${line_number},${window_end}p")
 
-    if echo "$window" | grep -qE '(try\s*\{|catch\s*\()'; then
+    if ! echo "$call_window" | grep -q 'force\s*:\s*true'; then
+      continue
+    fi
+
+    surround_start=$((line_number - 5))
+    if [ "$surround_start" -lt 1 ]; then
+      surround_start=1
+    fi
+
+    surround_window=$(echo "$staged_content" | sed -n "${surround_start},${window_end}p")
+
+    if echo "$surround_window" | grep -qE '(try\s*\{|catch\s*\()'; then
       continue
     fi
 
