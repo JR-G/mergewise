@@ -236,6 +236,7 @@ export function startWorkerProcess(
         githubRetryDelayMs: config.githubRetryDelayMs,
       };
 
+      let batchFailed = false;
       for (const queuedJob of queuedJobs) {
         if (isCollectFeedbackJob(queuedJob)) {
           await processFeedbackJobEntry(
@@ -261,6 +262,7 @@ export function startWorkerProcess(
           });
           trackProcessedKey(idempotencyKey, processedKeyState, config.maxProcessedKeys);
         } catch (error) {
+          batchFailed = true;
           const details = error instanceof Error ? error.stack ?? error.message : String(error);
           const traceId = resolveJobTraceId(queuedJob);
           errorLogger(
@@ -269,7 +271,7 @@ export function startWorkerProcess(
         }
       }
 
-      if (newByteOffset === currentByteOffset) {
+      if (batchFailed || newByteOffset === currentByteOffset) {
         return;
       }
       const wrote = await writeOffsetWithRetry(writeQueueOffsetFn, offsetFilePath, newByteOffset, errorLogger);

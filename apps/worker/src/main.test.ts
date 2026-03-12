@@ -187,6 +187,8 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
+      readQueueOffsetFn: () => 0,
+      writeQueueOffsetFn: () => {},
       readAllQueueJobsFn: async () => ({ jobs: queuedJobs, byteOffset: 100 }),
       processAnalyzePullRequestJobFn: async (job) => {
         processedJobIds.push(job.job_id);
@@ -350,6 +352,8 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
+      readQueueOffsetFn: () => 0,
+      writeQueueOffsetFn: () => {},
       readAllQueueJobsFn: async () => ({ jobs: [queuedJob], byteOffset: 100 }),
       processAnalyzePullRequestJobFn: async () => {
         await processingGate;
@@ -441,6 +445,8 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
+      readQueueOffsetFn: () => 0,
+      writeQueueOffsetFn: () => {},
       readAllQueueJobsFn: async () => ({ jobs: [feedbackJob], byteOffset: 100 }),
       processAnalyzePullRequestJobFn: async (job) => {
         analyzeJobIds.push(job.job_id);
@@ -807,6 +813,288 @@ describe("startWorkerProcess", () => {
           intervalCallbacks.push(() => {
             pollCycle().then(() => undefined, () => undefined);
           });
+        },
+        stop: async () => {},
+        isRunning: () => true,
+      }),
+      registerSignalHandlerFn: () => {},
+      logInfo: () => {},
+      logError: () => {},
+    });
+
+    const drainMicrotasks = (): Promise<void> =>
+      new Promise((resolve) => { setTimeout(resolve, 0); });
+
+    const [runPollCycle] = intervalCallbacks;
+    runPollCycle?.();
+    await drainMicrotasks();
+
+    expect(writtenOffsets).toEqual([]);
+
+    await processHandle.shutdown();
+  });
+
+  test("falls back to offset 0 when readQueueOffsetFn throws", async () => {
+    const processedJobIds: string[] = [];
+    const intervalCallbacks: (() => void)[] = [];
+    let readByteOffset: number | undefined;
+
+    const processHandle = startWorkerProcess({
+      loadConfigFn: () => ({
+        pollIntervalMs: 3000,
+        maxProcessedKeys: 1000,
+        githubApiBaseUrl: "https://api.github.com",
+        githubUserAgent: "mergewise-worker-test",
+        githubRequestTimeoutMs: 1000,
+        githubFetchRetries: 2,
+        githubRetryDelayMs: 10,
+        confidenceThreshold: 0.78,
+        maxComments: 20,
+        testFileConfidenceThreshold: 0.98,
+      }),
+      loadMergewiseConfigFn: () => ({
+        gating: { confidenceThreshold: 0.8, maxComments: 10 },
+        rules: { include: [], exclude: [] },
+        review: { skipPatterns: [] },
+        llm: {
+          enabled: false,
+          model: "gpt-4o",
+          ...DEFAULT_LLM_MODELS,
+          tokenBudget: 30_000,
+          baseUrl: "https://api.openai.com/v1",
+          consistencySamples: 1,
+        },
+      }),
+      readQueueOffsetFn: () => { throw new Error("corrupt offset file"); },
+      writeQueueOffsetFn: () => {},
+      readAllQueueJobsFn: async (_filePath, _onSkipped, startByteOffset = 0) => {
+        readByteOffset = startByteOffset;
+        if (startByteOffset === 0) {
+          return {
+            jobs: [{
+              job_id: "fallback-job",
+              installation_id: 1,
+              repo_full_name: "acme/app",
+              pr_number: 1,
+              head_sha: "abc",
+              queued_at: "2026-01-01T00:00:00.000Z",
+            }],
+            byteOffset: 50,
+          };
+        }
+        return { jobs: [], byteOffset: startByteOffset };
+      },
+      processAnalyzePullRequestJobFn: async (job) => {
+        processedJobIds.push(job.job_id);
+        return {
+          jobId: job.job_id,
+          idempotencyKey: `${job.repo_full_name}#${job.pr_number}@${job.head_sha}`,
+          repository: job.repo_full_name,
+          pullRequestNumber: job.pr_number,
+          headSha: job.head_sha,
+          totalFindings: 0,
+          findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          totalRules: 0,
+          successfulRules: 0,
+          failedRules: 0,
+          failedRuleIds: [],
+          processedAt: "2026-01-01T00:00:00.000Z",
+          traceId: job.job_id,
+        };
+      },
+      createPollingLoopControllerFn: (_pollIntervalMs, pollCycle) => ({
+        start: () => {
+          intervalCallbacks.push(() => { pollCycle().then(() => undefined, () => undefined); });
+        },
+        stop: async () => {},
+        isRunning: () => true,
+      }),
+      registerSignalHandlerFn: () => {},
+      logInfo: () => {},
+      logError: () => {},
+    });
+
+    const drainMicrotasks = (): Promise<void> =>
+      new Promise((resolve) => { setTimeout(resolve, 0); });
+
+    const [runPollCycle] = intervalCallbacks;
+    runPollCycle?.();
+    await drainMicrotasks();
+
+    expect(readByteOffset).toBe(0);
+    expect(processedJobIds).toContain("fallback-job");
+
+    await processHandle.shutdown();
+  });
+
+  test("retries offset write on transient failure", async () => {
+    const writtenOffsets: number[] = [];
+    const intervalCallbacks: (() => void)[] = [];
+    let writeAttempts = 0;
+
+    const processHandle = startWorkerProcess({
+      loadConfigFn: () => ({
+        pollIntervalMs: 3000,
+        maxProcessedKeys: 1000,
+        githubApiBaseUrl: "https://api.github.com",
+        githubUserAgent: "mergewise-worker-test",
+        githubRequestTimeoutMs: 1000,
+        githubFetchRetries: 2,
+        githubRetryDelayMs: 10,
+        confidenceThreshold: 0.78,
+        maxComments: 20,
+        testFileConfidenceThreshold: 0.98,
+      }),
+      loadMergewiseConfigFn: () => ({
+        gating: { confidenceThreshold: 0.8, maxComments: 10 },
+        rules: { include: [], exclude: [] },
+        review: { skipPatterns: [] },
+        llm: {
+          enabled: false,
+          model: "gpt-4o",
+          ...DEFAULT_LLM_MODELS,
+          tokenBudget: 30_000,
+          baseUrl: "https://api.openai.com/v1",
+          consistencySamples: 1,
+        },
+      }),
+      readQueueOffsetFn: () => 0,
+      writeQueueOffsetFn: (_path, offset) => {
+        writeAttempts++;
+        if (writeAttempts <= 2) {
+          throw new Error("disk full");
+        }
+        writtenOffsets.push(offset);
+      },
+      readAllQueueJobsFn: async () => ({
+        jobs: [{
+          job_id: "retry-job",
+          installation_id: 1,
+          repo_full_name: "acme/app",
+          pr_number: 1,
+          head_sha: "abc",
+          queued_at: "2026-01-01T00:00:00.000Z",
+        }],
+        byteOffset: 200,
+      }),
+      processAnalyzePullRequestJobFn: async (job) => ({
+        jobId: job.job_id,
+        idempotencyKey: `${job.repo_full_name}#${job.pr_number}@${job.head_sha}`,
+        repository: job.repo_full_name,
+        pullRequestNumber: job.pr_number,
+        headSha: job.head_sha,
+        totalFindings: 0,
+        findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+        totalRules: 0,
+        successfulRules: 0,
+        failedRules: 0,
+        failedRuleIds: [],
+        processedAt: "2026-01-01T00:00:00.000Z",
+        traceId: job.job_id,
+      }),
+      createPollingLoopControllerFn: (_pollIntervalMs, pollCycle) => ({
+        start: () => {
+          intervalCallbacks.push(() => { pollCycle().then(() => undefined, () => undefined); });
+        },
+        stop: async () => {},
+        isRunning: () => true,
+      }),
+      registerSignalHandlerFn: () => {},
+      logInfo: () => {},
+      logError: () => {},
+    });
+
+    const drainMicrotasks = (): Promise<void> =>
+      new Promise((resolve) => { setTimeout(resolve, 200); });
+
+    const [runPollCycle] = intervalCallbacks;
+    runPollCycle?.();
+    await drainMicrotasks();
+
+    expect(writeAttempts).toBe(3);
+    expect(writtenOffsets).toEqual([200]);
+
+    await processHandle.shutdown();
+  });
+
+  test("does not advance offset when a job in the batch fails", async () => {
+    const writtenOffsets: number[] = [];
+    const intervalCallbacks: (() => void)[] = [];
+
+    const processHandle = startWorkerProcess({
+      loadConfigFn: () => ({
+        pollIntervalMs: 3000,
+        maxProcessedKeys: 1000,
+        githubApiBaseUrl: "https://api.github.com",
+        githubUserAgent: "mergewise-worker-test",
+        githubRequestTimeoutMs: 1000,
+        githubFetchRetries: 2,
+        githubRetryDelayMs: 10,
+        confidenceThreshold: 0.78,
+        maxComments: 20,
+        testFileConfidenceThreshold: 0.98,
+      }),
+      loadMergewiseConfigFn: () => ({
+        gating: { confidenceThreshold: 0.8, maxComments: 10 },
+        rules: { include: [], exclude: [] },
+        review: { skipPatterns: [] },
+        llm: {
+          enabled: false,
+          model: "gpt-4o",
+          ...DEFAULT_LLM_MODELS,
+          tokenBudget: 30_000,
+          baseUrl: "https://api.openai.com/v1",
+          consistencySamples: 1,
+        },
+      }),
+      readQueueOffsetFn: () => 0,
+      writeQueueOffsetFn: (_path, offset) => {
+        writtenOffsets.push(offset);
+      },
+      readAllQueueJobsFn: async () => ({
+        jobs: [
+          {
+            job_id: "ok-job",
+            installation_id: 1,
+            repo_full_name: "acme/app",
+            pr_number: 1,
+            head_sha: "abc",
+            queued_at: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            job_id: "fail-job",
+            installation_id: 1,
+            repo_full_name: "acme/app",
+            pr_number: 2,
+            head_sha: "def",
+            queued_at: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+        byteOffset: 300,
+      }),
+      processAnalyzePullRequestJobFn: async (job) => {
+        if (job.job_id === "fail-job") {
+          throw new Error("processing failed");
+        }
+        return {
+          jobId: job.job_id,
+          idempotencyKey: `${job.repo_full_name}#${job.pr_number}@${job.head_sha}`,
+          repository: job.repo_full_name,
+          pullRequestNumber: job.pr_number,
+          headSha: job.head_sha,
+          totalFindings: 0,
+          findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          totalRules: 0,
+          successfulRules: 0,
+          failedRules: 0,
+          failedRuleIds: [],
+          processedAt: "2026-01-01T00:00:00.000Z",
+          traceId: job.job_id,
+        };
+      },
+      createPollingLoopControllerFn: (_pollIntervalMs, pollCycle) => ({
+        start: () => {
+          intervalCallbacks.push(() => { pollCycle().then(() => undefined, () => undefined); });
         },
         stop: async () => {},
         isRunning: () => true,
