@@ -530,7 +530,9 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => [],
+      readQueueOffsetFn: () => 0,
+      writeQueueOffsetFn: () => {},
+      readAllQueueJobsFn: async () => ({ jobs: [], byteOffset: 0 }),
       processAnalyzePullRequestJobFn: async () => {
         throw new Error("should not run");
       },
