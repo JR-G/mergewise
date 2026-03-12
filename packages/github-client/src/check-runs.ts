@@ -22,9 +22,14 @@ interface CheckRunOutput {
  * @param output - Raw check run output to sanitise.
  * @returns Output with title, summary, and text truncated if necessary.
  */
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
 export function sanitizeCheckRunOutput(output: CheckRunOutput): CheckRunOutput {
-  const truncate = (value: string, maxLength: number): string =>
-    value.length > maxLength ? value.slice(0, maxLength - 1) + "\u2026" : value;
+  const truncate = (value: string, maxLength: number): string => {
+    const segments = Array.from(graphemeSegmenter.segment(value));
+    if (segments.length <= maxLength) return value;
+    return segments.slice(0, maxLength - 1).map((seg) => seg.segment).join("") + "\u2026";
+  };
 
   return {
     title: truncate(output.title, MAX_TITLE_LENGTH),
@@ -60,7 +65,7 @@ export interface CreateCheckRunOptions extends GitHubApiOptions {
   /**
    * Check run status.
    *
-   * @defaultValue `"completed"`
+   * @defaultValue `"completed"` when `conclusion` is provided, `"queued"` otherwise.
    */
   status?: "queued" | "in_progress" | "completed" | undefined;
   /**

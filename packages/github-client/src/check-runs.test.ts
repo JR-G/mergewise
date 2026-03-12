@@ -301,6 +301,14 @@ describe("check-runs", () => {
       expect(output.text!.endsWith("\u2026")).toBe(true);
     });
 
+    it("truncates emoji content without splitting surrogate pairs", () => {
+      const emoji = "\u{1F600}";
+      const emojiTitle = emoji.repeat(300);
+      const output = sanitizeCheckRunOutput({ title: emojiTitle, summary: "s" });
+      expect(output.title.endsWith("\u2026")).toBe(true);
+      expect(output.title).not.toMatch(/[\uD800-\uDBFF]$/);
+    });
+
     it("omits text from output when text is undefined", () => {
       const output = sanitizeCheckRunOutput({ title: "t", summary: "s" });
       expect("text" in output).toBe(false);

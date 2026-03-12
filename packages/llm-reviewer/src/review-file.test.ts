@@ -33,16 +33,21 @@ function makeCodebaseContext(fileContent: string | null = "const x = 1;"): Codeb
   };
 }
 
-function makeMockClient(responseContent: string): ReviewClient & { completeCalls: string[][] } {
+type CompleteCallArgs = [string, string, number, number | undefined];
+
+function makeMockClient(responseContent: string): ReviewClient & { completeCalls: CompleteCallArgs[] } {
   const result: CompletionResult = {
     content: responseContent,
     usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
   };
-  const completeCalls: string[][] = [];
+  const completeCalls: CompleteCallArgs[] = [];
   return {
     completeCalls,
-    complete: mock((...args: string[]) => { completeCalls.push(args); return Promise.resolve(result); }),
-  } as unknown as ReviewClient & { completeCalls: string[][] };
+    complete: mock((systemPrompt: string, userPrompt: string, maxTokens: number, temperature?: number) => {
+      completeCalls.push([systemPrompt, userPrompt, maxTokens, temperature]);
+      return Promise.resolve(result);
+    }),
+  } as unknown as ReviewClient & { completeCalls: CompleteCallArgs[] };
 }
 
 describe("reviewFile", () => {
@@ -190,6 +195,38 @@ describe("reviewFile", () => {
     });
 
     expect(client.completeCalls).toHaveLength(3);
+  });
+
+  it("floors fractional consistencySamples (2.7 becomes 2 calls)", async () => {
+    const emptyResponse = JSON.stringify({ findings: [] });
+    const client = makeMockClient(emptyResponse);
+    const codebaseContext = makeCodebaseContext();
+
+    await reviewFile({
+      fileDiff: STUB_DIFF,
+      pullRequest: STUB_PR,
+      codebaseContext,
+      client,
+      consistencySamples: 2.7,
+    });
+
+    expect(client.completeCalls).toHaveLength(2);
+  });
+
+  it("caps consistencySamples at MAX_CONSISTENCY_SAMPLES (10)", async () => {
+    const emptyResponse = JSON.stringify({ findings: [] });
+    const client = makeMockClient(emptyResponse);
+    const codebaseContext = makeCodebaseContext();
+
+    await reviewFile({
+      fileDiff: STUB_DIFF,
+      pullRequest: STUB_PR,
+      codebaseContext,
+      client,
+      consistencySamples: 100,
+    });
+
+    expect(client.completeCalls).toHaveLength(10);
   });
 
   it("returns empty findings for malformed JSON from LLM", async () => {
