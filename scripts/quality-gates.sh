@@ -195,7 +195,6 @@ unvalidated_env=""
 while IFS= read -r source_file; do
   case "$source_file" in
     *.test.ts|*.test.tsx) continue ;;
-    scripts/test-fixtures/*) continue ;;
   esac
 
   if [ ! -f "$source_file" ]; then

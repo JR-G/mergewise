@@ -9,7 +9,6 @@ export default [
       "node_modules/**",
       ".mergewise-runtime/**",
       "packages/eval/fixtures/**",
-      "scripts/test-fixtures/**",
       "**/*.js",
     ],
   },

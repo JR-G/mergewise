@@ -41,5 +41,5 @@
     "noUnusedParameters": true,
     "noPropertyAccessFromIndexSignature": false
   },
-  "exclude": ["dist", "node_modules", ".mergewise-runtime", "packages/eval/fixtures", "scripts/test-fixtures"]
+  "exclude": ["dist", "node_modules", ".mergewise-runtime", "packages/eval/fixtures"]
 }
