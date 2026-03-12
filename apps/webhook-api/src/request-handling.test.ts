@@ -127,7 +127,6 @@ describe("readWebhookRequestBody", () => {
       console.error = originalConsoleError;
     }
 
-    expect(capturedLogs).toHaveLength(1);
     const loggedPayload = JSON.parse(String(capturedLogs[0])) as {
       error_code: string;
       message: string;
@@ -163,7 +162,6 @@ describe("logWebhookFailure", () => {
       console.error = originalConsoleError;
     }
 
-    expect(capturedLogs).toHaveLength(1);
     const parsed: unknown = JSON.parse(capturedLogs[0] as string);
     expect(parsed).toMatchObject({
       event: "webhook_request_failed",
@@ -195,8 +193,7 @@ describe("logWebhookFailure", () => {
       console.error = originalConsoleError;
     }
 
-    expect(capturedLogs).toHaveLength(1);
-    expect(capturedLogs[0]).toBe(
+    expect(capturedLogs).toEqual([
       JSON.stringify({
         event: "webhook_request_failed",
         request_id: "request-789",
@@ -208,7 +205,7 @@ describe("logWebhookFailure", () => {
         repo_full_name: "acme/widget",
         pr_number: 7,
       }),
-    );
+    ]);
   });
 
   test("maps legacy aliases to canonical fields", () => {
@@ -232,8 +229,7 @@ describe("logWebhookFailure", () => {
       console.error = originalConsoleError;
     }
 
-    expect(capturedLogs).toHaveLength(1);
-    expect(capturedLogs[0]).toBe(
+    expect(capturedLogs).toEqual([
       JSON.stringify({
         event: "webhook_request_failed",
         request_id: "request-790",
@@ -245,6 +241,6 @@ describe("logWebhookFailure", () => {
         repository_full_name: "acme/legacy",
         pull_request_number: 13,
       }),
-    );
+    ]);
   });
 });

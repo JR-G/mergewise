@@ -641,13 +641,13 @@ describe("processAnalyzePullRequestJob", () => {
         createCheckRunFn: async () => {
           throw new Error("Checks API permission denied");
         },
-        logError: (msg) => errors.push(msg),
+        logError: (message) => errors.push(message),
       },
     );
 
     expect(summary.jobId).toBe(checkFailJob.job_id);
-    expect(errors.some((msg) => msg.includes("in-progress check run"))).toBe(true);
-    expect(errors.some((msg) => msg.includes("check_run_failed"))).toBe(true);
+    expect(errors.some((message) => message.includes("in-progress check run"))).toBe(true);
+    expect(errors.some((message) => message.includes("check_run_failed"))).toBe(true);
   });
 
   test("skips review submission when there are zero inline comments", async () => {
@@ -755,7 +755,7 @@ describe("processAnalyzePullRequestJob", () => {
             failedRuleIds: [],
           };
         },
-        logInfo: (msg) => logs.push(msg),
+        logInfo: (message) => logs.push(message),
       },
     );
 
@@ -763,7 +763,7 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.totalFindings).toBe(0);
     expect(summary.totalRules).toBe(0);
     expect(summary.postedCommentCount).toBe(0);
-    expect(logs.some((msg) => msg.includes("skipped_closed_pr"))).toBe(true);
+    expect(logs.some((message) => message.includes("skipped_closed_pr"))).toBe(true);
   });
 
   test("completes queued check run when PR is closed and check_run_id exists", async () => {
@@ -1053,7 +1053,7 @@ describe("processAnalyzePullRequestJob feedback logging", () => {
         deliveryMode: "github",
         rules: [createRule("test/rule-a")],
         githubFetchOptions: workerFetchOptions,
-        logInfo: (msg: string) => logs.push(msg),
+        logInfo: (message: string) => logs.push(message),
         logError: () => {},
         createGitHubAppJwtFn: () => "fake-jwt",
         exchangeInstallationAccessTokenFn: async () => ({
@@ -1120,7 +1120,7 @@ describe("processAnalyzePullRequestJob feedback logging", () => {
         deliveryMode: "github",
         rules: [],
         githubFetchOptions: workerFetchOptions,
-        logInfo: (msg: string) => logs.push(msg),
+        logInfo: (message: string) => logs.push(message),
         logError: () => {},
         createGitHubAppJwtFn: () => "fake-jwt",
         exchangeInstallationAccessTokenFn: async () => ({
@@ -1201,7 +1201,7 @@ describe("processAnalyzePullRequestJob debt store wiring", () => {
           },
           failedRuleIds: [],
         }),
-        logInfo: (msg: string) => logs.push(msg),
+        logInfo: (message: string) => logs.push(message),
         logError: () => {},
         debtStore: {
           latestScan: () => ({
@@ -1264,8 +1264,8 @@ describe("processAnalyzePullRequestJob debt store wiring", () => {
           },
           failedRuleIds: [],
         }),
-        logInfo: (msg: string) => logs.push(msg),
-        logError: (msg: string) => errors.push(msg),
+        logInfo: (message: string) => logs.push(message),
+        logError: (message: string) => errors.push(message),
         debtStore: {
           latestScan: () => null,
           saveScan: () => "scan-id",
@@ -1279,7 +1279,7 @@ describe("processAnalyzePullRequestJob debt store wiring", () => {
     expect(summary.jobId).toBe("job-no-debt-scan");
     const graphLine = logs.find((line) => line.includes("graph_context"));
     expect(graphLine).toBeUndefined();
-    expect(errors.some((msg) => msg.includes("graph_context"))).toBe(false);
+    expect(errors.some((message) => message.includes("graph_context"))).toBe(false);
   });
 
   test("logs error and proceeds when debtStore.latestScan throws", async () => {
@@ -1319,8 +1319,8 @@ describe("processAnalyzePullRequestJob debt store wiring", () => {
           },
           failedRuleIds: [],
         }),
-        logInfo: (msg: string) => logs.push(msg),
-        logError: (msg: string) => errors.push(msg),
+        logInfo: (message: string) => logs.push(message),
+        logError: (message: string) => errors.push(message),
         debtStore: {
           latestScan: () => { throw new Error("SQLite disk I/O error"); },
           saveScan: () => "scan-id",

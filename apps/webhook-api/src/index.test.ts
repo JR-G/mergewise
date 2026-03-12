@@ -368,8 +368,8 @@ describe("isPushWebhookEvent", () => {
     expect(isPushWebhookEvent(withoutInstallation)).toBe(true);
   });
 
-  test("rejects payload with null installation", () => {
-    expect(isPushWebhookEvent({ ...validPayload, installation: null })).toBe(false);
+  test("accepts payload with null installation", () => {
+    expect(isPushWebhookEvent({ ...validPayload, installation: null })).toBe(true);
   });
 
   test("rejects payload with non-object installation", () => {

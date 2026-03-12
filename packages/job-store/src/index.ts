@@ -358,10 +358,7 @@ export async function readAllQueueJobs(
 
       try {
         const parsed = JSON.parse(line) as unknown;
-        const recognised = isCollectFeedbackJob(parsed)
-          || isIndexRepoJob(parsed)
-          || isAnalyzePullRequestJob(parsed);
-        if (recognised) {
+        if (isCollectFeedbackJob(parsed) || isIndexRepoJob(parsed) || isAnalyzePullRequestJob(parsed)) {
           jobs.push(parsed);
         } else {
           onSkippedLine(lineNumber, "shape mismatch");

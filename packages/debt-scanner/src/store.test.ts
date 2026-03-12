@@ -96,6 +96,17 @@ describe("store", () => {
     expect(loaded!.scannedAt).toBe(profile.scannedAt);
     expect(loaded!.hotspots).toEqual(profile.hotspots);
     expect(loaded!.findings).toEqual(profile.findings);
+    expect(loaded!.graph.nodes.size).toBe(profile.graph.nodes.size);
+    expect(loaded!.graph.edges).toEqual(profile.graph.edges);
+
+    const loadedNode = loaded!.graph.nodes.get("src/index.ts");
+    const originalNode = profile.graph.nodes.get("src/index.ts");
+    expect(loadedNode).toBeDefined();
+    expect(loadedNode!.kind).toBe(originalNode!.kind);
+    expect(loadedNode!.filePath).toBe(originalNode!.filePath);
+    expect(loadedNode!.signals).toEqual(originalNode!.signals);
+    expect(loadedNode!.lineCount).toBe(originalNode!.lineCount);
+    expect(loadedNode!.centrality).toBe(originalNode!.centrality);
 
     store.close();
   });

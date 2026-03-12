@@ -115,6 +115,35 @@ function buildLlmRules(options: BuildLlmRulesOptions): readonly Rule[] {
   ];
 }
 
+function loadReviewToolkit(
+  dependencies: WorkerProcessingDependencies,
+  repoFullName: string,
+  traceId: string,
+  loggers: ResolvedLoggers,
+): ReviewToolkit | undefined {
+  if (!dependencies.debtStore) {
+    return undefined;
+  }
+
+  try {
+    const latestProfile = dependencies.debtStore.latestScan(repoFullName);
+    if (!latestProfile) {
+      return undefined;
+    }
+
+    loggers.infoLogger(
+      `[worker] graph_context trace=${traceId} repo=${repoFullName} hotspots=${latestProfile.hotspots.length} nodes=${latestProfile.graph.nodes.size}`,
+    );
+    return buildReviewToolkit(latestProfile.graph, latestProfile.hotspots);
+  } catch (graphError) {
+    const detail = graphError instanceof Error ? graphError.message : String(graphError);
+    loggers.errorLogger(
+      `[worker] graph_context_failed trace=${traceId} repo=${repoFullName}: ${detail}`,
+    );
+    return undefined;
+  }
+}
+
 function resolveProcessingConfig(
   job: AnalyzePullRequestJob,
   dependencies: WorkerProcessingDependencies,
@@ -141,23 +170,7 @@ function resolveProcessingConfig(
     }
   }
 
-  let toolkit: ReviewToolkit | undefined;
-  if (dependencies.debtStore) {
-    try {
-      const latestProfile = dependencies.debtStore.latestScan(job.repo_full_name);
-      if (latestProfile) {
-        toolkit = buildReviewToolkit(latestProfile.graph, latestProfile.hotspots);
-        loggers.infoLogger(
-          `[worker] graph_context trace=${traceId} repo=${job.repo_full_name} hotspots=${latestProfile.hotspots.length} nodes=${latestProfile.graph.nodes.size}`,
-        );
-      }
-    } catch (graphError) {
-      const detail = graphError instanceof Error ? graphError.message : String(graphError);
-      loggers.errorLogger(
-        `[worker] graph_context_failed trace=${traceId} repo=${job.repo_full_name}: ${detail}`,
-      );
-    }
-  }
+  const toolkit = loadReviewToolkit(dependencies, job.repo_full_name, traceId, loggers);
 
   const baseLlmRules = buildLlmRules({ mergewiseConfig, traceId, loggers, repoLearnings, toolkit });
   const rules = dependencies.rules ?? [...baseLlmRules];

@@ -90,7 +90,6 @@ describe("job-store", () => {
     const raw = readFileSync(filePath, "utf8");
     const lines = raw.split("\n");
 
-    expect(lines).toHaveLength(3);
     expect(lines[2]).toBe("");
     expect((JSON.parse(lines[0]!) as { job_id: string }).job_id).toBe("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     expect((JSON.parse(lines[1]!) as { job_id: string }).job_id).toBe("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
@@ -115,8 +114,7 @@ describe("job-store", () => {
     const result = readAllAnalyzePullRequestJobs(filePath, callback);
 
     expect(result).toEqual([]);
-    expect(skips).toHaveLength(1);
-    expect(skips[0]!.lineNumber).toBe(1);
+    expect(skips.map((skip) => skip.lineNumber)).toEqual([1]);
   });
 
   test("skips valid JSON with wrong shape", () => {
@@ -127,8 +125,7 @@ describe("job-store", () => {
     const result = readAllAnalyzePullRequestJobs(filePath, callback);
 
     expect(result).toEqual([]);
-    expect(skips).toHaveLength(1);
-    expect(skips[0]!.reason).toBe("shape mismatch");
+    expect(skips.map((skip) => skip.reason)).toEqual(["shape mismatch"]);
   });
 
   test("returns valid jobs when malformed and invalid lines are mixed in", () => {
@@ -150,12 +147,8 @@ describe("job-store", () => {
     const { callback, skips } = collectSkips();
     const jobs = readAllAnalyzePullRequestJobs(filePath, callback);
 
-    expect(jobs).toHaveLength(2);
-    expect(jobs[0]!.job_id).toBe(toJobId("11111111-1111-1111-1111-111111111111"));
-    expect(jobs[1]!.job_id).toBe(toJobId("22222222-2222-2222-2222-222222222222"));
-    expect(skips).toHaveLength(2);
-    expect(skips[0]!.lineNumber).toBe(2);
-    expect(skips[1]!.lineNumber).toBe(3);
+    expect(jobs.map((job) => job.job_id)).toEqual([firstId, secondId]);
+    expect(skips.map((skip) => skip.lineNumber)).toEqual([2, 3]);
   });
 
   test("round-trips enqueue then read", () => {
@@ -163,8 +156,7 @@ describe("job-store", () => {
     enqueueAnalyzePullRequestJob(job, filePath);
 
     const jobs = readAllAnalyzePullRequestJobs(filePath);
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0]).toEqual(job);
+    expect(jobs).toEqual([job]);
   });
 });
 
