@@ -26,9 +26,15 @@ const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme
 
 export function sanitizeCheckRunOutput(output: CheckRunOutput): CheckRunOutput {
   const truncate = (value: string, maxLength: number): string => {
-    const segments = Array.from(graphemeSegmenter.segment(value));
-    if (segments.length <= maxLength) return value;
-    return segments.slice(0, maxLength - 1).map((seg) => seg.segment).join("") + "\u2026";
+    if (value.length <= maxLength) return value;
+    let codeUnitCount = 0;
+    let safePrefix = "";
+    for (const { segment } of graphemeSegmenter.segment(value)) {
+      if (codeUnitCount + segment.length > maxLength - 1) break;
+      codeUnitCount += segment.length;
+      safePrefix += segment;
+    }
+    return safePrefix + "\u2026";
   };
 
   return {
@@ -156,6 +162,9 @@ export async function createCheckRun(
   if (resolvedStatus === "completed" && options.conclusion === undefined) {
     throw new Error("conclusion is required when status is \"completed\"");
   }
+  if (options.conclusion !== undefined && resolvedStatus !== "completed") {
+    throw new Error("conclusion is only allowed when status is \"completed\"");
+  }
 
   const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
   const apiBaseUrl = trimTrailingSlash(
@@ -202,6 +211,9 @@ export async function updateCheckRun(
 ): Promise<GitHubCheckRun> {
   if (options.status === "completed" && options.conclusion === undefined) {
     throw new Error("conclusion is required when status is \"completed\"");
+  }
+  if (options.conclusion !== undefined && options.status !== "completed") {
+    throw new Error("conclusion is only allowed when status is \"completed\"");
   }
 
   const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);

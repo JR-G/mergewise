@@ -115,6 +115,20 @@ describe("check-runs", () => {
       ).toThrow("conclusion is required");
     });
 
+    it("throws when conclusion is provided with non-completed status", () => {
+      expect(() =>
+        createCheckRun({
+          owner: "o",
+          repository: "r",
+          headSha: "sha",
+          installationAccessToken: "tok",
+          name: "test",
+          status: "in_progress",
+          conclusion: "success",
+        }),
+      ).toThrow("conclusion is only allowed");
+    });
+
     it("omits conclusion from request body when not provided", async () => {
       const calls: FetchCall[] = [];
       const fetchMock: FetchMock = async (input, init) => {
@@ -251,6 +265,19 @@ describe("check-runs", () => {
       ).toThrow("conclusion is required");
     });
 
+    it("throws when conclusion is provided with non-completed status", () => {
+      expect(() =>
+        updateCheckRun({
+          owner: "o",
+          repository: "r",
+          checkRunId: 1,
+          installationAccessToken: "tok",
+          status: "in_progress",
+          conclusion: "success",
+        }),
+      ).toThrow("conclusion is only allowed");
+    });
+
     it("sends empty output body when output is omitted", async () => {
       const calls: FetchCall[] = [];
       const fetchMock: FetchMock = async (input, init) => {
@@ -301,10 +328,11 @@ describe("check-runs", () => {
       expect(output.text!.endsWith("\u2026")).toBe(true);
     });
 
-    it("truncates emoji content without splitting surrogate pairs", () => {
+    it("truncates emoji content on grapheme boundaries without splitting surrogates", () => {
       const emoji = "\u{1F600}";
       const emojiTitle = emoji.repeat(300);
       const output = sanitizeCheckRunOutput({ title: emojiTitle, summary: "s" });
+      expect(output.title.length).toBeLessThanOrEqual(255);
       expect(output.title.endsWith("\u2026")).toBe(true);
       expect(output.title).not.toMatch(/[\uD800-\uDBFF]$/);
     });
