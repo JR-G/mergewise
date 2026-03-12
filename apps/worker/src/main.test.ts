@@ -1176,4 +1176,79 @@ describe("startWorkerProcess", () => {
 
     await processHandle.shutdown();
   });
+
+  test("does not advance offset when a feedback job in the batch fails", async () => {
+    const writtenOffsets: number[] = [];
+    const intervalCallbacks: (() => void)[] = [];
+
+    const processHandle = startWorkerProcess({
+      loadConfigFn: () => ({
+        pollIntervalMs: 3000,
+        maxProcessedKeys: 1000,
+        githubApiBaseUrl: "https://api.github.com",
+        githubUserAgent: "mergewise-worker-test",
+        githubRequestTimeoutMs: 1000,
+        githubFetchRetries: 2,
+        githubRetryDelayMs: 10,
+        confidenceThreshold: 0.78,
+        maxComments: 20,
+        testFileConfidenceThreshold: 0.98,
+      }),
+      loadMergewiseConfigFn: () => ({
+        gating: { confidenceThreshold: 0.8, maxComments: 10 },
+        rules: { include: [], exclude: [] },
+        review: { skipPatterns: [] },
+        llm: {
+          enabled: false,
+          model: "gpt-4o",
+          ...DEFAULT_LLM_MODELS,
+          tokenBudget: 30_000,
+          baseUrl: "https://api.openai.com/v1",
+          consistencySamples: 1,
+        },
+      }),
+      readQueueOffsetFn: () => 0,
+      writeQueueOffsetFn: (_path, offset) => {
+        writtenOffsets.push(offset);
+      },
+      readAllQueueJobsFn: async () => ({
+        jobs: [{
+          type: "collect-feedback" as const,
+          job_id: "fb-fail",
+          installation_id: 9,
+          repo_full_name: "acme/widget",
+          pr_number: 10,
+          queued_at: "2026-02-01T00:00:00.000Z",
+        }],
+        byteOffset: 200,
+      }),
+      processAnalyzePullRequestJobFn: async () => {
+        throw new Error("should not run");
+      },
+      processCollectFeedbackJobFn: async () => {
+        throw new Error("feedback collection failed");
+      },
+      createPollingLoopControllerFn: (_pollIntervalMs, pollCycle) => ({
+        start: () => {
+          intervalCallbacks.push(() => { pollCycle().then(() => undefined, () => undefined); });
+        },
+        stop: async () => {},
+        isRunning: () => true,
+      }),
+      registerSignalHandlerFn: () => {},
+      logInfo: () => {},
+      logError: () => {},
+    });
+
+    const drainMicrotasks = (): Promise<void> =>
+      new Promise((resolve) => { setTimeout(resolve, 0); });
+
+    const [runPollCycle] = intervalCallbacks;
+    runPollCycle?.();
+    await drainMicrotasks();
+
+    expect(writtenOffsets).toEqual([]);
+
+    await processHandle.shutdown();
+  });
 });

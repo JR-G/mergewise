@@ -239,11 +239,12 @@ export function startWorkerProcess(
       let batchFailed = false;
       for (const queuedJob of queuedJobs) {
         if (isCollectFeedbackJob(queuedJob)) {
-          await processFeedbackJobEntry(
+          const feedbackOk = await processFeedbackJobEntry(
             queuedJob, processedKeyState, config.maxProcessedKeys,
             processCollectFeedbackJobFn, feedbackStore, githubFetchOptions,
             infoLogger, errorLogger,
           );
+          batchFailed = batchFailed || !feedbackOk;
           continue;
         }
 
@@ -358,10 +359,10 @@ async function processFeedbackJobEntry(
   githubFetchOptions: WorkerGitHubFetchOptions,
   infoLogger: (message: string) => void,
   errorLogger: (message: string) => void,
-): Promise<void> {
+): Promise<boolean> {
   const feedbackIdempotencyKey = `feedback:${queuedJob.repo_full_name}#${queuedJob.pr_number}@${queuedJob.queued_at}`;
   if (processedKeyState.keys.has(feedbackIdempotencyKey)) {
-    return;
+    return true;
   }
 
   try {
@@ -372,11 +373,13 @@ async function processFeedbackJobEntry(
       logError: errorLogger,
     });
     trackProcessedKey(feedbackIdempotencyKey, processedKeyState, maxProcessedKeys);
+    return true;
   } catch (error) {
     const details = error instanceof Error ? error.stack ?? error.message : String(error);
     errorLogger(
       `[worker] failed to process feedback job=${queuedJob.job_id}: ${details}`,
     );
+    return false;
   }
 }
 
