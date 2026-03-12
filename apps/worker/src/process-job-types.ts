@@ -48,118 +48,118 @@ export interface WorkerProcessingDependencies {
   /**
    * Rules to execute for pull request analysis.
    */
-  readonly rules?: readonly Rule[];
+  readonly rules?: readonly Rule[] | undefined;
   /**
    * Rule execution function override for testing.
    */
-  readonly executeRulesFn?: (
+  readonly executeRulesFn?: ((
     options: {
       readonly context: AnalysisContext;
       readonly rules: readonly Rule[];
-      readonly codebaseContext?: CodebaseContext;
-      readonly onRuleExecutionError?: (rule: Rule, error: unknown) => void;
+      readonly codebaseContext?: CodebaseContext | undefined;
+      readonly onRuleExecutionError?: ((rule: Rule, error: unknown) => void) | undefined;
     },
-  ) => Promise<RuleExecutionResult>;
+  ) => Promise<RuleExecutionResult>) | undefined;
   /**
    * Optional override for resolved GitHub fetch options.
    */
-  readonly githubFetchOptions?: WorkerGitHubFetchOptions;
+  readonly githubFetchOptions?: WorkerGitHubFetchOptions | undefined;
   /**
    * GitHub App JWT creation function override.
    */
-  readonly createGitHubAppJwtFn?: typeof createGitHubAppJwt;
+  readonly createGitHubAppJwtFn?: (typeof createGitHubAppJwt) | undefined;
   /**
    * Installation token exchange function override.
    */
-  readonly exchangeInstallationAccessTokenFn?: typeof exchangeInstallationAccessToken;
+  readonly exchangeInstallationAccessTokenFn?: (typeof exchangeInstallationAccessToken) | undefined;
   /**
    * Retryable pull request file fetch function override.
    */
-  readonly fetchPullRequestFilesWithRetryFn?: typeof fetchPullRequestFilesWithRetry;
+  readonly fetchPullRequestFilesWithRetryFn?: (typeof fetchPullRequestFilesWithRetry) | undefined;
   /**
    * Info logger for operational events.
    */
-  readonly logInfo?: (message: string) => void;
+  readonly logInfo?: ((message: string) => void) | undefined;
   /**
    * Error logger for operational events.
    */
-  readonly logError?: (message: string) => void;
+  readonly logError?: ((message: string) => void) | undefined;
   /**
    * Warning logger for retryable operational events.
    */
-  readonly logWarn?: (message: string) => void;
+  readonly logWarn?: ((message: string) => void) | undefined;
   /**
    * Time source override for deterministic testing.
    */
-  readonly now?: () => Date;
+  readonly now?: (() => Date) | undefined;
   /**
    * Whether to post findings to GitHub after rule execution.
    */
-  readonly deliveryMode?: "none" | "github";
+  readonly deliveryMode?: "none" | "github" | undefined;
   /**
    * Delivery thresholds for confidence gating and posting cap.
    */
-  readonly findingDeliveryOptions?: WorkerFindingDeliveryOptions;
+  readonly findingDeliveryOptions?: WorkerFindingDeliveryOptions | undefined;
   /**
    * Batch pull request review creation function override.
    */
-  readonly createPullRequestReviewFn?: (
+  readonly createPullRequestReviewFn?: ((
     options: CreatePullRequestReviewOptions,
-  ) => Promise<GitHubPullRequestReview>;
+  ) => Promise<GitHubPullRequestReview>) | undefined;
   /**
    * GitHub check run creation function override.
    */
-  readonly createCheckRunFn?: (
+  readonly createCheckRunFn?: ((
     options: CreateCheckRunOptions,
-  ) => Promise<GitHubCheckRun>;
+  ) => Promise<GitHubCheckRun>) | undefined;
   /**
    * GitHub check run update function override.
    */
-  readonly updateCheckRunFn?: (
+  readonly updateCheckRunFn?: ((
     options: UpdateCheckRunOptions,
-  ) => Promise<GitHubCheckRun>;
+  ) => Promise<GitHubCheckRun>) | undefined;
   /**
    * Review thread resolution function override for testing.
    */
-  readonly resolveReviewThreadFn?: (
+  readonly resolveReviewThreadFn?: ((
     options: ResolveReviewThreadOptions,
-  ) => Promise<ResolveReviewThreadResult>;
+  ) => Promise<ResolveReviewThreadResult>) | undefined;
   /**
    * Summary comment listing function override for testing.
    */
-  readonly listPullRequestSummaryCommentsFn?: (
+  readonly listPullRequestSummaryCommentsFn?: ((
     options: ListPullRequestCommentsOptions,
-  ) => Promise<GitHubIssueComment[]>;
+  ) => Promise<GitHubIssueComment[]>) | undefined;
   /**
    * Review thread listing function override for testing.
    */
-  readonly listPullRequestReviewThreadsFn?: (
+  readonly listPullRequestReviewThreadsFn?: ((
     options: ListPullRequestReviewThreadsOptions,
-  ) => Promise<ReviewThread[]>;
+  ) => Promise<ReviewThread[]>) | undefined;
   /**
    * Pull request state fetch function override.
    */
-  readonly fetchPullRequestFn?: (
+  readonly fetchPullRequestFn?: ((
     options: FetchPullRequestOptions,
-  ) => Promise<GitHubPullRequest>;
+  ) => Promise<GitHubPullRequest>) | undefined;
   /**
    * Runtime rule selection and gating config.
    */
-  readonly mergewiseConfig?: MergewiseConfig;
+  readonly mergewiseConfig?: MergewiseConfig | undefined;
   /**
    * Summary comment creation function override for testing.
    */
-  readonly postPullRequestSummaryCommentFn?: (
+  readonly postPullRequestSummaryCommentFn?: ((
     options: PostPullRequestSummaryCommentOptions,
-  ) => Promise<GitHubIssueComment>;
+  ) => Promise<GitHubIssueComment>) | undefined;
   /**
    * Issue comment update function override for testing.
    */
-  readonly updateIssueCommentFn?: (
+  readonly updateIssueCommentFn?: ((
     options: UpdateIssueCommentOptions,
-  ) => Promise<GitHubIssueComment>;
+  ) => Promise<GitHubIssueComment>) | undefined;
   /**
    * Persistent store for PR comment reaction feedback.
    */
-  readonly feedbackStore?: FeedbackStore;
+  readonly feedbackStore?: FeedbackStore | undefined;
 }

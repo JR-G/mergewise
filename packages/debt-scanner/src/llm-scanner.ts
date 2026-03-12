@@ -13,20 +13,20 @@ const ESTIMATED_CHARS_PER_TOKEN = 4;
 
 interface LlmScannerConfig {
   readonly clientConfig: ReviewClientConfig;
-  readonly maxTokensPerFile?: number;
-  readonly tokenBudget?: number;
-  readonly onFileComplete?: (filePath: string, findingCount: number) => void;
-  readonly onFileError?: (filePath: string, error: unknown) => void;
+  readonly maxTokensPerFile?: number | undefined;
+  readonly tokenBudget?: number | undefined;
+  readonly onFileComplete?: ((filePath: string, findingCount: number) => void) | undefined;
+  readonly onFileError?: ((filePath: string, error: unknown) => void) | undefined;
 }
 
 interface RawDebtFinding {
-  readonly line?: number;
-  readonly endLine?: number;
-  readonly category?: string;
-  readonly confidence?: number;
-  readonly evidence?: string;
-  readonly recommendation?: string;
-  readonly patternId?: string;
+  readonly line?: number | undefined;
+  readonly endLine?: number | undefined;
+  readonly category?: string | undefined;
+  readonly confidence?: number | undefined;
+  readonly evidence?: string | undefined;
+  readonly recommendation?: string | undefined;
+  readonly patternId?: string | undefined;
 }
 
 /**
@@ -139,11 +139,11 @@ function parseDebtResponse(
   if (typeof parsed !== "object" || parsed === null) return [];
 
   const envelope = parsed as Record<string, unknown>;
-  if (!Array.isArray(envelope.findings)) return [];
+  if (!Array.isArray(envelope["findings"])) return [];
 
   const findings: DebtFinding[] = [];
 
-  for (const rawFinding of envelope.findings as unknown[]) {
+  for (const rawFinding of envelope["findings"] as unknown[]) {
     const validated = validateRawFinding(rawFinding, hotspot);
     if (validated) findings.push(validated);
   }

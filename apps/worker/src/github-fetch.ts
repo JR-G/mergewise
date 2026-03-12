@@ -32,15 +32,15 @@ export interface PullRequestFileRetryDependencies {
   /**
    * Warning logger for retry attempts.
    */
-  readonly logWarn?: (message: string) => void;
+  readonly logWarn?: ((message: string) => void) | undefined;
   /**
    * Info logger fallback when warning logger is not provided.
    */
-  readonly logInfo?: (message: string) => void;
+  readonly logInfo?: ((message: string) => void) | undefined;
   /**
    * Error logger fallback when warning/info loggers are not provided.
    */
-  readonly logError?: (message: string) => void;
+  readonly logError?: ((message: string) => void) | undefined;
 }
 
 /**
@@ -105,12 +105,12 @@ export interface GitHubAnalysisContextResult {
  * Dependencies for building analysis context from GitHub.
  */
 export interface BuildAnalysisContextDependencies {
-  readonly createGitHubAppJwtFn?: typeof createGitHubAppJwt;
-  readonly exchangeInstallationAccessTokenFn?: typeof exchangeInstallationAccessToken;
-  readonly fetchPullRequestFilesWithRetryFn?: typeof fetchPullRequestFilesWithRetry;
-  readonly logWarn?: (message: string) => void;
-  readonly logInfo?: (message: string) => void;
-  readonly logError?: (message: string) => void;
+  readonly createGitHubAppJwtFn?: (typeof createGitHubAppJwt) | undefined;
+  readonly exchangeInstallationAccessTokenFn?: (typeof exchangeInstallationAccessToken) | undefined;
+  readonly fetchPullRequestFilesWithRetryFn?: (typeof fetchPullRequestFilesWithRetry) | undefined;
+  readonly logWarn?: ((message: string) => void) | undefined;
+  readonly logInfo?: ((message: string) => void) | undefined;
+  readonly logError?: ((message: string) => void) | undefined;
 }
 
 /**

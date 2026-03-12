@@ -6,6 +6,44 @@ import {
   parseResponse,
 } from "./http";
 
+const MAX_TITLE_LENGTH = 255;
+const MAX_SUMMARY_LENGTH = 65_535;
+const MAX_TEXT_LENGTH = 65_535;
+
+interface CheckRunOutput {
+  readonly title: string;
+  readonly summary: string;
+  readonly text?: string | undefined;
+}
+
+/**
+ * Truncates check run output fields to GitHub's size limits.
+ *
+ * @param output - Raw check run output to sanitise.
+ * @returns Output with title, summary, and text truncated if necessary.
+ */
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+export function sanitizeCheckRunOutput(output: CheckRunOutput): CheckRunOutput {
+  const truncate = (value: string, maxLength: number): string => {
+    if (value.length <= maxLength) return value;
+    let codeUnitCount = 0;
+    let safePrefix = "";
+    for (const { segment } of graphemeSegmenter.segment(value)) {
+      if (codeUnitCount + segment.length > maxLength - 1) break;
+      codeUnitCount += segment.length;
+      safePrefix += segment;
+    }
+    return safePrefix + "\u2026";
+  };
+
+  return {
+    title: truncate(output.title, MAX_TITLE_LENGTH),
+    summary: truncate(output.summary, MAX_SUMMARY_LENGTH),
+    ...(output.text !== undefined ? { text: truncate(output.text, MAX_TEXT_LENGTH) } : {}),
+  };
+}
+
 /**
  * Request options for creating a check run on a commit.
  */
@@ -33,21 +71,21 @@ export interface CreateCheckRunOptions extends GitHubApiOptions {
   /**
    * Check run status.
    *
-   * @defaultValue `"completed"`
+   * @defaultValue `"completed"` when `conclusion` is provided, `"queued"` otherwise.
    */
-  status?: "queued" | "in_progress" | "completed";
+  status?: "queued" | "in_progress" | "completed" | undefined;
   /**
    * Check run conclusion. Required when status is "completed".
    */
-  conclusion?: "success" | "failure" | "neutral";
+  conclusion?: "success" | "failure" | "neutral" | undefined;
   /**
    * Structured output displayed in the check run details.
    */
   output?: {
     readonly title: string;
     readonly summary: string;
-    readonly text?: string;
-  };
+    readonly text?: string | undefined;
+  } | undefined;
 }
 
 /**
@@ -77,15 +115,15 @@ export interface UpdateCheckRunOptions extends GitHubApiOptions {
   /**
    * Check run conclusion. Required when status is "completed".
    */
-  conclusion?: "success" | "failure" | "neutral";
+  conclusion?: "success" | "failure" | "neutral" | undefined;
   /**
    * Structured output displayed in the check run details.
    */
   output?: {
     readonly title: string;
     readonly summary: string;
-    readonly text?: string;
-  };
+    readonly text?: string | undefined;
+  } | undefined;
 }
 
 /**
@@ -120,6 +158,14 @@ export interface GitHubCheckRun {
 export async function createCheckRun(
   options: CreateCheckRunOptions,
 ): Promise<GitHubCheckRun> {
+  const resolvedStatus = options.status ?? (options.conclusion !== undefined ? "completed" : "queued");
+  if (resolvedStatus === "completed" && options.conclusion === undefined) {
+    throw new Error("conclusion is required when status is \"completed\"");
+  }
+  if (options.conclusion !== undefined && resolvedStatus !== "completed") {
+    throw new Error("conclusion is only allowed when status is \"completed\"");
+  }
+
   const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
   const apiBaseUrl = trimTrailingSlash(
     options.apiBaseUrl ?? "https://api.github.com",
@@ -131,13 +177,13 @@ export async function createCheckRun(
   const requestBody: Record<string, unknown> = {
     name: options.name,
     head_sha: options.headSha,
-    status: options.status ?? "completed",
+    status: resolvedStatus,
   };
   if (options.conclusion !== undefined) {
-    requestBody.conclusion = options.conclusion;
+    requestBody["conclusion"] = options.conclusion;
   }
   if (options.output !== undefined) {
-    requestBody.output = options.output;
+    requestBody["output"] = sanitizeCheckRunOutput(options.output);
   }
   const response = await fetch(endpointUrl, {
     method: "POST",
@@ -163,6 +209,13 @@ export async function createCheckRun(
 export async function updateCheckRun(
   options: UpdateCheckRunOptions,
 ): Promise<GitHubCheckRun> {
+  if (options.status === "completed" && options.conclusion === undefined) {
+    throw new Error("conclusion is required when status is \"completed\"");
+  }
+  if (options.conclusion !== undefined && options.status !== "completed") {
+    throw new Error("conclusion is only allowed when status is \"completed\"");
+  }
+
   const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
   const apiBaseUrl = trimTrailingSlash(
     options.apiBaseUrl ?? "https://api.github.com",
@@ -175,10 +228,10 @@ export async function updateCheckRun(
     status: options.status,
   };
   if (options.conclusion !== undefined) {
-    requestBody.conclusion = options.conclusion;
+    requestBody["conclusion"] = options.conclusion;
   }
   if (options.output !== undefined) {
-    requestBody.output = options.output;
+    requestBody["output"] = sanitizeCheckRunOutput(options.output);
   }
   const response = await fetch(endpointUrl, {
     method: "PATCH",

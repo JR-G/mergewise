@@ -10,12 +10,12 @@ import type { DebtStore } from "./store.ts";
 
 export interface ScanOptions {
   readonly repoPath: string;
-  readonly topCount?: number;
-  readonly skipLlm?: boolean;
-  readonly clientConfig?: ReviewClientConfig;
-  readonly tokenBudget?: number;
-  readonly store?: DebtStore;
-  readonly onProgress?: (stage: string, detail: string) => void;
+  readonly topCount?: number | undefined;
+  readonly skipLlm?: boolean | undefined;
+  readonly clientConfig?: ReviewClientConfig | undefined;
+  readonly tokenBudget?: number | undefined;
+  readonly store?: DebtStore | undefined;
+  readonly onProgress?: ((stage: string, detail: string) => void) | undefined;
 }
 
 const DEFAULT_TOP_COUNT = 20;
@@ -29,7 +29,9 @@ const MAX_TOP_COUNT = 100;
  */
 export async function scan(options: ScanOptions): Promise<DebtProfile> {
   const { repoPath, onProgress } = options;
-  const topCount = Math.min(options.topCount ?? DEFAULT_TOP_COUNT, MAX_TOP_COUNT);
+  const rawTop = options.topCount ?? DEFAULT_TOP_COUNT;
+  const validTop = Number.isFinite(rawTop) ? Math.trunc(rawTop) : DEFAULT_TOP_COUNT;
+  const topCount = Math.min(Math.max(validTop, 1), MAX_TOP_COUNT);
 
   onProgress?.("collect", "Collecting files...");
   const filePaths = await collectFiles(repoPath);

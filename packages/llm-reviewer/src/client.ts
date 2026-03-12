@@ -5,10 +5,10 @@ import OpenAI from "openai";
  */
 export interface ReviewClientConfig {
   readonly apiKey: string;
-  readonly baseUrl?: string;
-  readonly model?: string;
-  readonly maxRetries?: number;
-  readonly timeoutMs?: number;
+  readonly baseUrl?: string | undefined;
+  readonly model?: string | undefined;
+  readonly maxRetries?: number | undefined;
+  readonly timeoutMs?: number | undefined;
 }
 
 /**

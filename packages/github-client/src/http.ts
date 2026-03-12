@@ -7,23 +7,23 @@ export interface GitHubApiOptions {
    *
    * @defaultValue `"https://api.github.com"`
    */
-  apiBaseUrl?: string;
+  apiBaseUrl?: string | undefined;
   /**
    * Value for the User-Agent header.
    *
    * @defaultValue `"mergewise-github-client"`
    */
-  userAgent?: string;
+  userAgent?: string | undefined;
   /**
    * Request timeout in milliseconds for GitHub API calls.
    *
    * @defaultValue `10000`
    */
-  requestTimeoutMs?: number;
+  requestTimeoutMs?: number | undefined;
   /**
    * Optional trace identifier propagated across API calls for log stitching.
    */
-  traceId?: string;
+  traceId?: string | undefined;
 }
 
 /**
@@ -84,7 +84,7 @@ export class GitHubGraphQlError extends Error {
     requestUrl: string,
   ) {
     const firstMessage =
-      (errors[0]?.message as string | undefined) ?? "Unknown GraphQL error";
+      (errors[0]?.["message"] as string | undefined) ?? "Unknown GraphQL error";
     super(`GitHub GraphQL request failed: ${requestUrl} — ${firstMessage}`);
     this.name = "GitHubGraphQlError";
     this.errors = errors;
@@ -98,11 +98,11 @@ export interface HeaderBuildOptions {
   /** Bearer token for the Authorization header. */
   authorization: string;
   /** Value for the User-Agent header. Defaults to `"mergewise-github-client"`. */
-  userAgent?: string;
+  userAgent?: string | undefined;
   /** MIME type for the Content-Type header when present. */
-  contentType?: string;
+  contentType?: string | undefined;
   /** Optional trace identifier propagated as `X-Mergewise-Trace-Id`. */
-  traceId?: string;
+  traceId?: string | undefined;
 }
 
 /**

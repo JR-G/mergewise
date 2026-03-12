@@ -1,4 +1,5 @@
 import type { GitHubReactionCounts } from "@mergewise/github-client";
+import type { RuleExecutionResult } from "@mergewise/rule-engine";
 import type { Finding, FindingCategory, Rule } from "@mergewise/shared-types";
 
 import type { WorkerGitHubFetchOptions } from "./index";
@@ -59,7 +60,7 @@ export function createFinding(
 }
 
 /** Wraps findings into a full execution result with auto-computed category counts. */
-export function createExecutionResultWithFindings(findings: readonly Finding[]) {
+export function createExecutionResultWithFindings(findings: readonly Finding[]): RuleExecutionResult {
   const findingsByCategory = {
     clean: 0,
     perf: 0,

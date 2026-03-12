@@ -142,7 +142,7 @@ export function createShutdownSignalHandler(
 ): (signal: WorkerShutdownSignal) => void {
   const infoLogger = dependencies.logInfo ?? console.log;
   const errorLogger = dependencies.logError ?? console.error;
-  const exitFn = dependencies.exitFn ?? ((exitCode: number) => process.exit(exitCode));
+  const exitFn = dependencies.exitFn ?? ((exitCode: number): void => process.exit(exitCode));
   let shutdownPromise: Promise<void> | null = null;
 
   return (signal: WorkerShutdownSignal): void => {
@@ -183,7 +183,7 @@ export function startWorkerProcess(
   const writeQueueOffsetFn = dependencies.writeQueueOffsetFn ?? writeQueueOffset;
   const registerSignalHandlerFn =
     dependencies.registerSignalHandlerFn ??
-    ((signal, listener) => process.on(signal, listener));
+    ((signal: WorkerShutdownSignal, listener: (signal: WorkerShutdownSignal) => void): void => { process.on(signal, listener); });
   const infoLogger = dependencies.logInfo ?? console.log;
   const errorLogger = dependencies.logError ?? console.error;
 
@@ -315,7 +315,7 @@ export function startWorkerProcess(
   registerSignalHandlerFn("SIGINT", shutdownSignalHandler);
 
   return {
-    shutdown: async () => {
+    shutdown: async (): Promise<void> => {
       await pollingLoop.stop();
       closeFeedbackStore();
     },

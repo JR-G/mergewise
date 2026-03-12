@@ -27,7 +27,7 @@ type FetchMock = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 interface FetchCall {
   input: string | URL;
-  init?: RequestInit;
+  init?: RequestInit | undefined;
 }
 
 function decodeJwtPart(value: string): unknown {
@@ -390,12 +390,12 @@ describe("github-client", () => {
     expect(calls[0]!.init?.method).toBe("POST");
     expect(calls[0]!.init?.signal).toBeDefined();
     const requestBody = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
-    expect(requestBody.name).toBe("Mergewise");
-    expect(requestBody.head_sha).toBe("abc123");
-    expect(requestBody.status).toBe("completed");
-    expect(requestBody.conclusion).toBe("success");
-    const requestOutput = requestBody.output as Record<string, unknown>;
-    expect(requestOutput.title).toBe("Review completed");
+    expect(requestBody["name"]).toBe("Mergewise");
+    expect(requestBody["head_sha"]).toBe("abc123");
+    expect(requestBody["status"]).toBe("completed");
+    expect(requestBody["conclusion"]).toBe("success");
+    const requestOutput = requestBody["output"] as Record<string, unknown>;
+    expect(requestOutput["title"]).toBe("Review completed");
   });
 
   test("createCheckRun throws GitHubApiError on failure", async () => {
@@ -450,9 +450,9 @@ describe("github-client", () => {
     expect(result.conclusion).toBeNull();
     expect(calls[0]).toBeDefined();
     const requestBody = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
-    expect(requestBody.status).toBe("in_progress");
-    expect(requestBody.conclusion).toBeUndefined();
-    expect(requestBody.head_sha).toBe("def456");
+    expect(requestBody["status"]).toBe("in_progress");
+    expect(requestBody["conclusion"]).toBeUndefined();
+    expect(requestBody["head_sha"]).toBe("def456");
   });
 
   test("updateCheckRun PATCHes the correct endpoint and returns updated check run", async () => {
@@ -490,8 +490,8 @@ describe("github-client", () => {
     expect(requestUrl).toContain("/repos/acme/widget/check-runs/500");
     expect(calls[0]!.init?.method).toBe("PATCH");
     const requestBody = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
-    expect(requestBody.status).toBe("completed");
-    expect(requestBody.conclusion).toBe("success");
+    expect(requestBody["status"]).toBe("completed");
+    expect(requestBody["conclusion"]).toBe("success");
     const requestHeaders = calls[0]!.init?.headers as Record<string, string>;
     expect(requestHeaders["X-Mergewise-Trace-Id"]).toBe("trace-update-1");
   });
@@ -616,10 +616,10 @@ describe("github-client", () => {
       "https://api.github.com/repos/acme/widget/pulls/3/reviews",
     );
     const requestBody = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
-    expect(requestBody.commit_id).toBe("abc123");
-    expect(requestBody.event).toBe("COMMENT");
-    expect(requestBody.body).toBe("review summary");
-    const comments = requestBody.comments as { path: string; line: number; side: string; body: string }[];
+    expect(requestBody["commit_id"]).toBe("abc123");
+    expect(requestBody["event"]).toBe("COMMENT");
+    expect(requestBody["body"]).toBe("review summary");
+    const comments = requestBody["comments"] as { path: string; line: number; side: string; body: string }[];
     expect(comments).toHaveLength(2);
     expect(comments[0]!.path).toBe("src/a.ts");
     expect(comments[0]!.side).toBe("RIGHT");
@@ -787,9 +787,9 @@ describe("github-client", () => {
       variables: Record<string, unknown>;
     };
     expect(requestBody.query).toContain("reviewThreads");
-    expect(requestBody.variables.owner).toBe("acme");
-    expect(requestBody.variables.name).toBe("widget");
-    expect(requestBody.variables.prNumber).toBe(3);
+    expect(requestBody.variables["owner"]).toBe("acme");
+    expect(requestBody.variables["name"]).toBe("widget");
+    expect(requestBody.variables["prNumber"]).toBe(3);
   });
 
   test("listPullRequestReviewThreads paginates using cursor", async () => {
@@ -1159,7 +1159,7 @@ describe("github-client", () => {
     expect(requestUrl).toContain("/repos/acme/widget/issues/comments/42");
     expect(calls[0]!.init?.method).toBe("PATCH");
     const requestBody = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
-    expect(requestBody.body).toBe("updated body");
+    expect(requestBody["body"]).toBe("updated body");
     const requestHeaders = calls[0]!.init?.headers as Record<string, string>;
     expect(requestHeaders["X-Mergewise-Trace-Id"]).toBe("trace-update-comment-1");
   });

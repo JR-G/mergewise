@@ -78,19 +78,22 @@ function extractFunctions(sourceFile: ts.SourceFile): FunctionInfo[] {
   const functions: FunctionInfo[] = [];
 
   const visit = (node: ts.Node): void => {
-    switch (true) {
-      case ts.isFunctionDeclaration(node) && node.name !== undefined:
-        functions.push(buildFunctionInfo(sourceFile, node.name.text, node));
-        break;
-      case ts.isMethodDeclaration(node) && ts.isIdentifier(node.name):
-        functions.push(buildFunctionInfo(sourceFile, node.name.text, node));
-        break;
-      case (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
-        ts.isVariableDeclaration(node.parent) &&
-        ts.isIdentifier(node.parent.name):
-        functions.push(buildFunctionInfo(sourceFile, node.parent.name.text, node));
-        break;
+    if (ts.isFunctionDeclaration(node) && node.name !== undefined) {
+      functions.push(buildFunctionInfo(sourceFile, node.name.text, node));
     }
+
+    if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
+      functions.push(buildFunctionInfo(sourceFile, node.name.text, node));
+    }
+
+    if (
+      (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
+      ts.isVariableDeclaration(node.parent) &&
+      ts.isIdentifier(node.parent.name)
+    ) {
+      functions.push(buildFunctionInfo(sourceFile, node.parent.name.text, node));
+    }
+
     ts.forEachChild(node, visit);
   };
 

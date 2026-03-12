@@ -24,7 +24,7 @@ export interface PullRequestReviewComment {
   /**
    * Diff side for inline comments.
    */
-  readonly side?: "LEFT" | "RIGHT";
+  readonly side?: "LEFT" | "RIGHT" | undefined;
   /**
    * Markdown body for the inline review comment.
    */
@@ -58,7 +58,7 @@ export interface CreatePullRequestReviewOptions extends GitHubApiOptions {
   /**
    * Markdown body for the review-level comment.
    */
-  body?: string;
+  body?: string | undefined;
   /**
    * Review event type.
    */
@@ -123,7 +123,7 @@ export async function createPullRequestReview(
       })),
   };
   if (options.body !== undefined) {
-    requestBody.body = options.body.slice(0, MAX_COMMENT_BODY_LENGTH);
+    requestBody["body"] = options.body.slice(0, MAX_COMMENT_BODY_LENGTH);
   }
   const response = await fetch(endpointUrl, {
     method: "POST",

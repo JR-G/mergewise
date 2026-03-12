@@ -101,11 +101,11 @@ export interface ReviewLearnings {
  * When a tool is undefined, the corresponding prompt section is omitted.
  */
 export interface ReviewToolkit {
-  readonly getCallers?: (filePath: string) => FileGraphContext;
-  readonly getRepoLearnings?: (
+  readonly getCallers?: ((filePath: string) => FileGraphContext) | undefined;
+  readonly getRepoLearnings?: ((
     repoName: string,
     filePaths: readonly string[],
-  ) => ReviewLearnings;
+  ) => ReviewLearnings) | undefined;
 }
 
 /**
@@ -122,15 +122,15 @@ export interface TokenUsageSummary {
  * Configuration for the three-stage review pipeline.
  */
 export interface ReviewPipelineConfig {
-  readonly triageModel?: string;
+  readonly triageModel?: string | undefined;
   readonly reviewModel: string;
-  readonly criticModel?: string;
-  readonly maxFilesPerReview?: number;
-  readonly tokenBudget?: number;
-  readonly toolkit?: ReviewToolkit;
-  readonly confidenceThreshold?: number;
+  readonly criticModel?: string | undefined;
+  readonly maxFilesPerReview?: number | undefined;
+  readonly tokenBudget?: number | undefined;
+  readonly toolkit?: ReviewToolkit | undefined;
+  readonly confidenceThreshold?: number | undefined;
   readonly apiKey: string;
-  readonly baseUrl?: string;
+  readonly baseUrl?: string | undefined;
 }
 
 /**
