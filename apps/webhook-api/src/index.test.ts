@@ -375,6 +375,30 @@ describe("isPushWebhookEvent", () => {
   test("rejects payload with non-object installation", () => {
     expect(isPushWebhookEvent({ ...validPayload, installation: "string" })).toBe(false);
   });
+
+  test("rejects installation.id of zero", () => {
+    expect(isPushWebhookEvent({ ...validPayload, installation: { id: 0 } })).toBe(false);
+  });
+
+  test("rejects negative installation.id", () => {
+    expect(isPushWebhookEvent({ ...validPayload, installation: { id: -1 } })).toBe(false);
+  });
+
+  test("rejects NaN installation.id", () => {
+    expect(isPushWebhookEvent({ ...validPayload, installation: { id: NaN } })).toBe(false);
+  });
+
+  test("rejects non-integer installation.id", () => {
+    expect(isPushWebhookEvent({ ...validPayload, installation: { id: 1.5 } })).toBe(false);
+  });
+
+  test("accepts unsafe-large installation.id (passes isInteger check)", () => {
+    expect(isPushWebhookEvent({ ...validPayload, installation: { id: Number.MAX_SAFE_INTEGER + 1 } })).toBe(true);
+  });
+
+  test("accepts valid positive integer installation.id", () => {
+    expect(isPushWebhookEvent({ ...validPayload, installation: { id: 42 } })).toBe(true);
+  });
 });
 
 describe("isDefaultBranchPush", () => {

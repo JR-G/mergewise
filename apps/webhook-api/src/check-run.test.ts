@@ -31,7 +31,8 @@ describe("createPendingCheckRun", () => {
     expect(result).toBeNull();
   });
 
-  test("returns check run id on success", async () => {
+  test("returns check run id on success and emits correct payload", async () => {
+    let capturedOptions: Record<string, unknown> | undefined;
     const result = await createPendingCheckRun(
       payload,
       { port: 8787, githubAppId: 1, githubAppPrivateKeyPem: "pem" },
@@ -41,15 +42,28 @@ describe("createPendingCheckRun", () => {
           token: "tok",
           expires_at: "2026-01-01T00:00:00Z",
         }),
-        createCheckRunFn: async () => ({
-          id: 77,
-          html_url: "https://github.com/x",
-          status: "queued" as const,
-          conclusion: null,
-        }),
+        createCheckRunFn: async (options) => {
+          capturedOptions = options as unknown as Record<string, unknown>;
+          return {
+            id: 77,
+            html_url: "https://github.com/x",
+            status: "queued" as const,
+            conclusion: null,
+          };
+        },
       },
     );
     expect(result).toBe(77);
+    expect(capturedOptions).toBeDefined();
+    expect(capturedOptions?.owner).toBe("acme");
+    expect(capturedOptions?.repository).toBe("widget");
+    expect(capturedOptions?.headSha).toBe("abc123");
+    expect(capturedOptions?.name).toBe("Mergewise");
+    expect(capturedOptions?.status).toBe("queued");
+    expect(capturedOptions?.output).toEqual({
+      title: "Queued",
+      summary: "Waiting for analysis to begin...",
+    });
   });
 
   test("returns null when check run creation throws", async () => {

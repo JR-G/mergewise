@@ -4,7 +4,7 @@ import {
   startWorkerProcess,
 } from "./main";
 
-const DEFAULT_LLM_MODELS = { triageModel: "gpt-4o-mini", criticModel: "gpt-4o-mini", usePipeline: true };
+const DEFAULT_LLM_MODELS = { triageModel: "gpt-4.1-mini", criticModel: "gpt-4.1-mini", usePipeline: true };
 
 describe("startWorkerProcess job routing", () => {
   test("routes feedback jobs to processCollectFeedbackJobFn and skips analyze handler", async () => {
@@ -176,6 +176,12 @@ describe("startWorkerProcess job routing", () => {
 
     expect(indexJobIds).toEqual(["idx-1"]);
     expect(analyzeJobIds).toEqual([]);
+
+    runPollCycle?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(indexJobIds).toEqual(["idx-1"]);
 
     await processHandle.shutdown();
   });

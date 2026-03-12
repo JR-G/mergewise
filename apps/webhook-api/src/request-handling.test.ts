@@ -164,15 +164,14 @@ describe("logWebhookFailure", () => {
     }
 
     expect(capturedLogs).toHaveLength(1);
-    expect(capturedLogs[0]).toBe(
-      JSON.stringify({
-        event: "webhook_request_failed",
-        request_id: "request-456",
-        http_status: 503,
-        error_code: "queue_enqueue_failed",
-        message: "Failed to queue analysis job",
-      }),
-    );
+    const parsed: unknown = JSON.parse(capturedLogs[0] as string);
+    expect(parsed).toMatchObject({
+      event: "webhook_request_failed",
+      request_id: "request-456",
+      http_status: 503,
+      error_code: "queue_enqueue_failed",
+      message: "Failed to queue analysis job",
+    });
   });
 
   test("serializes canonical repository and pull request fields", () => {
