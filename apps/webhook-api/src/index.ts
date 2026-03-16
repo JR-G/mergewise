@@ -1,4 +1,4 @@
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import {
@@ -14,6 +14,8 @@ import type {
   GitHubPullRequestAction,
   GitHubPullRequestWebhookEvent,
 } from "@mergewise/shared-types";
+
+import { generateJobId } from "@mergewise/shared-types";
 
 import type { WebhookApiConfig } from "./types";
 
@@ -226,7 +228,7 @@ export function buildAnalyzePullRequestJob(
   traceId?: string,
 ): AnalyzePullRequestJob {
   return {
-    job_id: randomUUID(),
+    job_id: generateJobId(),
     installation_id: payload.installation?.id ?? null,
     repo_full_name: payload.repository.full_name,
     pr_number: payload.pull_request.number,
@@ -249,7 +251,7 @@ export function buildCollectFeedbackJob(
 ): CollectFeedbackJob {
   return {
     type: "collect-feedback",
-    job_id: randomUUID(),
+    job_id: generateJobId(),
     installation_id: payload.installation?.id ?? null,
     repo_full_name: payload.repository.full_name,
     pr_number: payload.pull_request.number,
