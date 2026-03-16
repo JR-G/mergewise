@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { DiffHunk, FileDiff } from "@mergewise/shared-types";
+import { toFilePath } from "@mergewise/shared-types";
 
 import { buildFileReviewPrompt, buildSystemPrompt, computeContextWindows } from "./prompt";
 
@@ -189,7 +190,7 @@ describe("buildFileReviewPrompt context windowing", () => {
   test("large file with a single small hunk produces windowed context", () => {
     const fileContent = makeFileContent(1000);
     const diff: FileDiff = {
-      filePath: "src/big.ts",
+      filePath: toFilePath("src/big.ts"),
       previousPath: null,
       hunks: [makeHunk("@@ -500,3 +500,5 @@", ["+added line"])],
     };
@@ -203,7 +204,7 @@ describe("buildFileReviewPrompt context windowing", () => {
   test("small file falls back to full file content with line numbers", () => {
     const fileContent = makeFileContent(80);
     const diff: FileDiff = {
-      filePath: "src/small.ts",
+      filePath: toFilePath("src/small.ts"),
       previousPath: null,
       hunks: [makeHunk("@@ -1,80 +1,82 @@", ["+added"])],
     };
@@ -217,7 +218,7 @@ describe("buildFileReviewPrompt context windowing", () => {
 
   test("null fullContent produces no context section", () => {
     const diff: FileDiff = {
-      filePath: "src/gone.ts",
+      filePath: toFilePath("src/gone.ts"),
       previousPath: null,
       hunks: [makeHunk("@@ -1,3 +1,3 @@", ["+x"])],
     };
@@ -230,7 +231,7 @@ describe("buildFileReviewPrompt context windowing", () => {
   test("malformed hunk headers fall back to full file content", () => {
     const fileContent = makeFileContent(200);
     const diff: FileDiff = {
-      filePath: "src/broken.ts",
+      filePath: toFilePath("src/broken.ts"),
       previousPath: null,
       hunks: [makeHunk("INVALID HEADER", ["+added"])],
     };
@@ -243,7 +244,7 @@ describe("buildFileReviewPrompt context windowing", () => {
   test("falls back to full file when windows cover most of the file", () => {
     const fileContent = makeFileContent(10);
     const diff: FileDiff = {
-      filePath: "src/tiny.ts",
+      filePath: toFilePath("src/tiny.ts"),
       previousPath: null,
       hunks: [makeHunk("@@ -1,3 +1,5 @@", ["+added"])],
     };
@@ -256,7 +257,7 @@ describe("buildFileReviewPrompt context windowing", () => {
   test("uses windowed context when coverage is below threshold", () => {
     const fileContent = makeFileContent(500);
     const diff: FileDiff = {
-      filePath: "src/medium.ts",
+      filePath: toFilePath("src/medium.ts"),
       previousPath: null,
       hunks: [
         makeHunk("@@ -100,3 +100,5 @@", ["+added"]),

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { toFilePath } from "@mergewise/shared-types";
 import { parseTriageResponse } from "./triage";
 
-const FILE_PATHS = ["src/index.ts", "src/utils.ts", "src/config.ts"];
+const FILE_PATHS = [toFilePath("src/index.ts"), toFilePath("src/utils.ts"), toFilePath("src/config.ts")];
 
 describe("parseTriageResponse", () => {
   test("parses valid JSON response into TriageResult array", () => {
@@ -47,7 +48,7 @@ describe("parseTriageResponse", () => {
       ],
     });
 
-    const results = parseTriageResponse(raw, ["src/index.ts"]);
+    const results = parseTriageResponse(raw, [toFilePath("src/index.ts")]);
     expect(results[0]!.classifications.length).toBe(5);
   });
 
@@ -73,7 +74,7 @@ describe("parseTriageResponse", () => {
       ],
     });
 
-    const results = parseTriageResponse(raw, ["src/index.ts"]);
+    const results = parseTriageResponse(raw, [toFilePath("src/index.ts")]);
     expect(results[0]!.priority).toBe("medium");
   });
 
@@ -82,7 +83,7 @@ describe("parseTriageResponse", () => {
       files: [{ filePath: "src/index.ts" }],
     });
 
-    const results = parseTriageResponse(raw, ["src/index.ts"]);
+    const results = parseTriageResponse(raw, [toFilePath("src/index.ts")]);
     expect(results[0]!.classifications).toEqual([]);
     expect(results[0]!.priority).toBe("medium");
     expect(results[0]!.reasoning).toBe("Not classified");
@@ -95,7 +96,7 @@ describe("parseTriageResponse", () => {
       ],
     });
 
-    const results = parseTriageResponse(raw, ["src/index.ts"]);
+    const results = parseTriageResponse(raw, [toFilePath("src/index.ts")]);
     expect(results[0]!.classifications).toEqual(["valid", "also-valid"]);
   });
 

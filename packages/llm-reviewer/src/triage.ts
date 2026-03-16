@@ -1,4 +1,5 @@
-import type { FileDiff } from "@mergewise/shared-types";
+import type { FileDiff, FilePath } from "@mergewise/shared-types";
+import { tryParseFilePath } from "@mergewise/shared-types";
 import { mergeUsage, type CompletionUsage, type ReviewClient } from "./client";
 import type { TriagePriority, TriageResult } from "./pipeline-types";
 
@@ -50,8 +51,10 @@ function buildDiffSummary(diff: FileDiff): string {
 /**
  * Validates and normalises a single raw triage entry from LLM output.
  */
-function normaliseTriageEntry(raw: RawTriageEntry, fallbackPath: string): TriageResult {
-  const filePath = typeof raw.filePath === "string" ? raw.filePath : fallbackPath;
+function normaliseTriageEntry(raw: RawTriageEntry, fallbackPath: FilePath): TriageResult {
+  const filePath = typeof raw.filePath === "string"
+    ? (tryParseFilePath(raw.filePath) ?? fallbackPath)
+    : fallbackPath;
 
   const rawClassifications = Array.isArray(raw.classifications)
     ? raw.classifications.filter((item): item is string => typeof item === "string")
@@ -73,7 +76,7 @@ function normaliseTriageEntry(raw: RawTriageEntry, fallbackPath: string): Triage
  */
 export function parseTriageResponse(
   raw: string,
-  filePaths: readonly string[],
+  filePaths: readonly FilePath[],
 ): TriageResult[] {
   let parsed: { files?: unknown[] };
   try {
@@ -91,9 +94,10 @@ export function parseTriageResponse(
   const results = new Map<string, TriageResult>();
   const filePathSet = new Set(filePaths);
 
-  for (let index = 0; index < rawFiles.length && index < filePaths.length; index++) {
-    const fallbackPath = filePaths[index] ?? "unknown";
-    const normalised = normaliseTriageEntry(rawFiles[index] as RawTriageEntry, fallbackPath);
+  for (const [index, rawFile] of rawFiles.entries()) {
+    const fallbackPath = filePaths[index];
+    if (index >= filePaths.length || fallbackPath === undefined) break;
+    const normalised = normaliseTriageEntry(rawFile as RawTriageEntry, fallbackPath);
     const effectivePath = filePathSet.has(normalised.filePath) ? normalised.filePath : fallbackPath;
     results.set(effectivePath, { ...normalised, filePath: effectivePath });
   }

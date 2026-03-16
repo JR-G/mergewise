@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CodebaseContext, FileDiff, PullRequestMetadata } from "@mergewise/shared-types";
+import { toFilePath, toPRNumber, toRepoFullName, toSHA } from "@mergewise/shared-types";
 import type { ReviewPipelineConfig } from "./pipeline-types";
 import { runReviewPipeline } from "./pipeline";
 
@@ -9,16 +10,16 @@ function makeDiff(filePath: string, addedLines = 3): FileDiff {
     lines.push(`+const added${index} = ${index};`);
   }
   return {
-    filePath,
+    filePath: toFilePath(filePath),
     previousPath: null,
     hunks: [{ header: "@@ -1,1 +1,4 @@", lines }],
   };
 }
 
 const PULL_REQUEST: PullRequestMetadata = {
-  repo: "owner/repo",
-  prNumber: 42,
-  headSha: "abc123",
+  repo: toRepoFullName("owner/repo"),
+  prNumber: toPRNumber(42),
+  headSha: toSHA("a".repeat(40)),
   installationId: null,
 };
 
@@ -58,7 +59,7 @@ describe("runReviewPipeline", () => {
     expect(result.triageResults.length).toBe(1);
     expect(result.triageResults[0]!.priority).toBe("high");
     expect(result.triageResults[0]!.reasoning).toContain("Triage unavailable");
-    expect(result.failedFiles.some((failure) => failure.filePath === "src/index.ts")).toBe(true);
+    expect(result.failedFiles.some((failure) => failure.filePath === toFilePath("src/index.ts"))).toBe(true);
   });
 
   test("returns valid token usage summary even when all stages fail", async () => {

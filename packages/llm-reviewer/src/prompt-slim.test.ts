@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { FileDiff } from "@mergewise/shared-types";
+import { toFilePath } from "@mergewise/shared-types";
 import type { StructuralSignals } from "./signals";
 import type { KnowledgeDocument, FileGraphContext, ReviewLearnings } from "./pipeline-types";
 import { buildSlimSystemPrompt, buildDynamicFilePrompt } from "./prompt-slim";
@@ -21,7 +22,7 @@ function makeSignals(overrides: Partial<StructuralSignals> = {}): StructuralSign
 
 function makeDiff(filePath = "src/index.ts"): FileDiff {
   return {
-    filePath,
+    filePath: toFilePath(filePath),
     previousPath: null,
     hunks: [
       {
@@ -128,8 +129,8 @@ describe("buildDynamicFilePrompt", () => {
 
   test("includes graph context when provided", () => {
     const graphContext: FileGraphContext = {
-      filePath: "src/index.ts",
-      callers: ["src/app.ts", "src/main.ts"],
+      filePath: toFilePath("src/index.ts"),
+      callers: [toFilePath("src/app.ts"), toFilePath("src/main.ts")],
       centrality: 0.85,
       isHotspot: true,
     };
@@ -216,9 +217,9 @@ describe("buildDynamicFilePrompt", () => {
   });
 
   test("truncates callers list beyond MAX_CALLERS_IN_PROMPT", () => {
-    const callers = Array.from({ length: 15 }, (_, index) => `caller-${index}`);
+    const callers = Array.from({ length: 15 }, (_, index) => toFilePath(`caller-${index}`));
     const graphContext: FileGraphContext = {
-      filePath: "src/index.ts",
+      filePath: toFilePath("src/index.ts"),
       callers,
       centrality: 0.5,
       isHotspot: false,
@@ -253,7 +254,7 @@ describe("buildDynamicFilePrompt", () => {
   test("truncates full file content beyond MAX_FULL_FILE_LINES", () => {
     const fullContent = Array.from({ length: 2500 }, (_, index) => `line content ${index}`).join("\n");
     const largeDiff: FileDiff = {
-      filePath: "src/big.ts",
+      filePath: toFilePath("src/big.ts"),
       previousPath: null,
       hunks: [
         {

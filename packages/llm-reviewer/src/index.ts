@@ -6,6 +6,7 @@ import type {
   Finding,
   RepoLearnings,
 } from "@mergewise/shared-types";
+import { toRuleId } from "@mergewise/shared-types";
 import { createReviewClient, type ReviewClientConfig, type ReviewClient } from "./client";
 import { selectFilesForReview } from "./file-selection";
 import { reviewFile } from "./review-file";
@@ -139,7 +140,7 @@ export function createLlmReviewerRule(
   return {
     kind: "codebase-aware",
     metadata: {
-      ruleId: "llm/reviewer",
+      ruleId: toRuleId("llm/reviewer"),
       name: "LLM Reviewer",
       category: "idiomatic",
       languages: ["typescript"],
