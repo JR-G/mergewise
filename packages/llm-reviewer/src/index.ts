@@ -2,10 +2,11 @@ import type {
   AnalysisContext,
   CodebaseAwareRule,
   CodebaseContext,
+  FileDiff,
   Finding,
   RepoLearnings,
 } from "@mergewise/shared-types";
-import { createReviewClient, type ReviewClientConfig } from "./client";
+import { createReviewClient, type ReviewClientConfig, type ReviewClient } from "./client";
 import { selectFilesForReview } from "./file-selection";
 import { reviewFile } from "./review-file";
 import { runReviewPipeline } from "./pipeline";
@@ -61,7 +62,7 @@ function noop(): void {
  */
 export interface LlmReviewerConfig {
   readonly clientConfig: ReviewClientConfig;
-  readonly tokenBudget?: number;
+  readonly tokenBudget?: number | undefined;
   /**
    * Glob patterns for files to exclude from LLM review.
    *
@@ -69,8 +70,8 @@ export interface LlmReviewerConfig {
    * Matched against file paths alongside built-in skip patterns.
    * When omitted, only built-in patterns apply.
    */
-  readonly userSkipPatterns?: readonly string[];
-  readonly confidenceThreshold?: number;
+  readonly userSkipPatterns?: readonly string[] | undefined;
+  readonly confidenceThreshold?: number | undefined;
   /**
    * Number of independent LLM samples for self-consistency filtering.
    *
@@ -79,39 +80,39 @@ export interface LlmReviewerConfig {
    * temperature and only findings appearing in the majority of runs
    * are kept. Defaults to 1 (single-shot).
    */
-  readonly consistencySamples?: number;
+  readonly consistencySamples?: number | undefined;
   /**
    * Repository-level learnings to inject as review preferences.
    */
-  readonly repoLearnings?: RepoLearnings;
+  readonly repoLearnings?: RepoLearnings | undefined;
   /**
    * When true, uses the three-stage pipeline (triage → review → critic)
    * instead of the single-shot per-file review.
    */
-  readonly usePipeline?: boolean;
+  readonly usePipeline?: boolean | undefined;
   /**
    * Model identifier for the triage and critic stages.
    *
    * @remarks
    * Should be a fast, cheap model. Only used when `usePipeline` is true.
    */
-  readonly triageModel?: string;
+  readonly triageModel?: string | undefined;
   /**
    * Model identifier for the critic stage.
    *
    * @remarks
    * Defaults to `triageModel` if omitted. Only used when `usePipeline` is true.
    */
-  readonly criticModel?: string;
+  readonly criticModel?: string | undefined;
   /**
    * Optional tools for enriching review context (graph, learnings).
    *
    * @remarks
    * Only used when `usePipeline` is true.
    */
-  readonly toolkit?: ReviewToolkit;
-  readonly onFileReviewError?: (filePath: string, error: unknown) => void;
-  readonly onFileReviewComplete?: (filePath: string, findingCount: number, promptTokens: number, completionTokens: number) => void;
+  readonly toolkit?: ReviewToolkit | undefined;
+  readonly onFileReviewError?: ((filePath: string, error: unknown) => void) | undefined;
+  readonly onFileReviewComplete?: ((filePath: string, findingCount: number, promptTokens: number, completionTokens: number) => void) | undefined;
 }
 
 /**
@@ -170,7 +171,7 @@ export function createLlmReviewerRule(
 
 async function analysePipeline(
   config: LlmReviewerConfig,
-  selectedFiles: readonly import("@mergewise/shared-types").FileDiff[],
+  selectedFiles: readonly FileDiff[],
   context: AnalysisContext,
   codebaseContext: CodebaseContext,
 ): Promise<readonly Finding[]> {
@@ -198,9 +199,12 @@ async function analysePipeline(
     if (onComplete) {
       const failedPaths = new Set(result.failedFiles.map((failure) => failure.filePath));
       const successfulFiles = selectedFiles.filter((file) => !failedPaths.has(file.filePath));
-      for (const file of successfulFiles) {
+      const totalUsage = result.tokenUsage.totalUsage;
+      for (const [index, file] of successfulFiles.entries()) {
         const count = result.findings.filter((finding) => finding.filePath === file.filePath).length;
-        onComplete(file.filePath, count, 0, 0);
+        const promptTokens = index === 0 && totalUsage ? totalUsage.promptTokens : 0;
+        const completionTokens = index === 0 && totalUsage ? totalUsage.completionTokens : 0;
+        onComplete(file.filePath, count, promptTokens, completionTokens);
       }
     }
 
@@ -216,10 +220,10 @@ async function analysePipeline(
 }
 
 interface PerFileAnalysisOptions {
-  readonly selectedFiles: readonly import("@mergewise/shared-types").FileDiff[];
+  readonly selectedFiles: readonly FileDiff[];
   readonly context: AnalysisContext;
   readonly codebaseContext: CodebaseContext;
-  readonly client: import("./client").ReviewClient;
+  readonly client: ReviewClient;
   readonly config: LlmReviewerConfig;
   readonly onFileReviewError: (filePath: string, error: unknown) => void;
 }

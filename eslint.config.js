@@ -80,6 +80,10 @@ export default [
         { max: 500, skipBlankLines: true, skipComments: true },
       ],
       "max-params": ["error", { max: 4 }],
+      "@typescript-eslint/explicit-function-return-type": "error",
+      "@typescript-eslint/consistent-type-imports": "error",
+      "@typescript-eslint/no-import-type-side-effects": "error",
+      "@typescript-eslint/switch-exhaustiveness-check": "error",
     },
   },
   {
@@ -90,6 +94,7 @@ export default [
       "@typescript-eslint/no-empty-function": "off",
       "@typescript-eslint/no-confusing-void-expression": "off",
       "@typescript-eslint/unbound-method": "off",
+      "@typescript-eslint/explicit-function-return-type": "off",
       "max-lines-per-function": "off",
       "max-lines": "off",
     },

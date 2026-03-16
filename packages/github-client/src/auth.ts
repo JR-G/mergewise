@@ -23,7 +23,7 @@ export interface GitHubAppJwtOptions {
   /**
    * Optional current time override in seconds for deterministic testing.
    */
-  nowSeconds?: number;
+  nowSeconds?: number | undefined;
 }
 
 /**

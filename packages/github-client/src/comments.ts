@@ -47,7 +47,7 @@ export interface GitHubIssueComment {
   /**
    * Reaction counts on the comment, when returned by GitHub.
    */
-  reactions?: GitHubReactionCounts;
+  reactions?: GitHubReactionCounts | undefined;
 }
 
 /**
@@ -73,20 +73,20 @@ export interface GitHubPullRequestReviewComment {
   /**
    * Repository path associated with this inline comment.
    */
-  path?: string;
+  path?: string | undefined;
   /**
    * 1-based line number associated with this inline comment.
    */
-  line?: number;
+  line?: number | undefined;
   /**
    * Reaction counts on the comment, when returned by GitHub.
    */
-  reactions?: GitHubReactionCounts;
+  reactions?: GitHubReactionCounts | undefined;
   /**
    * Diff position of the comment. Null when the comment is outdated
    * (the anchored code has changed since the comment was posted).
    */
-  position?: number | null;
+  position?: number | null | undefined;
 }
 
 /**
@@ -152,7 +152,7 @@ export interface PostPullRequestInlineCommentOptions extends GitHubApiOptions {
    *
    * @defaultValue `"RIGHT"`
    */
-  side?: "LEFT" | "RIGHT";
+  side?: "LEFT" | "RIGHT" | undefined;
   /**
    * Markdown body for the inline review comment.
    */
@@ -184,13 +184,13 @@ export interface ListPullRequestCommentsOptions extends GitHubApiOptions {
    *
    * @defaultValue `100`
    */
-  perPage?: number;
+  perPage?: number | undefined;
   /**
    * Maximum number of pages to fetch.
    *
    * @defaultValue `20`
    */
-  maxPages?: number;
+  maxPages?: number | undefined;
 }
 
 /**

@@ -5,7 +5,7 @@ export interface AnalyzePullRequestJob {
   /**
    * Job type discriminator. Absent on legacy queue entries.
    */
-  type?: "analyze-pull-request";
+  type?: "analyze-pull-request" | undefined;
   /**
    * Stable unique identifier for this queue item.
    */
@@ -29,7 +29,7 @@ export interface AnalyzePullRequestJob {
   /**
    * Optional end-to-end trace identifier propagated from webhook intake.
    */
-  trace_id?: string;
+  trace_id?: string | undefined;
   /**
    * ISO timestamp indicating when the job was queued.
    */
@@ -37,7 +37,7 @@ export interface AnalyzePullRequestJob {
   /**
    * GitHub check run identifier created at webhook intake for early PR status visibility.
    */
-  check_run_id?: number;
+  check_run_id?: number | undefined;
 }
 
 /**
@@ -67,7 +67,7 @@ export interface CollectFeedbackJob {
   /**
    * Optional end-to-end trace identifier propagated from webhook intake.
    */
-  trace_id?: string;
+  trace_id?: string | undefined;
   /**
    * ISO timestamp indicating when the job was queued.
    */

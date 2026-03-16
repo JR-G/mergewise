@@ -34,15 +34,15 @@ export interface GitHubPullRequestFile {
   /**
    * Optional patch snippet supplied by GitHub.
    */
-  patch?: string;
+  patch?: string | undefined;
   /**
    * Blob URL for the file at the head commit.
    */
-  blob_url?: string;
+  blob_url?: string | undefined;
   /**
    * Raw URL for retrieving file content.
    */
-  raw_url?: string;
+  raw_url?: string | undefined;
 }
 
 /**
@@ -70,13 +70,13 @@ export interface FetchPullRequestFilesOptions extends GitHubApiOptions {
    *
    * @defaultValue `100`
    */
-  perPage?: number;
+  perPage?: number | undefined;
   /**
    * Maximum number of pages to fetch.
    *
    * @defaultValue `20`
    */
-  maxPages?: number;
+  maxPages?: number | undefined;
 }
 
 /**
@@ -159,8 +159,18 @@ export interface FetchFileContentOptions extends GitHubApiOptions {
 export async function fetchPullRequestFiles(
   options: FetchPullRequestFilesOptions,
 ): Promise<GitHubPullRequestFile[]> {
-  const perPage = options.perPage ?? 100;
-  const maxPages = options.maxPages ?? 20;
+  const rawPerPage = options.perPage ?? 100;
+  const rawMaxPages = options.maxPages ?? 20;
+
+  if (!Number.isFinite(rawPerPage)) {
+    throw new Error(`perPage must be a finite number, got: ${rawPerPage}`);
+  }
+  if (!Number.isFinite(rawMaxPages)) {
+    throw new Error(`maxPages must be a finite number, got: ${rawMaxPages}`);
+  }
+
+  const perPage = Math.max(1, Math.min(Math.floor(rawPerPage), 100));
+  const maxPages = Math.max(1, Math.min(Math.floor(rawMaxPages), 50));
   const requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
   const apiBaseUrl = trimTrailingSlash(
     options.apiBaseUrl ?? "https://api.github.com",

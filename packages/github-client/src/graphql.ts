@@ -52,7 +52,7 @@ async function paginateGraphqlQuery<T>(
       first: perPage,
     };
     if (cursor !== null) {
-      variables.after = cursor;
+      variables["after"] = cursor;
     }
 
     const response = await fetch(endpointUrl, {
@@ -162,13 +162,13 @@ export interface ListPullRequestReviewThreadsOptions extends GitHubApiOptions {
    *
    * @defaultValue `100`
    */
-  perPage?: number;
+  perPage?: number | undefined;
   /**
    * Maximum number of pages to fetch.
    *
    * @defaultValue `20`
    */
-  maxPages?: number;
+  maxPages?: number | undefined;
 }
 
 /**

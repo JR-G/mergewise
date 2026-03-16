@@ -1,11 +1,14 @@
 import {
   DEFAULT_JOB_FILE_PATH,
+  deriveOffsetFilePath,
   isCollectFeedbackJob,
   readAllQueueJobs,
+  readQueueOffset,
+  writeQueueOffset,
 } from "@mergewise/job-store";
 import { loadMergewiseConfig } from "@mergewise/config-loader";
 import { openFeedbackStore, type FeedbackStore } from "@mergewise/feedback-store";
-import type { CollectFeedbackJob, QueueJob } from "@mergewise/shared-types";
+import type { CollectFeedbackJob } from "@mergewise/shared-types";
 
 import {
   buildIdempotencyKey,
@@ -90,6 +93,14 @@ export interface StartWorkerProcessDependencies {
     listener: (signal: WorkerShutdownSignal) => void,
   ) => void;
   /**
+   * Queue offset reader for resuming from the last read position.
+   */
+  readonly readQueueOffsetFn?: typeof readQueueOffset;
+  /**
+   * Queue offset writer for persisting the current read position.
+   */
+  readonly writeQueueOffsetFn?: typeof writeQueueOffset;
+  /**
    * Feedback store factory override for testing.
    */
   readonly openFeedbackStoreFn?: () => FeedbackStore;
@@ -131,7 +142,7 @@ export function createShutdownSignalHandler(
 ): (signal: WorkerShutdownSignal) => void {
   const infoLogger = dependencies.logInfo ?? console.log;
   const errorLogger = dependencies.logError ?? console.error;
-  const exitFn = dependencies.exitFn ?? ((exitCode: number) => process.exit(exitCode));
+  const exitFn = dependencies.exitFn ?? ((exitCode: number): void => process.exit(exitCode));
   let shutdownPromise: Promise<void> | null = null;
 
   return (signal: WorkerShutdownSignal): void => {
@@ -168,9 +179,11 @@ export function startWorkerProcess(
     dependencies.processCollectFeedbackJobFn ?? processCollectFeedbackJob;
   const createPollingLoopControllerFn =
     dependencies.createPollingLoopControllerFn ?? createPollingLoopController;
+  const readQueueOffsetFn = dependencies.readQueueOffsetFn ?? readQueueOffset;
+  const writeQueueOffsetFn = dependencies.writeQueueOffsetFn ?? writeQueueOffset;
   const registerSignalHandlerFn =
     dependencies.registerSignalHandlerFn ??
-    ((signal, listener) => process.on(signal, listener));
+    ((signal: WorkerShutdownSignal, listener: (signal: WorkerShutdownSignal) => void): void => { process.on(signal, listener); });
   const infoLogger = dependencies.logInfo ?? console.log;
   const errorLogger = dependencies.logError ?? console.error;
 
@@ -187,17 +200,28 @@ export function startWorkerProcess(
   }
   const processedKeyState = createProcessedKeyState();
   const pollCycleState = { isPollInFlight: false };
+  const offsetFilePath = deriveOffsetFilePath(DEFAULT_JOB_FILE_PATH);
+  let currentByteOffset: number;
+  try {
+    currentByteOffset = readQueueOffsetFn(offsetFilePath);
+  } catch (readError) {
+    const details = readError instanceof Error ? readError.message : String(readError);
+    errorLogger(`[worker] failed to read queue offset, defaulting to 0: ${details}`);
+    currentByteOffset = 0;
+  }
 
   const pollAndProcessJobs = async (): Promise<void> => {
     const didRun = await runPollCycleWithInFlightGuard(pollCycleState, async () => {
-      let queuedJobs: QueueJob[];
+      let readResult: Awaited<ReturnType<typeof readAllQueueJobs>>;
       try {
-        queuedJobs = await readAllQueueJobsFn();
+        readResult = await readAllQueueJobsFn(undefined, undefined, currentByteOffset);
       } catch (error) {
         const details = error instanceof Error ? error.stack ?? error.message : String(error);
         errorLogger(`[worker] failed to read queued jobs: ${details}`);
         return;
       }
+
+      const { jobs: queuedJobs, byteOffset: newByteOffset } = readResult;
 
       const findingDeliveryOptions: WorkerFindingDeliveryOptions = {
         confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
@@ -212,13 +236,15 @@ export function startWorkerProcess(
         githubRetryDelayMs: config.githubRetryDelayMs,
       };
 
+      let batchFailed = false;
       for (const queuedJob of queuedJobs) {
         if (isCollectFeedbackJob(queuedJob)) {
-          await processFeedbackJobEntry(
+          const feedbackOk = await processFeedbackJobEntry(
             queuedJob, processedKeyState, config.maxProcessedKeys,
             processCollectFeedbackJobFn, feedbackStore, githubFetchOptions,
             infoLogger, errorLogger,
           );
+          batchFailed = batchFailed || !feedbackOk;
           continue;
         }
 
@@ -237,12 +263,21 @@ export function startWorkerProcess(
           });
           trackProcessedKey(idempotencyKey, processedKeyState, config.maxProcessedKeys);
         } catch (error) {
+          batchFailed = true;
           const details = error instanceof Error ? error.stack ?? error.message : String(error);
           const traceId = resolveJobTraceId(queuedJob);
           errorLogger(
             `[worker] failed to process trace=${traceId} job=${queuedJob.job_id}: ${details}`,
           );
         }
+      }
+
+      if (batchFailed || newByteOffset === currentByteOffset) {
+        return;
+      }
+      const wrote = await writeOffsetWithRetry(writeQueueOffsetFn, offsetFilePath, newByteOffset, errorLogger);
+      if (wrote) {
+        currentByteOffset = newByteOffset;
       }
     });
 
@@ -273,19 +308,46 @@ export function startWorkerProcess(
   });
 
   infoLogger(
-    `[worker] started (poll=${config.pollIntervalMs}ms, max_keys=${config.maxProcessedKeys}, source=${DEFAULT_JOB_FILE_PATH})`,
+    `[worker] started (poll=${config.pollIntervalMs}ms, max_keys=${config.maxProcessedKeys}, source=${DEFAULT_JOB_FILE_PATH}, offset=${currentByteOffset})`,
   );
   pollingLoop.start();
   registerSignalHandlerFn("SIGTERM", shutdownSignalHandler);
   registerSignalHandlerFn("SIGINT", shutdownSignalHandler);
 
   return {
-    shutdown: async () => {
+    shutdown: async (): Promise<void> => {
       await pollingLoop.stop();
       closeFeedbackStore();
     },
     handleSignal: shutdownSignalHandler,
   };
+}
+
+const OFFSET_WRITE_MAX_RETRIES = 2;
+const OFFSET_WRITE_BASE_DELAY_MS = 50;
+
+async function writeOffsetWithRetry(
+  writeFn: typeof writeQueueOffset,
+  filePath: string,
+  offset: number,
+  errorLogger: (message: string) => void,
+): Promise<boolean> {
+  for (let attempt = 0; attempt <= OFFSET_WRITE_MAX_RETRIES; attempt++) {
+    try {
+      writeFn(filePath, offset);
+      return true;
+    } catch (error) {
+      const details = error instanceof Error ? error.message : String(error);
+      if (attempt < OFFSET_WRITE_MAX_RETRIES) {
+        const delayMs = OFFSET_WRITE_BASE_DELAY_MS * 2 ** attempt;
+        errorLogger(`[worker] offset write attempt ${attempt + 1} failed, retrying in ${delayMs}ms: ${details}`);
+        await new Promise<void>((resolve) => { setTimeout(resolve, delayMs); });
+      } else {
+        errorLogger(`[worker] offset write failed after ${OFFSET_WRITE_MAX_RETRIES + 1} attempts: ${details}`);
+      }
+    }
+  }
+  return false;
 }
 
 async function processFeedbackJobEntry(
@@ -297,10 +359,10 @@ async function processFeedbackJobEntry(
   githubFetchOptions: WorkerGitHubFetchOptions,
   infoLogger: (message: string) => void,
   errorLogger: (message: string) => void,
-): Promise<void> {
+): Promise<boolean> {
   const feedbackIdempotencyKey = `feedback:${queuedJob.repo_full_name}#${queuedJob.pr_number}@${queuedJob.queued_at}`;
   if (processedKeyState.keys.has(feedbackIdempotencyKey)) {
-    return;
+    return true;
   }
 
   try {
@@ -311,11 +373,13 @@ async function processFeedbackJobEntry(
       logError: errorLogger,
     });
     trackProcessedKey(feedbackIdempotencyKey, processedKeyState, maxProcessedKeys);
+    return true;
   } catch (error) {
     const details = error instanceof Error ? error.stack ?? error.message : String(error);
     errorLogger(
       `[worker] failed to process feedback job=${queuedJob.job_id}: ${details}`,
     );
+    return false;
   }
 }
 

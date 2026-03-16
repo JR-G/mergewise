@@ -182,19 +182,19 @@ describe("loadConfig", () => {
   const originalEnv = { ...process.env };
 
   afterEach(() => {
-    process.env.WEBHOOK_PORT = originalEnv.WEBHOOK_PORT;
-    process.env.GITHUB_WEBHOOK_SECRET = originalEnv.GITHUB_WEBHOOK_SECRET;
-    process.env.GITHUB_APP_ID = originalEnv.GITHUB_APP_ID;
-    process.env.GITHUB_APP_PRIVATE_KEY = originalEnv.GITHUB_APP_PRIVATE_KEY;
-    process.env.GITHUB_APP_PRIVATE_KEY_PATH = originalEnv.GITHUB_APP_PRIVATE_KEY_PATH;
+    process.env["WEBHOOK_PORT"] = originalEnv["WEBHOOK_PORT"];
+    process.env["GITHUB_WEBHOOK_SECRET"] = originalEnv["GITHUB_WEBHOOK_SECRET"];
+    process.env["GITHUB_APP_ID"] = originalEnv["GITHUB_APP_ID"];
+    process.env["GITHUB_APP_PRIVATE_KEY"] = originalEnv["GITHUB_APP_PRIVATE_KEY"];
+    process.env["GITHUB_APP_PRIVATE_KEY_PATH"] = originalEnv["GITHUB_APP_PRIVATE_KEY_PATH"];
   });
 
   test("returns default port when env is unset", () => {
-    delete process.env.WEBHOOK_PORT;
-    delete process.env.GITHUB_WEBHOOK_SECRET;
-    delete process.env.GITHUB_APP_ID;
-    delete process.env.GITHUB_APP_PRIVATE_KEY;
-    delete process.env.GITHUB_APP_PRIVATE_KEY_PATH;
+    delete process.env["WEBHOOK_PORT"];
+    delete process.env["GITHUB_WEBHOOK_SECRET"];
+    delete process.env["GITHUB_APP_ID"];
+    delete process.env["GITHUB_APP_PRIVATE_KEY"];
+    delete process.env["GITHUB_APP_PRIVATE_KEY_PATH"];
     const cfg = loadConfig();
     expect(cfg.port).toBe(8787);
     expect(cfg.webhookSecret).toBeUndefined();
@@ -203,36 +203,36 @@ describe("loadConfig", () => {
   });
 
   test("reads webhook secret from env", () => {
-    delete process.env.WEBHOOK_PORT;
-    process.env.GITHUB_WEBHOOK_SECRET = "test-secret";
+    delete process.env["WEBHOOK_PORT"];
+    process.env["GITHUB_WEBHOOK_SECRET"] = "test-secret";
     const cfg = loadConfig();
     expect(cfg.webhookSecret).toBe("test-secret");
   });
 
   test("reads and normalises GitHub App credentials from env", () => {
-    delete process.env.WEBHOOK_PORT;
-    process.env.GITHUB_APP_ID = "456";
-    process.env.GITHUB_APP_PRIVATE_KEY = "-----BEGIN KEY-----\\nabc\\n-----END KEY-----\\n";
+    delete process.env["WEBHOOK_PORT"];
+    process.env["GITHUB_APP_ID"] = "456";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "-----BEGIN KEY-----\\nabc\\n-----END KEY-----\\n";
     const cfg = loadConfig();
     expect(cfg.githubAppId).toBe(456);
     expect(cfg.githubAppPrivateKeyPem).toBe("-----BEGIN KEY-----\nabc\n-----END KEY-----");
   });
 
   test("throws for invalid port", () => {
-    process.env.WEBHOOK_PORT = "not-a-number";
+    process.env["WEBHOOK_PORT"] = "not-a-number";
     expect(() => loadConfig()).toThrow("Invalid WEBHOOK_PORT value");
   });
 
   test("reads private key from GITHUB_APP_PRIVATE_KEY_PATH when inline key is unset", () => {
-    delete process.env.WEBHOOK_PORT;
-    delete process.env.GITHUB_APP_PRIVATE_KEY;
+    delete process.env["WEBHOOK_PORT"];
+    delete process.env["GITHUB_APP_PRIVATE_KEY"];
     const tempDir = mkdtempSync(join(tmpdir(), "webhook-api-test-"));
     const keyPath = join(tempDir, "test.pem");
     writeFileSync(keyPath, "-----BEGIN RSA PRIVATE KEY-----\ntest-key-data\n-----END RSA PRIVATE KEY-----\n");
 
     try {
-      process.env.GITHUB_APP_PRIVATE_KEY_PATH = keyPath;
-      process.env.GITHUB_APP_ID = "789";
+      process.env["GITHUB_APP_PRIVATE_KEY_PATH"] = keyPath;
+      process.env["GITHUB_APP_ID"] = "789";
       const cfg = loadConfig();
       expect(cfg.githubAppId).toBe(789);
       expect(cfg.githubAppPrivateKeyPem).toBe(
@@ -244,14 +244,14 @@ describe("loadConfig", () => {
   });
 
   test("prefers GITHUB_APP_PRIVATE_KEY over GITHUB_APP_PRIVATE_KEY_PATH", () => {
-    delete process.env.WEBHOOK_PORT;
+    delete process.env["WEBHOOK_PORT"];
     const tempDir = mkdtempSync(join(tmpdir(), "webhook-api-test-"));
     const keyPath = join(tempDir, "test.pem");
     writeFileSync(keyPath, "file-key-content");
 
     try {
-      process.env.GITHUB_APP_PRIVATE_KEY = "inline-key-content";
-      process.env.GITHUB_APP_PRIVATE_KEY_PATH = keyPath;
+      process.env["GITHUB_APP_PRIVATE_KEY"] = "inline-key-content";
+      process.env["GITHUB_APP_PRIVATE_KEY_PATH"] = keyPath;
       const cfg = loadConfig();
       expect(cfg.githubAppPrivateKeyPem).toBe("inline-key-content");
     } finally {
@@ -260,9 +260,9 @@ describe("loadConfig", () => {
   });
 
   test("returns undefined when GITHUB_APP_PRIVATE_KEY_PATH file is unreadable", () => {
-    delete process.env.WEBHOOK_PORT;
-    delete process.env.GITHUB_APP_PRIVATE_KEY;
-    process.env.GITHUB_APP_PRIVATE_KEY_PATH = "/nonexistent/path/key.pem";
+    delete process.env["WEBHOOK_PORT"];
+    delete process.env["GITHUB_APP_PRIVATE_KEY"];
+    process.env["GITHUB_APP_PRIVATE_KEY_PATH"] = "/nonexistent/path/key.pem";
     const cfg = loadConfig();
     expect(cfg.githubAppPrivateKeyPem).toBeUndefined();
   });
@@ -654,9 +654,9 @@ describe("cancelOrphanedCheckRun", () => {
     });
 
     expect(capturedOptions).toBeDefined();
-    expect(capturedOptions?.checkRunId).toBe(42);
-    expect(capturedOptions?.status).toBe("completed");
-    expect(capturedOptions?.conclusion).toBe("failure");
+    expect(capturedOptions?.["checkRunId"]).toBe(42);
+    expect(capturedOptions?.["status"]).toBe("completed");
+    expect(capturedOptions?.["conclusion"]).toBe("failure");
   });
 
   test("does nothing when app credentials are missing", async () => {

@@ -46,11 +46,11 @@ export interface ExecuteRulesOptions {
   /**
    * Optional codebase context used by codebase-aware rules.
    */
-  readonly codebaseContext?: CodebaseContext;
+  readonly codebaseContext?: CodebaseContext | undefined;
   /**
    * Optional callback invoked for each rule failure.
    */
-  readonly onRuleExecutionError?: OnRuleExecutionError;
+  readonly onRuleExecutionError?: OnRuleExecutionError | undefined;
 }
 
 /**

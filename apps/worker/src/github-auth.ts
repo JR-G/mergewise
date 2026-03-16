@@ -10,13 +10,16 @@ import { readFileSync } from "node:fs";
  * @returns Validated app ID and PEM-formatted private key.
  */
 export function loadGitHubAppCredentials(): Readonly<{ appId: number; privateKeyPem: string }> {
-  const appIdRaw = process.env.GITHUB_APP_ID;
+  const appIdRaw = process.env["GITHUB_APP_ID"];
   if (!appIdRaw?.trim()) {
     throw new Error("[worker] missing GITHUB_APP_ID");
   }
 
-  const appId = Number.parseInt(appIdRaw, 10);
-  if (Number.isNaN(appId) || appId <= 0) {
+  if (!/^\d+$/.test(appIdRaw.trim())) {
+    throw new Error(`[worker] invalid GITHUB_APP_ID value: ${appIdRaw}`);
+  }
+  const appId = Number(appIdRaw);
+  if (!Number.isFinite(appId) || appId <= 0) {
     throw new Error(`[worker] invalid GITHUB_APP_ID value: ${appIdRaw}`);
   }
 
@@ -25,10 +28,10 @@ export function loadGitHubAppCredentials(): Readonly<{ appId: number; privateKey
 }
 
 function resolvePrivateKeyPem(): string {
-  const preferredPrivateKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY;
-  const privateKeyPathRaw = process.env.GITHUB_APP_PRIVATE_KEY_PATH;
+  const preferredPrivateKeyRaw = process.env["GITHUB_APP_PRIVATE_KEY"];
+  const privateKeyPathRaw = process.env["GITHUB_APP_PRIVATE_KEY_PATH"];
   const privateKeyPath = privateKeyPathRaw?.trim();
-  const legacyPrivateKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY_PEM;
+  const legacyPrivateKeyRaw = process.env["GITHUB_APP_PRIVATE_KEY_PEM"];
   let privateKeyRaw = preferredPrivateKeyRaw ?? legacyPrivateKeyRaw;
   let privateKeyLoadedFromPath = false;
 

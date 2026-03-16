@@ -7,11 +7,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { AnalyzePullRequestJob, CollectFeedbackJob } from "@mergewise/shared-types";
 
 import {
+  deriveOffsetFilePath,
   enqueueAnalyzePullRequestJob,
   enqueueCollectFeedbackJob,
   isCollectFeedbackJob,
   readAllAnalyzePullRequestJobs,
   readAllQueueJobs,
+  readQueueOffset,
+  writeQueueOffset,
 } from "./index";
 import type { OnSkippedLine } from "./index";
 
@@ -250,9 +253,9 @@ describe("enqueueCollectFeedbackJob", () => {
     const feedbackJob = makeFeedbackJob();
     enqueueCollectFeedbackJob(feedbackJob, filePath);
 
-    const jobs = await readAllQueueJobs(filePath);
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0]).toEqual(feedbackJob);
+    const result = await readAllQueueJobs(filePath);
+    expect(result.jobs).toHaveLength(1);
+    expect(result.jobs[0]).toEqual(feedbackJob);
   });
 });
 
@@ -269,9 +272,11 @@ describe("readAllQueueJobs", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test("returns empty array when file is missing", async () => {
+  test("returns empty result when file is missing", async () => {
     const missing = join(tempDir, "does-not-exist.ndjson");
-    expect(await readAllQueueJobs(missing)).toEqual([]);
+    const result = await readAllQueueJobs(missing);
+    expect(result.jobs).toEqual([]);
+    expect(result.byteOffset).toBe(0);
   });
 
   test("reads mixed analyze and feedback jobs", async () => {
@@ -281,10 +286,10 @@ describe("readAllQueueJobs", () => {
     enqueueAnalyzePullRequestJob(analyzeJob, filePath);
     enqueueCollectFeedbackJob(feedbackJob, filePath);
 
-    const jobs = await readAllQueueJobs(filePath);
-    expect(jobs).toHaveLength(2);
-    expect(jobs[0]!.job_id).toBe("analyze-1");
-    expect(jobs[1]!.job_id).toBe("feedback-1");
+    const result = await readAllQueueJobs(filePath);
+    expect(result.jobs).toHaveLength(2);
+    expect(result.jobs[0]!.job_id).toBe("analyze-1");
+    expect(result.jobs[1]!.job_id).toBe("feedback-1");
   });
 
   test("treats legacy lines without type field as analyze jobs", async () => {
@@ -299,9 +304,9 @@ describe("readAllQueueJobs", () => {
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, `${JSON.stringify(legacyJob)}\n`, "utf8");
 
-    const jobs = await readAllQueueJobs(filePath);
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0]!.job_id).toBe("legacy-1");
+    const result = await readAllQueueJobs(filePath);
+    expect(result.jobs).toHaveLength(1);
+    expect(result.jobs[0]!.job_id).toBe("legacy-1");
   });
 
   test("skips malformed lines", async () => {
@@ -310,10 +315,10 @@ describe("readAllQueueJobs", () => {
     writeFileSync(filePath, `not-json\n${JSON.stringify(feedbackJob)}\n`, "utf8");
 
     const { callback, skips } = collectSkips();
-    const jobs = await readAllQueueJobs(filePath, callback);
+    const result = await readAllQueueJobs(filePath, callback);
 
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0]!.job_id).toBe("good");
+    expect(result.jobs).toHaveLength(1);
+    expect(result.jobs[0]!.job_id).toBe("good");
     expect(skips).toHaveLength(1);
   });
 
@@ -325,8 +330,220 @@ describe("readAllQueueJobs", () => {
     }
     writeFileSync(filePath, lines.join("\n") + "\n", "utf8");
 
-    const jobs = await readAllQueueJobs(filePath);
+    const result = await readAllQueueJobs(filePath);
 
-    expect(jobs.length).toBeLessThanOrEqual(10_000);
+    expect(result.jobs.length).toBe(10_000);
+    const fileSize = readFileSync(filePath).byteLength;
+    expect(result.byteOffset).toBeLessThan(fileSize);
+  });
+
+  test("returns byte offset matching file size after reading all jobs", async () => {
+    const analyzeJob = makeJob({ job_id: "offset-test" });
+    enqueueAnalyzePullRequestJob(analyzeJob, filePath);
+
+    const result = await readAllQueueJobs(filePath);
+    const fileSize = readFileSync(filePath).byteLength;
+
+    expect(result.byteOffset).toBe(fileSize);
+    expect(result.jobs).toHaveLength(1);
+  });
+
+  test("reads only new jobs when starting from a byte offset", async () => {
+    const firstJob = makeJob({ job_id: "first" });
+    enqueueAnalyzePullRequestJob(firstJob, filePath);
+
+    const firstResult = await readAllQueueJobs(filePath);
+    expect(firstResult.jobs).toHaveLength(1);
+
+    const secondJob = makeJob({ job_id: "second" });
+    enqueueAnalyzePullRequestJob(secondJob, filePath);
+
+    const secondResult = await readAllQueueJobs(filePath, undefined, firstResult.byteOffset);
+    expect(secondResult.jobs).toHaveLength(1);
+    expect(secondResult.jobs[0]!.job_id).toBe("second");
+  });
+
+  test("returns empty jobs when offset equals file size", async () => {
+    enqueueAnalyzePullRequestJob(makeJob(), filePath);
+    const firstResult = await readAllQueueJobs(filePath);
+
+    const secondResult = await readAllQueueJobs(filePath, undefined, firstResult.byteOffset);
+    expect(secondResult.jobs).toEqual([]);
+    expect(secondResult.byteOffset).toBe(firstResult.byteOffset);
+  });
+
+  test("resets to start when offset exceeds file size", async () => {
+    enqueueAnalyzePullRequestJob(makeJob({ job_id: "reset-test" }), filePath);
+
+    const result = await readAllQueueJobs(filePath, undefined, 999_999);
+    expect(result.jobs).toHaveLength(1);
+    expect(result.jobs[0]!.job_id).toBe("reset-test");
+    expect(result.byteOffset).toBeGreaterThan(0);
+  });
+
+  test("throws on negative startByteOffset", async () => {
+    enqueueAnalyzePullRequestJob(makeJob({ job_id: "neg-offset" }), filePath);
+    expect(readAllQueueJobs(filePath, undefined, -10)).rejects.toThrow(RangeError);
+  });
+
+  test("throws on NaN startByteOffset", () => {
+    expect(readAllQueueJobs(filePath, undefined, NaN)).rejects.toThrow(RangeError);
+  });
+
+  test("throws on fractional startByteOffset", () => {
+    expect(readAllQueueJobs(filePath, undefined, 1.5)).rejects.toThrow(RangeError);
+  });
+
+  test("returns zero offset when file does not exist", async () => {
+    const result = await readAllQueueJobs(join(tempDir, "missing.ndjson"), undefined, 42);
+    expect(result.byteOffset).toBe(0);
+    expect(result.jobs).toEqual([]);
+  });
+});
+
+describe("deriveOffsetFilePath", () => {
+  test("replaces .ndjson extension with .offset", () => {
+    expect(deriveOffsetFilePath(".mergewise-runtime/jobs.ndjson")).toBe(
+      ".mergewise-runtime/jobs.offset",
+    );
+  });
+
+  test("leaves non-ndjson paths unchanged", () => {
+    expect(deriveOffsetFilePath("queue.jsonl")).toBe("queue.jsonl");
+  });
+});
+
+describe("readQueueOffset", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = makeTempDir();
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test("returns 0 when file does not exist", () => {
+    expect(readQueueOffset(join(tempDir, "missing.offset"))).toBe(0);
+  });
+
+  test("returns 0 when file is empty", () => {
+    const offsetPath = join(tempDir, "empty.offset");
+    writeFileSync(offsetPath, "", "utf8");
+    expect(readQueueOffset(offsetPath)).toBe(0);
+  });
+
+  test("reads a valid integer offset", () => {
+    const offsetPath = join(tempDir, "valid.offset");
+    writeFileSync(offsetPath, "1234", "utf8");
+    expect(readQueueOffset(offsetPath)).toBe(1234);
+  });
+
+  test("returns 0 for negative values", () => {
+    const offsetPath = join(tempDir, "neg.offset");
+    writeFileSync(offsetPath, "-5", "utf8");
+    expect(readQueueOffset(offsetPath)).toBe(0);
+  });
+
+  test("returns 0 for non-numeric content", () => {
+    const offsetPath = join(tempDir, "garbage.offset");
+    writeFileSync(offsetPath, "not-a-number", "utf8");
+    expect(readQueueOffset(offsetPath)).toBe(0);
+  });
+
+  test("returns 0 for NaN", () => {
+    const offsetPath = join(tempDir, "nan.offset");
+    writeFileSync(offsetPath, "NaN", "utf8");
+    expect(readQueueOffset(offsetPath)).toBe(0);
+  });
+
+  test("returns 0 for Infinity", () => {
+    const offsetPath = join(tempDir, "inf.offset");
+    writeFileSync(offsetPath, "Infinity", "utf8");
+    expect(readQueueOffset(offsetPath)).toBe(0);
+  });
+
+  test("returns 0 for non-integer float", () => {
+    const offsetPath = join(tempDir, "float.offset");
+    writeFileSync(offsetPath, "1.5", "utf8");
+    expect(readQueueOffset(offsetPath)).toBe(0);
+  });
+
+  test("reads zero offset correctly", () => {
+    const offsetPath = join(tempDir, "zero.offset");
+    writeFileSync(offsetPath, "0", "utf8");
+    expect(readQueueOffset(offsetPath)).toBe(0);
+  });
+
+  test("trims whitespace around the value", () => {
+    const offsetPath = join(tempDir, "padded.offset");
+    writeFileSync(offsetPath, "  42  \n", "utf8");
+    expect(readQueueOffset(offsetPath)).toBe(42);
+  });
+});
+
+describe("writeQueueOffset", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = makeTempDir();
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test("writes an offset that can be read back", () => {
+    const offsetPath = join(tempDir, "roundtrip.offset");
+    writeQueueOffset(offsetPath, 5678);
+    expect(readQueueOffset(offsetPath)).toBe(5678);
+  });
+
+  test("creates parent directories when missing", () => {
+    const offsetPath = join(tempDir, "deep", "nested", "test.offset");
+    writeQueueOffset(offsetPath, 100);
+    expect(existsSync(offsetPath)).toBe(true);
+    expect(readQueueOffset(offsetPath)).toBe(100);
+  });
+
+  test("overwrites previous offset value", () => {
+    const offsetPath = join(tempDir, "overwrite.offset");
+    writeQueueOffset(offsetPath, 100);
+    writeQueueOffset(offsetPath, 200);
+    expect(readQueueOffset(offsetPath)).toBe(200);
+  });
+
+  test("writes zero offset", () => {
+    const offsetPath = join(tempDir, "zero.offset");
+    writeQueueOffset(offsetPath, 0);
+    expect(readQueueOffset(offsetPath)).toBe(0);
+  });
+
+  test("writes large offset values", () => {
+    const offsetPath = join(tempDir, "large.offset");
+    const largeOffset = 2_147_483_647;
+    writeQueueOffset(offsetPath, largeOffset);
+    expect(readQueueOffset(offsetPath)).toBe(largeOffset);
+  });
+
+  test("rejects NaN offset", () => {
+    const offsetPath = join(tempDir, "nan.offset");
+    expect(() => writeQueueOffset(offsetPath, NaN)).toThrow(RangeError);
+  });
+
+  test("rejects negative offset", () => {
+    const offsetPath = join(tempDir, "neg.offset");
+    expect(() => writeQueueOffset(offsetPath, -1)).toThrow(RangeError);
+  });
+
+  test("rejects non-integer offset", () => {
+    const offsetPath = join(tempDir, "float.offset");
+    expect(() => writeQueueOffset(offsetPath, 1.5)).toThrow(RangeError);
+  });
+
+  test("rejects Infinity offset", () => {
+    const offsetPath = join(tempDir, "inf.offset");
+    expect(() => writeQueueOffset(offsetPath, Infinity)).toThrow(RangeError);
   });
 });

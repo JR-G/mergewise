@@ -57,6 +57,7 @@ export {
   type GitHubCheckRun,
   createCheckRun,
   updateCheckRun,
+  sanitizeCheckRunOutput,
 } from "./check-runs";
 
 export {

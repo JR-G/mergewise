@@ -420,7 +420,7 @@ export function deduplicateByProximity(
 function isLlmResponse(value: unknown): value is LlmResponse {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return Array.isArray(candidate.findings);
+  return Array.isArray(candidate["findings"]);
 }
 
 const COMMENT_LINE_PATTERN = /^\s*(?:\/\/|\/\*|\*\/|\*|\/\*\*)/;
@@ -438,28 +438,29 @@ function isValidRawFinding(
 ): finding is RawLlmFinding {
   if (typeof finding !== "object" || finding === null) return false;
   const candidate = finding as Record<string, unknown>;
-  if (typeof candidate.line !== "number" || !Number.isInteger(candidate.line)) {
+  if (typeof candidate["line"] !== "number" || !Number.isInteger(candidate["line"])) {
     return false;
   }
-  if (!addedLines.has(candidate.line)) {
+  if (!addedLines.has(candidate["line"])) {
     return false;
   }
-  if (typeof candidate.category !== "string" || !(VALID_CATEGORIES as ReadonlySet<string>).has(candidate.category)) {
+  if (typeof candidate["category"] !== "string" || !(VALID_CATEGORIES as ReadonlySet<string>).has(candidate["category"])) {
     return false;
   }
   if (
-    typeof candidate.confidence !== "number" ||
-    candidate.confidence < 0 ||
-    candidate.confidence > 1
+    typeof candidate["confidence"] !== "number" ||
+    !Number.isFinite(candidate["confidence"]) ||
+    candidate["confidence"] < 0 ||
+    candidate["confidence"] > 1
   ) {
     return false;
   }
-  if (typeof candidate.evidence !== "string" || candidate.evidence.length === 0) {
+  if (typeof candidate["evidence"] !== "string" || candidate["evidence"].length === 0) {
     return false;
   }
   if (
-    typeof candidate.recommendation !== "string" ||
-    candidate.recommendation.length === 0
+    typeof candidate["recommendation"] !== "string" ||
+    candidate["recommendation"].length === 0
   ) {
     return false;
   }

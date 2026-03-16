@@ -27,18 +27,18 @@ function noop(): void {
  * Dependencies for feedback job processing, injectable for testing.
  */
 export interface FeedbackJobDependencies {
-  readonly feedbackStore?: FeedbackStore;
+  readonly feedbackStore?: FeedbackStore | undefined;
   readonly githubFetchOptions: WorkerGitHubFetchOptions;
-  readonly createGitHubAppJwtFn?: typeof createGitHubAppJwt;
-  readonly exchangeInstallationAccessTokenFn?: typeof exchangeInstallationAccessToken;
-  readonly listPullRequestSummaryCommentsFn?: (
+  readonly createGitHubAppJwtFn?: (typeof createGitHubAppJwt) | undefined;
+  readonly exchangeInstallationAccessTokenFn?: (typeof exchangeInstallationAccessToken) | undefined;
+  readonly listPullRequestSummaryCommentsFn?: ((
     options: ListPullRequestCommentsOptions,
-  ) => Promise<GitHubIssueComment[]>;
-  readonly listPullRequestReviewThreadsWithRepliesFn?: (
+  ) => Promise<GitHubIssueComment[]>) | undefined;
+  readonly listPullRequestReviewThreadsWithRepliesFn?: ((
     options: ListPullRequestReviewThreadsOptions,
-  ) => Promise<ReviewThreadWithReplies[]>;
-  readonly logInfo?: (message: string) => void;
-  readonly logError?: (message: string) => void;
+  ) => Promise<ReviewThreadWithReplies[]>) | undefined;
+  readonly logInfo?: ((message: string) => void) | undefined;
+  readonly logError?: ((message: string) => void) | undefined;
 }
 
 interface FeedbackJobContext {

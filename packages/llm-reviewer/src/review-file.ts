@@ -21,7 +21,7 @@ export interface ReviewFileOptions {
   readonly pullRequest: PullRequestMetadata;
   readonly codebaseContext: CodebaseContext;
   readonly client: ReviewClient;
-  readonly confidenceThreshold?: number;
+  readonly confidenceThreshold?: number | undefined;
   /**
    * Number of independent LLM samples to run for self-consistency filtering.
    *
@@ -30,11 +30,11 @@ export interface ReviewFileOptions {
    * only findings that appear consistently across the majority of runs
    * are kept. Defaults to 1 (single-shot, current behaviour).
    */
-  readonly consistencySamples?: number;
+  readonly consistencySamples?: number | undefined;
   /**
    * Repository-level learnings injected into the user message as preferences.
    */
-  readonly repoLearnings?: RepoLearnings;
+  readonly repoLearnings?: RepoLearnings | undefined;
 }
 
 /**
@@ -105,7 +105,10 @@ function mergeUsage(
  */
 export async function reviewFile(options: ReviewFileOptions): Promise<FileReviewResult> {
   const { fileDiff, pullRequest, codebaseContext, client } = options;
-  const consistencySamples = Math.max(1, Math.min(options.consistencySamples ?? 1, MAX_CONSISTENCY_SAMPLES));
+  const rawSamples = options.consistencySamples ?? 1;
+  const consistencySamples = Number.isFinite(rawSamples)
+    ? Math.max(1, Math.min(Math.floor(rawSamples), MAX_CONSISTENCY_SAMPLES))
+    : 1;
 
   const fullContent = await codebaseContext.readFile(fileDiff.filePath);
   const signals = extractStructuralSignals(fileDiff);

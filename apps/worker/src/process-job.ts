@@ -1,7 +1,6 @@
 import { fetchFileContent } from "@mergewise/github-client";
 import { DEFAULT_MERGEWISE_CONFIG, type MergewiseConfig } from "@mergewise/config-loader";
 import { executeRules } from "@mergewise/rule-engine";
-import { tsReactRules } from "@mergewise/rule-ts-react";
 import { createLlmReviewerRule } from "@mergewise/llm-reviewer";
 import { compileLearnings, type FeedbackStore } from "@mergewise/feedback-store";
 import type {
@@ -92,10 +91,14 @@ function buildLlmRules(
   repoLearnings?: RepoLearnings,
 ): readonly Rule[] {
   const llmConfig = mergewiseConfig.llm;
-  const llmApiKey = process.env.LLM_API_KEY;
-  const llmEnabled = llmConfig.enabled && llmApiKey !== undefined && llmApiKey.length > 0;
+  const llmApiKey = process.env["LLM_API_KEY"];
 
-  if (!llmEnabled || !llmApiKey) {
+  if (!llmConfig.enabled) {
+    return [];
+  }
+
+  if (llmApiKey === undefined || llmApiKey.length === 0) {
+    loggers.warnLogger("[worker] llm_api_key_missing: LLM review enabled but LLM_API_KEY is not set");
     return [];
   }
 
@@ -147,7 +150,7 @@ function resolveProcessingConfig(
   );
 
   const baseLlmRules = buildLlmRules(mergewiseConfig, traceId, loggers, repoLearnings);
-  const rules = dependencies.rules ?? [...tsReactRules, ...baseLlmRules];
+  const rules = dependencies.rules ?? [...baseLlmRules];
 
   const baseBlockedRuleIds = dependencies.findingDeliveryOptions?.blockedRuleIds
     ?? DEFAULT_BLOCKED_POST_RULE_IDS;
@@ -188,7 +191,7 @@ function buildCodebaseContext(
   return {
     symbols: [],
     conventions: new Map<string, string>(),
-    readFile: async (relativePath: string) => {
+    readFile: async (relativePath: string): Promise<string | null> => {
       try {
         return await fetchFileContent({
           owner: ctx.githubAnalysisContext.owner,
@@ -316,7 +319,7 @@ async function buildProcessingSummary(
     job,
     config.key,
     gatedExecutionResult,
-    (dependencies.now ?? (() => new Date()))().toISOString(),
+    (dependencies.now ?? ((): Date => new Date()))().toISOString(),
   );
 
   config.loggers.infoLogger(

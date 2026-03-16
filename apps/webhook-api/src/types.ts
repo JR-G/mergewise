@@ -63,23 +63,23 @@ export interface WebhookFailureLogEvent {
   /**
    * Optional GitHub event name.
    */
-  github_event?: string | null;
+  github_event?: string | null | undefined;
   /**
    * Optional repository full name.
    */
-  repository_full_name?: string;
+  repository_full_name?: string | undefined;
   /**
    * Optional pull request number.
    */
-  pull_request_number?: number;
+  pull_request_number?: number | undefined;
   /**
    * Optional queue job id.
    */
-  job_id?: string;
+  job_id?: string | undefined;
   /**
    * Optional serialized cause.
    */
-  cause?: string;
+  cause?: string | undefined;
 }
 
 /**
@@ -89,11 +89,11 @@ export interface LegacyWebhookFailureLogAliases {
   /**
    * Deprecated alias for `repository_full_name`.
    */
-  repo_full_name?: string;
+  repo_full_name?: string | undefined;
   /**
    * Deprecated alias for `pull_request_number`.
    */
-  pr_number?: number;
+  pr_number?: number | undefined;
 }
 
 /**
@@ -139,13 +139,13 @@ export interface WebhookApiConfig {
   /**
    * Optional webhook secret used for `x-hub-signature-256` verification.
    */
-  webhookSecret?: string;
+  webhookSecret?: string | undefined;
   /**
    * GitHub App identifier for pending check run creation.
    */
-  githubAppId?: number;
+  githubAppId?: number | undefined;
   /**
    * GitHub App private key PEM for pending check run creation.
    */
-  githubAppPrivateKeyPem?: string;
+  githubAppPrivateKeyPem?: string | undefined;
 }

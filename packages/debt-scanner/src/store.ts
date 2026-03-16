@@ -155,7 +155,7 @@ export function openStore(dbPath: string): DebtStore {
     listScans: (repoPath) => executeList(stmts, repoPath),
     loadScan: (scanId) => executeLoad(stmts, scanId),
     latestScan: (repoPath) => executeLatest(stmts, repoPath),
-    close: () => { database.close(); },
+    close: (): void => { database.close(); },
   };
 }
 

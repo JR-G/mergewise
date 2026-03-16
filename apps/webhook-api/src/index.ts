@@ -93,16 +93,16 @@ export function isClosedOrMergedPullRequest(
  * @returns Validated runtime config with defaults applied.
  */
 export function loadConfig(): WebhookApiConfig {
-  const portRaw = process.env.WEBHOOK_PORT ?? "8787";
+  const portRaw = process.env["WEBHOOK_PORT"] ?? "8787";
   const port = Number.parseInt(portRaw, 10);
 
   if (Number.isNaN(port) || port <= 0 || port > 65535) {
     throw new Error(`Invalid WEBHOOK_PORT value: ${portRaw}`);
   }
 
-  const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
+  const webhookSecret = process.env["GITHUB_WEBHOOK_SECRET"];
 
-  const appIdRaw = process.env.GITHUB_APP_ID;
+  const appIdRaw = process.env["GITHUB_APP_ID"];
   const githubAppId = appIdRaw ? Number.parseInt(appIdRaw, 10) : undefined;
   const githubAppPrivateKeyPem = resolvePrivateKeyPem();
 
@@ -119,13 +119,13 @@ export function loadConfig(): WebhookApiConfig {
  * @returns Normalised PEM string, or `undefined` when no key is configured.
  */
 function resolvePrivateKeyPem(): string | undefined {
-  const inlineKeyRaw = process.env.GITHUB_APP_PRIVATE_KEY;
+  const inlineKeyRaw = process.env["GITHUB_APP_PRIVATE_KEY"];
   if (inlineKeyRaw !== undefined) {
     const normalised = inlineKeyRaw.replace(/\\n/g, "\n").trim();
     return normalised !== "" ? normalised : undefined;
   }
 
-  const keyPathRaw = process.env.GITHUB_APP_PRIVATE_KEY_PATH;
+  const keyPathRaw = process.env["GITHUB_APP_PRIVATE_KEY_PATH"];
   const keyPath = keyPathRaw?.trim();
   if (!keyPath) {
     return undefined;

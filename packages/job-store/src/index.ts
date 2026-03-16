@@ -1,4 +1,4 @@
-import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { dirname } from "node:path";
 
@@ -11,6 +11,71 @@ import type { AnalyzePullRequestJob, CollectFeedbackJob, QueueJob } from "@merge
  * queueing, but this keeps v1 scaffolding runnable with zero infra.
  */
 export const DEFAULT_JOB_FILE_PATH = ".mergewise-runtime/jobs.ndjson";
+
+/**
+ * Result of reading the queue file from a byte offset.
+ */
+export interface QueueReadResult {
+  readonly jobs: QueueJob[];
+  readonly byteOffset: number;
+}
+
+/**
+ * Derives the offset persistence file path from a queue file path.
+ *
+ * @param queueFilePath - Path to the NDJSON queue file.
+ * @returns Sibling path with `.offset` extension.
+ */
+export function deriveOffsetFilePath(queueFilePath: string): string {
+  return queueFilePath.replace(/\.ndjson$/, ".offset");
+}
+
+/**
+ * Reads the persisted byte offset from the offset file.
+ *
+ * @remarks
+ * Returns 0 when the file is missing, empty, or contains an invalid value.
+ *
+ * @param offsetFilePath - Path to the offset file.
+ * @returns Non-negative integer byte offset.
+ */
+export function readQueueOffset(offsetFilePath: string): number {
+  let raw: string;
+  try {
+    raw = readFileSync(offsetFilePath, "utf8").trim();
+  } catch {
+    return 0;
+  }
+
+  if (!raw) {
+    return 0;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
+    return 0;
+  }
+  return parsed;
+}
+
+/**
+ * Atomically persists the byte offset to the offset file.
+ *
+ * @remarks
+ * Writes to a temporary sibling file then renames to avoid partial writes on crash.
+ *
+ * @param offsetFilePath - Path to the offset file.
+ * @param offset - Non-negative byte offset to persist.
+ */
+export function writeQueueOffset(offsetFilePath: string, offset: number): void {
+  if (!Number.isFinite(offset) || !Number.isInteger(offset) || offset < 0) {
+    throw new RangeError(`writeQueueOffset: expected a finite non-negative integer, got ${offset}`);
+  }
+  ensureParentDirectory(offsetFilePath);
+  const tmpPath = `${offsetFilePath}.tmp`;
+  writeFileSync(tmpPath, String(offset), "utf8");
+  renameSync(tmpPath, offsetFilePath);
+}
 
 /**
  * Callback invoked when a queue line is skipped during reading.
@@ -47,7 +112,7 @@ function isAnalyzePullRequestJob(value: unknown): value is AnalyzePullRequestJob
     return false;
   }
 
-  const rawType = (value as Record<string, unknown>).type;
+  const rawType = (value as Record<string, unknown>)["type"];
   if (rawType !== undefined && rawType !== "analyze-pull-request") {
     return false;
   }
@@ -208,6 +273,17 @@ const MAX_QUEUE_SIZE = 10_000;
 const MAX_SCAN_LINES = 50_000;
 
 /**
+ * Byte length of the line separator written by enqueue functions.
+ *
+ * @remarks
+ * All enqueue paths use explicit `"\n"` (Unix LF). The `readline` interface
+ * with `crlfDelay: Infinity` strips the full terminator, so this constant
+ * must match the separator actually written. If enqueue ever switches to
+ * CRLF, this must change to 2.
+ */
+const LINE_SEPARATOR_BYTES = 1;
+
+/**
  * Reads queued jobs from the local NDJSON queue file using line-by-line streaming.
  *
  * @remarks
@@ -215,9 +291,13 @@ const MAX_SCAN_LINES = 50_000;
  * backward compatibility with queue entries written before the discriminator
  * was introduced. Reading stops once `MAX_QUEUE_SIZE` jobs have been collected.
  *
+ * When `startByteOffset` is provided, reading begins at that byte position.
+ * If the offset exceeds the file size (file was truncated), reading resets to 0.
+ *
  * @param filePath - Optional file path override for tests/local customization.
  * @param onSkippedLine - Optional callback for skipped lines. Defaults to stderr logging.
- * @returns Parsed queue jobs in file order.
+ * @param startByteOffset - Byte position to resume reading from. Defaults to 0.
+ * @returns Parsed queue jobs and the new byte offset after reading.
  */
 function parseQueueJob(value: unknown): QueueJob | undefined {
   if (isCollectFeedbackJob(value)) return value;
@@ -228,19 +308,37 @@ function parseQueueJob(value: unknown): QueueJob | undefined {
 export async function readAllQueueJobs(
   filePath = DEFAULT_JOB_FILE_PATH,
   onSkippedLine: OnSkippedLine = defaultOnSkippedLine,
-): Promise<QueueJob[]> {
+  startByteOffset = 0,
+): Promise<QueueReadResult> {
+  if (startByteOffset !== 0 && (!Number.isFinite(startByteOffset) || !Number.isInteger(startByteOffset) || startByteOffset < 0)) {
+    throw new RangeError(`readAllQueueJobs: startByteOffset must be a finite non-negative integer, got ${startByteOffset}`);
+  }
+
   if (!existsSync(filePath)) {
-    return [];
+    return { jobs: [], byteOffset: 0 };
+  }
+
+  const fileSize = statSync(filePath).size;
+  const safeOffset = (startByteOffset > 0 && startByteOffset <= fileSize) ? startByteOffset : 0;
+
+  if (safeOffset >= fileSize) {
+    return { jobs: [], byteOffset: safeOffset };
   }
 
   const jobs: QueueJob[] = [];
-  const stream = createReadStream(filePath, { encoding: "utf8" });
+  const streamOptions = safeOffset > 0
+    ? { encoding: "utf8" as const, start: safeOffset }
+    : { encoding: "utf8" as const };
+  const stream = createReadStream(filePath, streamOptions);
   const reader = createInterface({ input: stream, crlfDelay: Infinity });
   let lineNumber = 0;
+  let bytesConsumed = 0;
 
   try {
     for await (const line of reader) {
       lineNumber++;
+      bytesConsumed += Buffer.byteLength(line, "utf8") + LINE_SEPARATOR_BYTES;
+
       if (!line.trim()) {
         continue;
       }
@@ -266,5 +364,6 @@ export async function readAllQueueJobs(
   } finally {
     reader.close();
   }
-  return jobs;
+
+  return { jobs, byteOffset: Math.min(safeOffset + bytesConsumed, fileSize) };
 }
