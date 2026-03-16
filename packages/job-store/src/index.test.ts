@@ -5,6 +5,14 @@ import { randomUUID } from "node:crypto";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { AnalyzePullRequestJob, CollectFeedbackJob } from "@mergewise/shared-types";
+import {
+  generateJobId,
+  toInstallationId,
+  toJobId,
+  toPRNumber,
+  toRepoFullName,
+  toSHA,
+} from "@mergewise/shared-types";
 
 import {
   deriveOffsetFilePath,
@@ -26,11 +34,11 @@ function makeTempDir(): string {
 
 function makeJob(overrides: Partial<AnalyzePullRequestJob> = {}): AnalyzePullRequestJob {
   return {
-    job_id: randomUUID(),
-    installation_id: 42,
-    repo_full_name: "acme/widget",
-    pr_number: 7,
-    head_sha: "abc123",
+    job_id: generateJobId(),
+    installation_id: toInstallationId(42),
+    repo_full_name: toRepoFullName("acme/widget"),
+    pr_number: toPRNumber(7),
+    head_sha: toSHA("a".repeat(40)),
     queued_at: new Date().toISOString(),
     ...overrides,
   };
@@ -69,8 +77,10 @@ describe("job-store", () => {
   });
 
   test("appends as NDJSON with trailing newline", () => {
-    const jobA = makeJob({ job_id: "aaa" });
-    const jobB = makeJob({ job_id: "bbb" });
+    const jobIdA = toJobId("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    const jobIdB = toJobId("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    const jobA = makeJob({ job_id: jobIdA });
+    const jobB = makeJob({ job_id: jobIdB });
 
     enqueueAnalyzePullRequestJob(jobA, filePath);
     enqueueAnalyzePullRequestJob(jobB, filePath);
@@ -80,8 +90,8 @@ describe("job-store", () => {
 
     expect(lines).toHaveLength(3);
     expect(lines[2]).toBe("");
-    expect((JSON.parse(lines[0]!) as { job_id: string }).job_id).toBe("aaa");
-    expect((JSON.parse(lines[1]!) as { job_id: string }).job_id).toBe("bbb");
+    expect((JSON.parse(lines[0]!) as { job_id: string }).job_id).toBe("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    expect((JSON.parse(lines[1]!) as { job_id: string }).job_id).toBe("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
   });
 
   test("returns empty array when file is missing", () => {
@@ -120,8 +130,10 @@ describe("job-store", () => {
   });
 
   test("returns valid jobs when malformed and invalid lines are mixed in", () => {
-    const firstJob = makeJob({ job_id: "first" });
-    const secondJob = makeJob({ job_id: "second" });
+    const firstId = toJobId("11111111-1111-1111-1111-111111111111");
+    const secondId = toJobId("22222222-2222-2222-2222-222222222222");
+    const firstJob = makeJob({ job_id: firstId });
+    const secondJob = makeJob({ job_id: secondId });
     const mixedRaw = [
       JSON.stringify(firstJob),
       "not-json",
@@ -137,8 +149,8 @@ describe("job-store", () => {
     const jobs = readAllAnalyzePullRequestJobs(filePath, callback);
 
     expect(jobs).toHaveLength(2);
-    expect(jobs[0]!.job_id).toBe("first");
-    expect(jobs[1]!.job_id).toBe("second");
+    expect(jobs[0]!.job_id).toBe(toJobId("11111111-1111-1111-1111-111111111111"));
+    expect(jobs[1]!.job_id).toBe(toJobId("22222222-2222-2222-2222-222222222222"));
     expect(skips).toHaveLength(2);
     expect(skips[0]!.lineNumber).toBe(2);
     expect(skips[1]!.lineNumber).toBe(3);
@@ -157,10 +169,10 @@ describe("job-store", () => {
 function makeFeedbackJob(overrides: Partial<CollectFeedbackJob> = {}): CollectFeedbackJob {
   return {
     type: "collect-feedback",
-    job_id: randomUUID(),
-    installation_id: 42,
-    repo_full_name: "acme/widget",
-    pr_number: 7,
+    job_id: generateJobId(),
+    installation_id: toInstallationId(42),
+    repo_full_name: toRepoFullName("acme/widget"),
+    pr_number: toPRNumber(7),
     queued_at: new Date().toISOString(),
     ...overrides,
   };
@@ -192,47 +204,47 @@ describe("isCollectFeedbackJob", () => {
   });
 
   test("returns false for negative pr_number", () => {
-    expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: -1 as number }))).toBe(false);
+    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), pr_number: -1 })).toBe(false);
   });
 
   test("returns false for pr_number zero", () => {
-    expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: 0 }))).toBe(false);
+    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), pr_number: 0 })).toBe(false);
   });
 
   test("returns false for NaN pr_number", () => {
-    expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: Number.NaN }))).toBe(false);
+    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), pr_number: Number.NaN })).toBe(false);
   });
 
   test("returns false for non-integer float pr_number", () => {
-    expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: 1.5 as number }))).toBe(false);
+    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), pr_number: 1.5 })).toBe(false);
   });
 
   test("returns true for MAX_SAFE_INTEGER pr_number", () => {
-    expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: Number.MAX_SAFE_INTEGER }))).toBe(true);
+    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), pr_number: Number.MAX_SAFE_INTEGER })).toBe(true);
   });
 
   test("returns false for zero installation_id", () => {
-    expect(isCollectFeedbackJob(makeFeedbackJob({ installation_id: 0 as number }))).toBe(false);
+    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), installation_id: 0 })).toBe(false);
   });
 
   test("returns false for zero pr_number", () => {
-    expect(isCollectFeedbackJob(makeFeedbackJob({ pr_number: 0 as number }))).toBe(false);
+    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), pr_number: 0 })).toBe(false);
   });
 
   test("returns false for negative installation_id", () => {
-    expect(isCollectFeedbackJob(makeFeedbackJob({ installation_id: -1 as number }))).toBe(false);
+    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), installation_id: -1 })).toBe(false);
   });
 
   test("returns false for NaN installation_id", () => {
-    expect(isCollectFeedbackJob(makeFeedbackJob({ installation_id: Number.NaN }))).toBe(false);
+    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), installation_id: Number.NaN })).toBe(false);
   });
 
   test("returns false for Infinity installation_id", () => {
-    expect(isCollectFeedbackJob(makeFeedbackJob({ installation_id: Number.POSITIVE_INFINITY }))).toBe(false);
+    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), installation_id: Number.POSITIVE_INFINITY })).toBe(false);
   });
 
   test("returns false for non-integer installation_id", () => {
-    expect(isCollectFeedbackJob(makeFeedbackJob({ installation_id: 1.5 as number }))).toBe(false);
+    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), installation_id: 1.5 })).toBe(false);
   });
 });
 
@@ -280,25 +292,28 @@ describe("readAllQueueJobs", () => {
   });
 
   test("reads mixed analyze and feedback jobs", async () => {
-    const analyzeJob = makeJob({ job_id: "analyze-1" });
-    const feedbackJob = makeFeedbackJob({ job_id: "feedback-1" });
+    const analyzeId = toJobId("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    const feedbackId = toJobId("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    const analyzeJob = makeJob({ job_id: analyzeId });
+    const feedbackJob = makeFeedbackJob({ job_id: feedbackId });
 
     enqueueAnalyzePullRequestJob(analyzeJob, filePath);
     enqueueCollectFeedbackJob(feedbackJob, filePath);
 
     const result = await readAllQueueJobs(filePath);
     expect(result.jobs).toHaveLength(2);
-    expect(result.jobs[0]!.job_id).toBe("analyze-1");
-    expect(result.jobs[1]!.job_id).toBe("feedback-1");
+    expect(result.jobs[0]!.job_id).toBe(analyzeId);
+    expect(result.jobs[1]!.job_id).toBe(feedbackId);
   });
 
   test("treats legacy lines without type field as analyze jobs", async () => {
+    const legacyJobId = toJobId("cccccccc-cccc-cccc-cccc-cccccccccccc");
     const legacyJob = {
-      job_id: "legacy-1",
+      job_id: legacyJobId,
       installation_id: 42,
       repo_full_name: "acme/widget",
       pr_number: 7,
-      head_sha: "abc123",
+      head_sha: "a".repeat(40),
       queued_at: new Date().toISOString(),
     };
     mkdirSync(dirname(filePath), { recursive: true });
@@ -306,11 +321,12 @@ describe("readAllQueueJobs", () => {
 
     const result = await readAllQueueJobs(filePath);
     expect(result.jobs).toHaveLength(1);
-    expect(result.jobs[0]!.job_id).toBe("legacy-1");
+    expect(result.jobs[0]!.job_id).toBe(legacyJobId);
   });
 
   test("skips malformed lines", async () => {
-    const feedbackJob = makeFeedbackJob({ job_id: "good" });
+    const goodId = toJobId("dddddddd-dddd-dddd-dddd-dddddddddddd");
+    const feedbackJob = makeFeedbackJob({ job_id: goodId });
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, `not-json\n${JSON.stringify(feedbackJob)}\n`, "utf8");
 
@@ -318,7 +334,7 @@ describe("readAllQueueJobs", () => {
     const result = await readAllQueueJobs(filePath, callback);
 
     expect(result.jobs).toHaveLength(1);
-    expect(result.jobs[0]!.job_id).toBe("good");
+    expect(result.jobs[0]!.job_id).toBe(goodId);
     expect(skips).toHaveLength(1);
   });
 
@@ -326,7 +342,7 @@ describe("readAllQueueJobs", () => {
     mkdirSync(dirname(filePath), { recursive: true });
     const lines: string[] = [];
     for (let jobIndex = 0; jobIndex < 10_001; jobIndex++) {
-      lines.push(JSON.stringify(makeFeedbackJob({ job_id: `job-${jobIndex}` })));
+      lines.push(JSON.stringify(makeFeedbackJob()));
     }
     writeFileSync(filePath, lines.join("\n") + "\n", "utf8");
 

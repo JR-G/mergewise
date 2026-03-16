@@ -117,13 +117,22 @@ function isAnalyzePullRequestJob(value: unknown): value is AnalyzePullRequestJob
     return false;
   }
 
-  const candidate = value as Partial<AnalyzePullRequestJob>;
+  const candidate = value as Partial<Record<string, unknown>>;
   if (
     typeof candidate.job_id !== "string" ||
     typeof candidate.repo_full_name !== "string" ||
     typeof candidate.head_sha !== "string" ||
     typeof candidate.queued_at !== "string"
   ) {
+    return false;
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(candidate.job_id)) {
+    return false;
+  }
+  if (!/^[^/]+\/[^/]+$/.test(candidate.repo_full_name)) {
+    return false;
+  }
+  if (!/^[a-f0-9]{40}$/.test(candidate.head_sha)) {
     return false;
   }
   if (candidate.trace_id !== undefined && typeof candidate.trace_id !== "string") {
@@ -223,13 +232,19 @@ export function isCollectFeedbackJob(value: unknown): value is CollectFeedbackJo
     return false;
   }
 
-  const candidate = value as Partial<CollectFeedbackJob>;
+  const candidate = value as Partial<Record<string, unknown>>;
   if (
     candidate.type !== "collect-feedback" ||
     typeof candidate.job_id !== "string" ||
     typeof candidate.repo_full_name !== "string" ||
     typeof candidate.queued_at !== "string"
   ) {
+    return false;
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(candidate.job_id)) {
+    return false;
+  }
+  if (!/^[^/]+\/[^/]+$/.test(candidate.repo_full_name)) {
     return false;
   }
   if (candidate.installation_id !== null && typeof candidate.installation_id !== "number") {
