@@ -1,6 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { GitHubApiError } from "@mergewise/github-client";
+import {
+  generateJobId,
+  toConfidence,
+  toFilePath,
+  toInstallationId,
+  toLineNumber,
+  toPRNumber,
+  toRepoFullName,
+  toRuleId,
+  toSHA,
+} from "@mergewise/shared-types";
 
 import {
   buildAnalysisContext,
@@ -19,42 +30,47 @@ import {
   type WorkerPollingTimerHandle,
 } from "./index";
 
+const SHA_ABC = toSHA("abc123".padEnd(40, "0"));
+const SHA_AAA = toSHA("a".repeat(40));
+const SHA_BBB = toSHA("b".repeat(40));
+
 describe("buildIdempotencyKey", () => {
   test("produces repo#pr@sha format", () => {
     const key = buildIdempotencyKey({
-      job_id: "j1",
-      installation_id: 1,
-      repo_full_name: "acme/widget",
-      pr_number: 42,
-      head_sha: "abc123",
+      job_id: generateJobId(),
+      installation_id: toInstallationId(1),
+      repo_full_name: toRepoFullName("acme/widget"),
+      pr_number: toPRNumber(42),
+      head_sha: SHA_ABC,
       queued_at: "2025-01-01T00:00:00Z",
     });
-    expect(key).toBe("acme/widget#42@abc123");
+    expect(key).toBe(`acme/widget#42@${SHA_ABC}`);
   });
 
   test("different SHA produces different key", () => {
     const base = {
-      job_id: "j1",
-      installation_id: 1,
-      repo_full_name: "acme/widget",
-      pr_number: 42,
+      job_id: generateJobId(),
+      installation_id: toInstallationId(1),
+      repo_full_name: toRepoFullName("acme/widget"),
+      pr_number: toPRNumber(42),
       queued_at: "2025-01-01T00:00:00Z",
     };
 
-    const keyA = buildIdempotencyKey({ ...base, head_sha: "aaa" });
-    const keyB = buildIdempotencyKey({ ...base, head_sha: "bbb" });
+    const keyA = buildIdempotencyKey({ ...base, head_sha: SHA_AAA });
+    const keyB = buildIdempotencyKey({ ...base, head_sha: SHA_BBB });
     expect(keyA).not.toBe(keyB);
   });
 });
 
 describe("resolveJobTraceId", () => {
   test("uses explicit job trace_id when provided", () => {
+    const jobId = generateJobId();
     const traceId = resolveJobTraceId({
-      job_id: "job-1",
-      installation_id: 1,
-      repo_full_name: "acme/widget",
-      pr_number: 42,
-      head_sha: "abc123",
+      job_id: jobId,
+      installation_id: toInstallationId(1),
+      repo_full_name: toRepoFullName("acme/widget"),
+      pr_number: toPRNumber(42),
+      head_sha: SHA_ABC,
       trace_id: "trace-123",
       queued_at: "2025-01-01T00:00:00Z",
     });
@@ -63,16 +79,17 @@ describe("resolveJobTraceId", () => {
   });
 
   test("falls back to job_id when trace_id is missing", () => {
+    const jobId = generateJobId();
     const traceId = resolveJobTraceId({
-      job_id: "job-2",
-      installation_id: 1,
-      repo_full_name: "acme/widget",
-      pr_number: 42,
-      head_sha: "abc123",
+      job_id: jobId,
+      installation_id: toInstallationId(1),
+      repo_full_name: toRepoFullName("acme/widget"),
+      pr_number: toPRNumber(42),
+      head_sha: SHA_ABC,
       queued_at: "2025-01-01T00:00:00Z",
     });
 
-    expect(traceId).toBe("job-2");
+    expect(traceId).toBe(jobId);
   });
 });
 
@@ -80,17 +97,17 @@ describe("buildFindingDedupeKey", () => {
   test("builds stable key from findingId", () => {
     const finding = {
       findingId: "r1:file:1",
-      installationId: 1,
-      repo: "acme/widget",
-      prNumber: 42,
+      installationId: toInstallationId(1),
+      repo: toRepoFullName("acme/widget"),
+      prNumber: toPRNumber(42),
       language: "typescript",
-      ruleId: "rule-1",
+      ruleId: toRuleId("test/rule-1"),
       category: "safety" as const,
-      filePath: "src/index.ts",
-      line: 1,
+      filePath: toFilePath("src/index.ts"),
+      line: toLineNumber(1),
       evidence: "const value: any = input;",
       recommendation: "Use an explicit type.",
-      confidence: 0.95,
+      confidence: toConfidence(0.95),
       status: "posted" as const,
     };
 
@@ -101,41 +118,41 @@ describe("buildFindingDedupeKey", () => {
   test("builds fallback key from ruleId:filePath:line when findingId is empty", () => {
     const finding = {
       findingId: "",
-      installationId: 1,
-      repo: "acme/widget",
-      prNumber: 42,
+      installationId: toInstallationId(1),
+      repo: toRepoFullName("acme/widget"),
+      prNumber: toPRNumber(42),
       language: "typescript",
-      ruleId: "rule-1",
+      ruleId: toRuleId("test/rule-1"),
       category: "safety" as const,
-      filePath: "src/index.ts",
-      line: 10,
+      filePath: toFilePath("src/index.ts"),
+      line: toLineNumber(10),
       evidence: "const value: any = input;",
       recommendation: "Use an explicit type.",
-      confidence: 0.95,
+      confidence: toConfidence(0.95),
       status: "posted" as const,
     };
 
-    expect(buildFindingDedupeKey(finding)).toBe("acme/widget#42:rule-1:src/index.ts:10");
+    expect(buildFindingDedupeKey(finding)).toBe("acme/widget#42:test/rule-1:src/index.ts:10");
   });
 
   test("builds fallback key when findingId is whitespace-only", () => {
     const finding = {
       findingId: "   ",
-      installationId: 1,
-      repo: "acme/widget",
-      prNumber: 42,
+      installationId: toInstallationId(1),
+      repo: toRepoFullName("acme/widget"),
+      prNumber: toPRNumber(42),
       language: "typescript",
-      ruleId: "rule-1",
+      ruleId: toRuleId("test/rule-1"),
       category: "safety" as const,
-      filePath: "src/index.ts",
-      line: 10,
+      filePath: toFilePath("src/index.ts"),
+      line: toLineNumber(10),
       evidence: "const value: any = input;",
       recommendation: "Use an explicit type.",
-      confidence: 0.95,
+      confidence: toConfidence(0.95),
       status: "posted" as const,
     };
 
-    expect(buildFindingDedupeKey(finding)).toBe("acme/widget#42:rule-1:src/index.ts:10");
+    expect(buildFindingDedupeKey(finding)).toBe("acme/widget#42:test/rule-1:src/index.ts:10");
   });
 });
 
@@ -391,16 +408,16 @@ describe("buildAnalysisContext", () => {
   test("maps queued job fields and provided diffs to analysis context", () => {
     const context = buildAnalysisContext(
       {
-        job_id: "j1",
-        installation_id: 99,
-        repo_full_name: "acme/widget",
-        pr_number: 42,
-        head_sha: "abc123",
+        job_id: generateJobId(),
+        installation_id: toInstallationId(99),
+        repo_full_name: toRepoFullName("acme/widget"),
+        pr_number: toPRNumber(42),
+        head_sha: SHA_ABC,
         queued_at: "2025-01-01T00:00:00Z",
       },
       [
         {
-          filePath: "src/index.ts",
+          filePath: toFilePath("src/index.ts"),
           previousPath: null,
           hunks: [
             {
@@ -413,26 +430,27 @@ describe("buildAnalysisContext", () => {
     );
 
     expect(context.diffs).toHaveLength(1);
-    expect(context.diffs[0]?.filePath).toBe("src/index.ts");
-    expect(context.pullRequest.repo).toBe("acme/widget");
-    expect(context.pullRequest.prNumber).toBe(42);
-    expect(context.pullRequest.headSha).toBe("abc123");
-    expect(context.pullRequest.installationId).toBe(99);
+    expect(context.diffs[0]?.filePath).toBe(toFilePath("src/index.ts"));
+    expect(context.pullRequest.repo).toBe(toRepoFullName("acme/widget"));
+    expect(context.pullRequest.prNumber).toBe(toPRNumber(42));
+    expect(context.pullRequest.headSha).toBe(SHA_ABC);
+    expect(context.pullRequest.installationId).toBe(toInstallationId(99));
   });
 });
 
 describe("buildJobSummary", () => {
   test("returns deterministic summary fields from execution result", () => {
+    const jobId = generateJobId();
     const summary = buildJobSummary(
       {
-        job_id: "job-1",
-        installation_id: 99,
-        repo_full_name: "acme/widget",
-        pr_number: 42,
-        head_sha: "abc123",
+        job_id: jobId,
+        installation_id: toInstallationId(99),
+        repo_full_name: toRepoFullName("acme/widget"),
+        pr_number: toPRNumber(42),
+        head_sha: SHA_ABC,
         queued_at: "2025-01-01T00:00:00Z",
       },
-      "acme/widget#42@abc123",
+      `acme/widget#42@${SHA_ABC}`,
       {
         findings: [],
         summary: {
@@ -452,11 +470,11 @@ describe("buildJobSummary", () => {
       "2026-01-02T03:04:05.000Z",
     );
 
-    expect(summary.jobId).toBe("job-1");
-    expect(summary.idempotencyKey).toBe("acme/widget#42@abc123");
+    expect(summary.jobId).toBe(jobId);
+    expect(summary.idempotencyKey).toBe(`acme/widget#42@${SHA_ABC}`);
     expect(summary.repository).toBe("acme/widget");
     expect(summary.pullRequestNumber).toBe(42);
-    expect(summary.traceId).toBe("job-1");
+    expect(summary.traceId).toBe(jobId);
     expect(summary.totalFindings).toBe(0);
     expect(summary.totalRules).toBe(1);
     expect(summary.successfulRules).toBe(1);

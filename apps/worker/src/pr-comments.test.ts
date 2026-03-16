@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { Finding } from "@mergewise/shared-types";
+import { toFilePath, toLineNumber, toRuleId } from "@mergewise/shared-types";
 
 import {
   buildPrSummaryComment,
@@ -236,9 +237,9 @@ describe("buildPrSummaryComment", () => {
 
   test("header counts themed groups not individual findings", () => {
     const findings: Finding[] = [
-      { ...createFinding("f1", 0.9, "safety"), ruleId: "no-bang", filePath: "a.ts", line: 10, recommendation: "Avoid non-null" },
-      { ...createFinding("f2", 0.9, "safety"), ruleId: "no-bang", filePath: "a.ts", line: 20, recommendation: "Avoid non-null" },
-      { ...createFinding("f3", 0.85, "perf"), ruleId: "cache", filePath: "b.ts", line: 5, recommendation: "Cache result" },
+      { ...createFinding("f1", 0.9, "safety"), ruleId: toRuleId("test/no-bang"), filePath: toFilePath("a.ts"), line: toLineNumber(10), recommendation: "Avoid non-null" },
+      { ...createFinding("f2", 0.9, "safety"), ruleId: toRuleId("test/no-bang"), filePath: toFilePath("a.ts"), line: toLineNumber(20), recommendation: "Avoid non-null" },
+      { ...createFinding("f3", 0.85, "perf"), ruleId: toRuleId("test/cache"), filePath: toFilePath("b.ts"), line: toLineNumber(5), recommendation: "Cache result" },
     ];
     const body = buildPrSummaryComment({
       ...defaultInput,
@@ -252,8 +253,8 @@ describe("buildPrSummaryComment", () => {
 
   test("renders each suggestion group as a collapsible details block", () => {
     const findings: Finding[] = [
-      { ...createFinding("f1", 0.9, "safety"), ruleId: "r1", filePath: "src/app.ts", line: 10, recommendation: "Fix null. Use a type guard instead." },
-      { ...createFinding("f2", 0.85, "perf"), ruleId: "r2", filePath: "src/utils.ts", line: 25, recommendation: "Cache result. Avoid recomputing on each render." },
+      { ...createFinding("f1", 0.9, "safety"), ruleId: toRuleId("test/r1"), filePath: toFilePath("src/app.ts"), line: toLineNumber(10), recommendation: "Fix null. Use a type guard instead." },
+      { ...createFinding("f2", 0.85, "perf"), ruleId: toRuleId("test/r2"), filePath: toFilePath("src/utils.ts"), line: toLineNumber(25), recommendation: "Cache result. Avoid recomputing on each render." },
     ];
     const body = buildPrSummaryComment({ ...defaultInput, findings });
     expect(body).toContain("<details>");
@@ -268,9 +269,9 @@ describe("buildPrSummaryComment", () => {
 
   test("groups findings with same ruleId and recommendation into one suggestion", () => {
     const findings: Finding[] = [
-      { ...createFinding("f1", 0.9, "safety"), ruleId: "no-bang", filePath: "a.ts", line: 10, recommendation: "Avoid non-null" },
-      { ...createFinding("f2", 0.9, "safety"), ruleId: "no-bang", filePath: "a.ts", line: 20, recommendation: "Avoid non-null" },
-      { ...createFinding("f3", 0.9, "safety"), ruleId: "no-bang", filePath: "b.ts", line: 5, recommendation: "Avoid non-null" },
+      { ...createFinding("f1", 0.9, "safety"), ruleId: toRuleId("test/no-bang"), filePath: toFilePath("a.ts"), line: toLineNumber(10), recommendation: "Avoid non-null" },
+      { ...createFinding("f2", 0.9, "safety"), ruleId: toRuleId("test/no-bang"), filePath: toFilePath("a.ts"), line: toLineNumber(20), recommendation: "Avoid non-null" },
+      { ...createFinding("f3", 0.9, "safety"), ruleId: toRuleId("test/no-bang"), filePath: toFilePath("b.ts"), line: toLineNumber(5), recommendation: "Avoid non-null" },
     ];
     const body = buildPrSummaryComment({ ...defaultInput, findings });
     expect(body).toContain("1 suggestion");
@@ -292,9 +293,9 @@ describe("buildPrSummaryComment", () => {
   test("overflows locations beyond file limit with sub-text", () => {
     const findings: Finding[] = Array.from({ length: 7 }, (_, index) => ({
       ...createFinding(`f${String(index)}`, 0.9, "safety"),
-      ruleId: "no-bang",
-      filePath: `src/file${String(index)}.ts`,
-      line: (index + 1) * 10,
+      ruleId: toRuleId("test/no-bang"),
+      filePath: toFilePath(`src/file${String(index)}.ts`),
+      line: toLineNumber((index + 1) * 10),
       recommendation: "Avoid non-null assertions",
     }));
     const body = buildPrSummaryComment({ ...defaultInput, findings });
@@ -306,9 +307,9 @@ describe("buildPrSummaryComment", () => {
 
   test("sorts suggestion groups by severity", () => {
     const findings: Finding[] = [
-      { ...createFinding("f1", 0.8, "clean"), ruleId: "r-clean", filePath: "src/z.ts", line: 1, recommendation: "Clean up" },
-      { ...createFinding("f2", 0.9, "safety"), ruleId: "r-safety", filePath: "src/a.ts", line: 5, recommendation: "Fix null" },
-      { ...createFinding("f3", 0.85, "perf"), ruleId: "r-perf", filePath: "src/b.ts", line: 3, recommendation: "Cache it" },
+      { ...createFinding("f1", 0.8, "clean"), ruleId: toRuleId("test/r-clean"), filePath: toFilePath("src/z.ts"), line: toLineNumber(1), recommendation: "Clean up" },
+      { ...createFinding("f2", 0.9, "safety"), ruleId: toRuleId("test/r-safety"), filePath: toFilePath("src/a.ts"), line: toLineNumber(5), recommendation: "Fix null" },
+      { ...createFinding("f3", 0.85, "perf"), ruleId: toRuleId("test/r-perf"), filePath: toFilePath("src/b.ts"), line: toLineNumber(3), recommendation: "Cache it" },
     ];
     const body = buildPrSummaryComment({ ...defaultInput, findings });
     const safetyIdx = body.indexOf("Fix null");
@@ -381,7 +382,7 @@ describe("buildPrSummaryComment", () => {
 
   test("uses inline format for single-location suggestions", () => {
     const findings: Finding[] = [
-      { ...createFinding("f1", 0.9, "safety"), filePath: "src/app.ts", line: 10, recommendation: "Fix null" },
+      { ...createFinding("f1", 0.9, "safety"), filePath: toFilePath("src/app.ts"), line: toLineNumber(10), recommendation: "Fix null" },
     ];
     const body = buildPrSummaryComment({ ...defaultInput, findings });
     expect(body).toContain("`src/app.ts`");
@@ -392,8 +393,8 @@ describe("buildPrSummaryComment", () => {
 
   test("uses table format for multi-location suggestions", () => {
     const findings: Finding[] = [
-      { ...createFinding("f1", 0.9, "safety"), ruleId: "no-bang", filePath: "a.ts", line: 10, recommendation: "Avoid" },
-      { ...createFinding("f2", 0.9, "safety"), ruleId: "no-bang", filePath: "b.ts", line: 20, recommendation: "Avoid" },
+      { ...createFinding("f1", 0.9, "safety"), ruleId: toRuleId("test/no-bang"), filePath: toFilePath("a.ts"), line: toLineNumber(10), recommendation: "Avoid" },
+      { ...createFinding("f2", 0.9, "safety"), ruleId: toRuleId("test/no-bang"), filePath: toFilePath("b.ts"), line: toLineNumber(20), recommendation: "Avoid" },
     ];
     const body = buildPrSummaryComment({ ...defaultInput, findings });
     expect(body).toContain("| File | Lines |");
@@ -403,8 +404,8 @@ describe("buildPrSummaryComment", () => {
 
   test("splits findings with different recommendations into separate groups", () => {
     const findings: Finding[] = [
-      { ...createFinding("f1", 0.9, "idiomatic"), ruleId: "llm/reviewer", filePath: "a.ts", line: 10, recommendation: "God component detected" },
-      { ...createFinding("f2", 0.9, "idiomatic"), ruleId: "llm/reviewer", filePath: "b.ts", line: 20, recommendation: "Prop drilling detected" },
+      { ...createFinding("f1", 0.9, "idiomatic"), ruleId: toRuleId("llm/reviewer"), filePath: toFilePath("a.ts"), line: toLineNumber(10), recommendation: "God component detected" },
+      { ...createFinding("f2", 0.9, "idiomatic"), ruleId: toRuleId("llm/reviewer"), filePath: toFilePath("b.ts"), line: toLineNumber(20), recommendation: "Prop drilling detected" },
     ];
     const body = buildPrSummaryComment({ ...defaultInput, findings });
     expect(body).toContain("2 suggestions");
@@ -415,9 +416,9 @@ describe("buildPrSummaryComment", () => {
   test("truncates suggestion blocks when output exceeds character limit", () => {
     const findings: Finding[] = Array.from({ length: 50 }, (_, index) => ({
       ...createFinding(`f${String(index)}`, 0.9 - index * 0.001, "safety"),
-      ruleId: `r-safety-${String(index)}`,
-      filePath: `src/components/very-long-directory-name/deeply-nested-file-${String(index)}.ts`,
-      line: (index + 1) * 10,
+      ruleId: toRuleId(`test/r-safety-${String(index)}`),
+      filePath: toFilePath(`src/components/very-long-directory-name/deeply-nested-file-${String(index)}.ts`),
+      line: toLineNumber((index + 1) * 10),
       recommendation: "This is a long recommendation that describes the issue in great detail and adds to the total character count of the summary comment body",
     }));
     const body = buildPrSummaryComment({ ...defaultInput, findings });
@@ -430,9 +431,9 @@ describe("buildPrSummaryComment", () => {
   test("preserves header and review details when truncating", () => {
     const findings: Finding[] = Array.from({ length: 40 }, (_, index) => ({
       ...createFinding(`f${String(index)}`, 0.9, "safety"),
-      ruleId: `r-safety-${String(index)}`,
-      filePath: `src/components/deep-nested-directory/module-${String(index)}.ts`,
-      line: (index + 1) * 10,
+      ruleId: toRuleId(`test/r-safety-${String(index)}`),
+      filePath: toFilePath(`src/components/deep-nested-directory/module-${String(index)}.ts`),
+      line: toLineNumber((index + 1) * 10),
       recommendation: "Refactor this function to reduce cyclomatic complexity and improve maintainability of the codebase",
     }));
     const body = buildPrSummaryComment({

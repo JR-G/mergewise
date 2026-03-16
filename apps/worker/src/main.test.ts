@@ -5,6 +5,7 @@ import {
   startWorkerProcess,
   type WorkerShutdownSignal,
 } from "./main";
+import { createAnalyzeJob, createFeedbackJob } from "./test-helpers";
 
 const DEFAULT_LLM_MODELS = { triageModel: "gpt-4.1-mini", criticModel: "gpt-4.1-mini", usePipeline: true };
 
@@ -133,23 +134,15 @@ describe("startWorkerProcess", () => {
   });
 
   test("poll cycle reads queue, processes once per idempotency key, and logs read failures", async () => {
+    const baseJob = createAnalyzeJob({ queued_at: "2026-02-01T00:00:00.000Z" });
     const queuedJobs = [
-      {
-        job_id: "job-1",
-        installation_id: 9,
-        repo_full_name: "acme/widget",
-        pr_number: 10,
-        head_sha: "abc123",
-        queued_at: "2026-02-01T00:00:00.000Z",
-      },
-      {
-        job_id: "job-1-duplicate",
-        installation_id: 9,
-        repo_full_name: "acme/widget",
-        pr_number: 10,
-        head_sha: "abc123",
+      baseJob,
+      createAnalyzeJob({
+        repo_full_name: baseJob.repo_full_name,
+        pr_number: baseJob.pr_number,
+        head_sha: baseJob.head_sha,
         queued_at: "2026-02-01T00:01:00.000Z",
-      },
+      }),
     ];
     const processedJobIds: string[] = [];
     const errorLogs: string[] = [];
@@ -235,7 +228,7 @@ describe("startWorkerProcess", () => {
     const [runPollCycle] = intervalCallbacks;
     runPollCycle?.();
     await Promise.resolve();
-    expect(processedJobIds).toEqual(["job-1"]);
+    expect(processedJobIds).toEqual([baseJob.job_id]);
     expect(errorLogs[0]).toBe("interval:3000");
 
     const failingWorker = startWorkerProcess({
@@ -304,14 +297,7 @@ describe("startWorkerProcess", () => {
   });
 
   test("logs per-job failures and overlapping poll-cycle skips", async () => {
-    const queuedJob = {
-      job_id: "job-1",
-      installation_id: 9,
-      repo_full_name: "acme/widget",
-      pr_number: 10,
-      head_sha: "abc123",
-      queued_at: "2026-02-01T00:00:00.000Z",
-    };
+    const queuedJob = createAnalyzeJob({ queued_at: "2026-02-01T00:00:00.000Z" });
     const infoLogs: string[] = [];
     const errorLogs: string[] = [];
     const intervalCallbacks: (() => void)[] = [];
@@ -392,7 +378,7 @@ describe("startWorkerProcess", () => {
     ).toBe(true);
     expect(
       errorLogs.some((message) =>
-        message.includes("failed to process trace=job-1 job=job-1"),
+        message.includes(`failed to process trace=${queuedJob.job_id} job=${queuedJob.job_id}`),
       ),
     ).toBe(true);
 
@@ -404,14 +390,7 @@ describe("startWorkerProcess", () => {
     const analyzeJobIds: string[] = [];
     const intervalCallbacks: (() => void)[] = [];
 
-    const feedbackJob = {
-      type: "collect-feedback" as const,
-      job_id: "fb-1",
-      installation_id: 9,
-      repo_full_name: "acme/widget",
-      pr_number: 10,
-      queued_at: "2026-02-01T00:00:00.000Z",
-    };
+    const feedbackJob = createFeedbackJob({ queued_at: "2026-02-01T00:00:00.000Z" });
 
     const processHandle = startWorkerProcess({
       loadConfigFn: () => ({
@@ -487,14 +466,14 @@ describe("startWorkerProcess", () => {
     runPollCycle?.();
     await Promise.resolve();
 
-    expect(feedbackJobIds).toEqual(["fb-1"]);
+    expect(feedbackJobIds).toEqual([feedbackJob.job_id]);
     expect(analyzeJobIds).toEqual([]);
 
     runPollCycle?.();
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(feedbackJobIds).toEqual(["fb-1"]);
+    expect(feedbackJobIds).toEqual([feedbackJob.job_id]);
 
     await processHandle.shutdown();
   });

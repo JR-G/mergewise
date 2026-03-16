@@ -4,6 +4,7 @@ import type {
   DiffHunk,
   FileDiff,
 } from "@mergewise/shared-types";
+import { toFilePath } from "@mergewise/shared-types";
 import type { GitHubPullRequestFile } from "@mergewise/github-client";
 
 /**
@@ -38,7 +39,7 @@ export function mapGitHubPullRequestFilesToDiffs(
   githubFiles: readonly GitHubPullRequestFile[],
 ): readonly FileDiff[] {
   return githubFiles.map((githubFile) => ({
-    filePath: githubFile.filename,
+    filePath: toFilePath(githubFile.filename),
     previousPath: null,
     hunks: parsePatchToDiffHunks(githubFile.patch),
   }));

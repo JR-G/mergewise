@@ -5,11 +5,15 @@ import { join } from "node:path";
 
 import { GitHubApiError } from "@mergewise/github-client";
 
+import { toPRNumber } from "@mergewise/shared-types";
+
 import { processAnalyzePullRequestJob } from "./index";
 import {
+  createAnalyzeJob,
   createFinding,
   createRule,
   openPullRequestState,
+  TEST_SHA,
   workerFetchOptions,
   ZERO_REACTIONS,
 } from "./test-helpers";
@@ -26,16 +30,10 @@ describe("processAnalyzePullRequestJob", () => {
     process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     const capturedContexts: unknown[] = [];
+    const job = createAnalyzeJob();
 
     const summary = await processAnalyzePullRequestJob(
-      {
-        job_id: "job-2",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 50,
-        head_sha: "def456",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
+      job,
       {
         githubFetchOptions: workerFetchOptions,
         rules: [],
@@ -90,9 +88,9 @@ describe("processAnalyzePullRequestJob", () => {
       "+const value = 1;",
       "+const b = 2;",
     ]);
-    expect(summary.jobId).toBe("job-2");
-    expect(summary.idempotencyKey).toBe("acme/widget#50@def456");
-    expect(summary.traceId).toBe("job-2");
+    expect(summary.jobId).toBe(job.job_id);
+    expect(summary.idempotencyKey).toBe(`acme/widget#50@${TEST_SHA}`);
+    expect(summary.traceId).toBe(job.job_id);
     expect(summary.processedAt).toBe("2026-01-02T03:04:05.000Z");
     expect(summary.checkOutput?.title).toContain("Review completed");
   });
@@ -104,14 +102,7 @@ describe("processAnalyzePullRequestJob", () => {
     let thrownError: unknown;
     try {
       await processAnalyzePullRequestJob(
-        {
-          job_id: "job-3",
-          installation_id: 44,
-          repo_full_name: "acme/widget",
-          pr_number: 51,
-          head_sha: "def457",
-          queued_at: "2025-01-01T00:00:00Z",
-        },
+        createAnalyzeJob({ pr_number: toPRNumber(51) }),
         {
           githubFetchOptions: workerFetchOptions,
           fetchPullRequestFn: async () => openPullRequestState,
@@ -136,15 +127,9 @@ describe("processAnalyzePullRequestJob", () => {
     delete process.env["GITHUB_APP_PRIVATE_KEY"];
     process.env["GITHUB_APP_PRIVATE_KEY_PEM"] = "legacy-private-key";
 
+    const legacyJob = createAnalyzeJob({ pr_number: toPRNumber(52) });
     const summary = await processAnalyzePullRequestJob(
-      {
-        job_id: "job-legacy-key",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 52,
-        head_sha: "def458",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
+      legacyJob,
       {
         githubFetchOptions: workerFetchOptions,
         rules: [],
@@ -174,8 +159,8 @@ describe("processAnalyzePullRequestJob", () => {
       },
     );
 
-    expect(summary.jobId).toBe("job-legacy-key");
-    expect(summary.traceId).toBe("job-legacy-key");
+    expect(summary.jobId).toBe(legacyJob.job_id);
+    expect(summary.traceId).toBe(legacyJob.job_id);
   });
 
   test("supports GITHUB_APP_PRIVATE_KEY_PATH when inline key vars are unset", async () => {
@@ -189,15 +174,9 @@ describe("processAnalyzePullRequestJob", () => {
     process.env["GITHUB_APP_PRIVATE_KEY_PATH"] = privateKeyPath;
 
     try {
+      const pathJob = createAnalyzeJob({ pr_number: toPRNumber(52) });
       const summary = await processAnalyzePullRequestJob(
-        {
-          job_id: "job-path-key",
-          installation_id: 44,
-          repo_full_name: "acme/widget",
-          pr_number: 52,
-          head_sha: "def458",
-          queued_at: "2025-01-01T00:00:00Z",
-        },
+        pathJob,
         {
           githubFetchOptions: workerFetchOptions,
           rules: [],
@@ -227,7 +206,7 @@ describe("processAnalyzePullRequestJob", () => {
         },
       );
 
-      expect(summary.jobId).toBe("job-path-key");
+      expect(summary.jobId).toBe(pathJob.job_id);
     } finally {
       rmSync(temporaryDirectoryPath, { recursive: true, force: true });
       delete process.env["GITHUB_APP_PRIVATE_KEY_PATH"];
@@ -243,14 +222,7 @@ describe("processAnalyzePullRequestJob", () => {
     let thrownError: unknown;
     try {
       await processAnalyzePullRequestJob(
-        {
-          job_id: "job-invalid-path-key",
-          installation_id: 44,
-          repo_full_name: "acme/widget",
-          pr_number: 53,
-          head_sha: "def459",
-          queued_at: "2025-01-01T00:00:00Z",
-        },
+        createAnalyzeJob({ pr_number: toPRNumber(53) }),
         {
           githubFetchOptions: workerFetchOptions,
           rules: [],
@@ -295,14 +267,7 @@ describe("processAnalyzePullRequestJob", () => {
     let thrownError: unknown;
     try {
       await processAnalyzePullRequestJob(
-        {
-          job_id: "job-invalid-app-id",
-          installation_id: 44,
-          repo_full_name: "acme/widget",
-          pr_number: 53,
-          head_sha: "def459",
-          queued_at: "2025-01-01T00:00:00Z",
-        },
+        createAnalyzeJob({ pr_number: toPRNumber(53) }),
         {
           githubFetchOptions: workerFetchOptions,
           rules: [],
@@ -343,17 +308,10 @@ describe("processAnalyzePullRequestJob", () => {
     process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     const capturedRuleIds: string[][] = [];
-    const rules = [createRule("rule-a"), createRule("rule-b"), createRule("rule-c")];
+    const rules = [createRule("test/rule-a"), createRule("test/rule-b"), createRule("test/rule-c")];
 
     await processAnalyzePullRequestJob(
-      {
-        job_id: "job-rule-selection",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 54,
-        head_sha: "def460",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
+      createAnalyzeJob({ pr_number: toPRNumber(54) }),
       {
         githubFetchOptions: workerFetchOptions,
         rules,
@@ -364,8 +322,8 @@ describe("processAnalyzePullRequestJob", () => {
             maxComments: 20,
           },
           rules: {
-            include: ["rule-a", "rule-c"],
-            exclude: ["rule-c"],
+            include: ["test/rule-a", "test/rule-c"],
+            exclude: ["test/rule-c"],
           },
           review: { skipPatterns: [] },
           llm: {
@@ -407,24 +365,18 @@ describe("processAnalyzePullRequestJob", () => {
       },
     );
 
-    expect(capturedRuleIds.flat()).toContain("rule-a");
-    expect(capturedRuleIds.flat()).not.toContain("rule-b");
-    expect(capturedRuleIds.flat()).not.toContain("rule-c");
+    expect(capturedRuleIds.flat()).toContain("test/rule-a");
+    expect(capturedRuleIds.flat()).not.toContain("test/rule-b");
+    expect(capturedRuleIds.flat()).not.toContain("test/rule-c");
   });
 
   test("applies confidence gating to execution summary and delivery cap separately", async () => {
     process.env["GITHUB_APP_ID"] = "123";
     process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
+    const gatingJob = createAnalyzeJob({ pr_number: toPRNumber(55) });
     const summary = await processAnalyzePullRequestJob(
-      {
-        job_id: "job-gating",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 55,
-        head_sha: "def461",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
+      gatingJob,
       {
         githubFetchOptions: workerFetchOptions,
         fetchPullRequestFn: async () => openPullRequestState,
@@ -481,7 +433,7 @@ describe("processAnalyzePullRequestJob", () => {
     );
 
     expect(summary.totalFindings).toBeLessThan(4);
-    expect(summary.traceId).toBe("job-gating");
+    expect(summary.traceId).toBe(gatingJob.job_id);
     expect(summary.checkOutput?.title).toBe("Review completed");
   });
 
@@ -492,14 +444,7 @@ describe("processAnalyzePullRequestJob", () => {
     let capturedInProgressCreate: Record<string, unknown> | null = null;
     let capturedCompletedUpdate: Record<string, unknown> | null = null;
     await processAnalyzePullRequestJob(
-      {
-        job_id: "job-check",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 60,
-        head_sha: "check123",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
+      createAnalyzeJob({ pr_number: toPRNumber(60) }),
       {
         deliveryMode: "github",
         githubFetchOptions: workerFetchOptions,
@@ -565,15 +510,7 @@ describe("processAnalyzePullRequestJob", () => {
     let createCheckRunCalled = false;
     const capturedUpdates: Record<string, unknown>[] = [];
     await processAnalyzePullRequestJob(
-      {
-        job_id: "job-check-existing",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 63,
-        head_sha: "existing123",
-        queued_at: "2025-01-01T00:00:00Z",
-        check_run_id: 99,
-      },
+      createAnalyzeJob({ pr_number: toPRNumber(63), check_run_id: 99 }),
       {
         deliveryMode: "github",
         githubFetchOptions: workerFetchOptions,
@@ -636,14 +573,7 @@ describe("processAnalyzePullRequestJob", () => {
 
     let checkRunCalled = false;
     await processAnalyzePullRequestJob(
-      {
-        job_id: "job-no-check",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 61,
-        head_sha: "nocheck456",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
+      createAnalyzeJob({ pr_number: toPRNumber(61) }),
       {
         githubFetchOptions: workerFetchOptions,
         rules: [],
@@ -680,15 +610,9 @@ describe("processAnalyzePullRequestJob", () => {
     process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     const errors: string[] = [];
+    const checkFailJob = createAnalyzeJob({ pr_number: toPRNumber(62) });
     const summary = await processAnalyzePullRequestJob(
-      {
-        job_id: "job-check-fail",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 62,
-        head_sha: "failcheck789",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
+      checkFailJob,
       {
         deliveryMode: "github",
         githubFetchOptions: workerFetchOptions,
@@ -721,7 +645,7 @@ describe("processAnalyzePullRequestJob", () => {
       },
     );
 
-    expect(summary.jobId).toBe("job-check-fail");
+    expect(summary.jobId).toBe(checkFailJob.job_id);
     expect(errors.some((msg) => msg.includes("in-progress check run"))).toBe(true);
     expect(errors.some((msg) => msg.includes("check_run_failed"))).toBe(true);
   });
@@ -732,14 +656,7 @@ describe("processAnalyzePullRequestJob", () => {
 
     let reviewCalled = false;
     await processAnalyzePullRequestJob(
-      {
-        job_id: "job-summary",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 70,
-        head_sha: "sum123",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
+      createAnalyzeJob({ pr_number: toPRNumber(70) }),
       {
         deliveryMode: "github",
         githubFetchOptions: workerFetchOptions,
@@ -808,14 +725,7 @@ describe("processAnalyzePullRequestJob", () => {
     let executeRulesCalled = false;
     const logs: string[] = [];
     const summary = await processAnalyzePullRequestJob(
-      {
-        job_id: "job-closed-pr",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 80,
-        head_sha: "closed123",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
+      createAnalyzeJob({ pr_number: toPRNumber(80) }),
       {
         githubFetchOptions: workerFetchOptions,
         rules: [],
@@ -862,15 +772,7 @@ describe("processAnalyzePullRequestJob", () => {
 
     let capturedUpdate: Record<string, unknown> | null = null;
     await processAnalyzePullRequestJob(
-      {
-        job_id: "job-closed-check",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 83,
-        head_sha: "closed-check-123",
-        queued_at: "2025-01-01T00:00:00Z",
-        check_run_id: 200,
-      },
+      createAnalyzeJob({ pr_number: toPRNumber(83), check_run_id: 200 }),
       {
         deliveryMode: "github",
         githubFetchOptions: workerFetchOptions,
@@ -921,14 +823,7 @@ describe("processAnalyzePullRequestJob", () => {
 
     let executeRulesCalled = false;
     const summary = await processAnalyzePullRequestJob(
-      {
-        job_id: "job-merged-pr",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 81,
-        head_sha: "merged456",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
+      createAnalyzeJob({ pr_number: toPRNumber(81) }),
       {
         githubFetchOptions: workerFetchOptions,
         rules: [],
@@ -972,14 +867,7 @@ describe("processAnalyzePullRequestJob", () => {
 
     let executeRulesCalled = false;
     const summary = await processAnalyzePullRequestJob(
-      {
-        job_id: "job-open-pr",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 82,
-        head_sha: "open789",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
+      createAnalyzeJob({ pr_number: toPRNumber(82) }),
       {
         githubFetchOptions: workerFetchOptions,
         rules: [],
@@ -1026,14 +914,7 @@ describe("processAnalyzePullRequestJob", () => {
     const finding = createFinding("finding-new", 0.95, "clean");
 
     await processAnalyzePullRequestJob(
-      {
-        job_id: "job-resolve",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 90,
-        head_sha: "min123",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
+      createAnalyzeJob({ pr_number: toPRNumber(90) }),
       {
         deliveryMode: "github",
         githubFetchOptions: workerFetchOptions,
@@ -1112,15 +993,7 @@ describe("processAnalyzePullRequestJob", () => {
 
     try {
       await processAnalyzePullRequestJob(
-        {
-          job_id: "job-fetch-fail",
-          installation_id: 44,
-          repo_full_name: "acme/widget",
-          pr_number: 95,
-          head_sha: "fail123",
-          queued_at: "2025-01-01T00:00:00Z",
-          check_run_id: 777,
-        },
+        createAnalyzeJob({ pr_number: toPRNumber(95), check_run_id: 777 }),
         {
           deliveryMode: "github",
           githubFetchOptions: workerFetchOptions,
@@ -1175,18 +1048,10 @@ describe("processAnalyzePullRequestJob feedback logging", () => {
     const logs: string[] = [];
 
     await processAnalyzePullRequestJob(
-      {
-        job_id: "job-feedback",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 50,
-        head_sha: "abc123",
-        trace_id: "trace-feedback",
-        queued_at: "2026-01-01T00:00:00Z",
-      },
+      createAnalyzeJob({ trace_id: "trace-feedback", queued_at: "2026-01-01T00:00:00Z" }),
       {
         deliveryMode: "github",
-        rules: [createRule("rule-a")],
+        rules: [createRule("test/rule-a")],
         githubFetchOptions: workerFetchOptions,
         logInfo: (msg: string) => logs.push(msg),
         logError: () => {},
@@ -1250,14 +1115,7 @@ describe("processAnalyzePullRequestJob feedback logging", () => {
     const logs: string[] = [];
 
     await processAnalyzePullRequestJob(
-      {
-        job_id: "job-no-feedback",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 50,
-        head_sha: "abc123",
-        queued_at: "2026-01-01T00:00:00Z",
-      },
+      createAnalyzeJob({ queued_at: "2026-01-01T00:00:00Z" }),
       {
         deliveryMode: "github",
         rules: [],

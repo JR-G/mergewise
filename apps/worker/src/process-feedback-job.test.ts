@@ -1,11 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
-import type { CollectFeedbackJob } from "@mergewise/shared-types";
+import type { CollectFeedbackJob, PRNumber, RepoFullName } from "@mergewise/shared-types";
+import { toPRNumber } from "@mergewise/shared-types";
 import type { FeedbackRecord, FeedbackStore, RepoInstruction } from "@mergewise/feedback-store";
 import type { GitHubIssueComment, ReviewThreadWithReplies } from "@mergewise/github-client";
 
 import { processCollectFeedbackJob, type FeedbackJobDependencies } from "./process-feedback-job";
 import type { WorkerGitHubFetchOptions } from "./config";
+import { createFeedbackJob } from "./test-helpers";
 
 const originalEnv = { ...process.env };
 
@@ -29,16 +31,7 @@ afterAll(() => {
 });
 
 function makeJob(overrides: Partial<CollectFeedbackJob> = {}): CollectFeedbackJob {
-  return {
-    type: "collect-feedback",
-    job_id: "feedback-job-1",
-    installation_id: 42,
-    repo_full_name: "acme/widget",
-    pr_number: 10,
-    trace_id: "trace-fb-1",
-    queued_at: new Date().toISOString(),
-    ...overrides,
-  };
+  return createFeedbackJob(overrides);
 }
 
 const DEFAULT_GITHUB_OPTIONS: WorkerGitHubFetchOptions = {
@@ -133,7 +126,7 @@ describe("processCollectFeedbackJob", () => {
 
     let thrownError: unknown;
     try {
-      await processCollectFeedbackJob(makeJob({ repo_full_name: "invalid" }), dependencies);
+      await processCollectFeedbackJob(makeJob({ repo_full_name: "invalid" as unknown as RepoFullName }), dependencies);
     } catch (error) {
       thrownError = error;
     }
@@ -276,7 +269,7 @@ describe("processCollectFeedbackJob", () => {
 
     let thrownError: unknown;
     try {
-      await processCollectFeedbackJob(makeJob({ pr_number: 0 }), dependencies);
+      await processCollectFeedbackJob(makeJob({ pr_number: 0 as unknown as PRNumber }), dependencies);
     } catch (error) {
       thrownError = error;
     }
@@ -287,7 +280,7 @@ describe("processCollectFeedbackJob", () => {
   test("propagates TypeError for negative pr_number", async () => {
     let thrownError: unknown;
     try {
-      await processCollectFeedbackJob(makeJob({ pr_number: -1 }), baseDependencies());
+      await processCollectFeedbackJob(makeJob({ pr_number: -1 as unknown as PRNumber }), baseDependencies());
     } catch (error) {
       thrownError = error;
     }
@@ -298,7 +291,7 @@ describe("processCollectFeedbackJob", () => {
   test("propagates TypeError for NaN pr_number", async () => {
     let thrownError: unknown;
     try {
-      await processCollectFeedbackJob(makeJob({ pr_number: NaN }), baseDependencies());
+      await processCollectFeedbackJob(makeJob({ pr_number: NaN as unknown as PRNumber }), baseDependencies());
     } catch (error) {
       thrownError = error;
     }
@@ -309,7 +302,7 @@ describe("processCollectFeedbackJob", () => {
   test("propagates TypeError for non-integer pr_number", async () => {
     let thrownError: unknown;
     try {
-      await processCollectFeedbackJob(makeJob({ pr_number: 3.14 }), baseDependencies());
+      await processCollectFeedbackJob(makeJob({ pr_number: 3.14 as unknown as PRNumber }), baseDependencies());
     } catch (error) {
       thrownError = error;
     }
@@ -322,7 +315,7 @@ describe("processCollectFeedbackJob", () => {
     const dependencies = baseDependencies({ feedbackStore: store });
 
     await processCollectFeedbackJob(
-      makeJob({ pr_number: Number.MAX_SAFE_INTEGER }),
+      makeJob({ pr_number: toPRNumber(Number.MAX_SAFE_INTEGER) }),
       dependencies,
     );
   });
