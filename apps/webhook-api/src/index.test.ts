@@ -77,7 +77,7 @@ describe("isPullRequestWebhookEvent", () => {
   const validPayload = {
     action: "opened",
     repository: { full_name: "acme/widget" },
-    pull_request: { number: 1, head: { sha: "abc123" } },
+    pull_request: { number: 1, head: { sha: "a".repeat(40) } },
   };
 
   test("returns true for valid payload", () => {

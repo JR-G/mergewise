@@ -15,7 +15,13 @@ import type {
   GitHubPullRequestWebhookEvent,
 } from "@mergewise/shared-types";
 
-import { generateJobId } from "@mergewise/shared-types";
+import {
+  generateJobId,
+  tryParseInstallationId,
+  tryParsePRNumber,
+  tryParseRepoFullName,
+  tryParseSHA,
+} from "@mergewise/shared-types";
 
 import type { WebhookApiConfig } from "./types";
 
@@ -207,13 +213,18 @@ export function isPullRequestWebhookEvent(
     return false;
   }
 
-  const event = payload as Partial<GitHubPullRequestWebhookEvent>;
-  return (
-    typeof event.action === "string" &&
-    typeof event.repository?.full_name === "string" &&
-    typeof event.pull_request?.number === "number" &&
-    typeof event.pull_request?.head?.sha === "string" // eslint-disable-line @typescript-eslint/no-unnecessary-condition -- head is nested inside optional pull_request
-  );
+  const event = payload as Record<string, unknown>;
+  const repo = event["repository"] as Record<string, unknown> | undefined;
+  const pr = event["pull_request"] as Record<string, unknown> | undefined;
+  const head = pr?.["head"] as Record<string, unknown> | undefined;
+  const install = event["installation"] as Record<string, unknown> | undefined;
+
+  if (typeof event["action"] !== "string") return false;
+  if (typeof repo?.["full_name"] !== "string" || !tryParseRepoFullName(repo["full_name"])) return false;
+  if (typeof pr?.["number"] !== "number" || !tryParsePRNumber(pr["number"])) return false;
+  if (typeof head?.["sha"] !== "string" || !tryParseSHA(head["sha"])) return false;
+  if (install !== undefined && (typeof install["id"] !== "number" || !tryParseInstallationId(install["id"]))) return false;
+  return true;
 }
 
 /**

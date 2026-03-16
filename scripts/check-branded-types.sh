@@ -5,7 +5,7 @@ set -euo pipefail
 # interface or type declarations that use raw string/number for domain fields
 # that should use branded types from @mergewise/shared-types.
 
-DOMAIN_FIELDS='(filePath|previousPath|repo|repoFullName|repo_full_name|headSha|head_sha|scanId|scan_id|jobId|job_id|ruleId|rule_id|confidence|line|prNumber|pr_number|installationId|installation_id|full_name)'
+DOMAIN_FIELDS='(filePath|previousPath|repo|repoFullName|repo_full_name|headSha|head_sha|scanId|scan_id|jobId|job_id|ruleId|rule_id|confidence|\bline\b|prNumber|pr_number|installationId|installation_id|full_name)'
 
 violations=""
 
