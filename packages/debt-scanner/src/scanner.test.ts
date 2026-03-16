@@ -14,7 +14,7 @@ function initGitRepo(directory: string, files: string[]): void {
     execSync(`git add "${filePath}"`, { cwd: directory, stdio: "ignore" });
   }
   if (files.length > 0) {
-    execSync('git commit -m "init"', { cwd: directory, stdio: "ignore" });
+    execSync('git commit -m "init"', { cwd: directory, stdio: "ignore", env: { ...process.env, LEFTHOOK: "0" } });
   }
 }
 
