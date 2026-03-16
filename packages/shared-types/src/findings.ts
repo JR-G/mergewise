@@ -1,3 +1,13 @@
+import type {
+  Confidence,
+  FilePath,
+  InstallationId,
+  LineNumber,
+  PRNumber,
+  RepoFullName,
+  RuleId,
+} from "./branded";
+
 /**
  * Finding categories aligned with Mergewise review focus areas.
  */
@@ -40,21 +50,21 @@ export interface Finding {
   /** Stable unique identifier for this finding. */
   readonly findingId: string;
   /** GitHub App installation identifier for API token resolution. */
-  readonly installationId: number | null;
+  readonly installationId: InstallationId | null;
   /** Repository full name in `owner/name` format. */
-  readonly repo: string;
+  readonly repo: RepoFullName;
   /** Pull request number in the target repository. */
-  readonly prNumber: number;
+  readonly prNumber: PRNumber;
   /** Source language of the analysed file. */
   readonly language: string;
   /** Identifier of the rule that produced this finding. */
-  readonly ruleId: string;
+  readonly ruleId: RuleId;
   /** Review focus category. */
   readonly category: FindingCategory;
   /** Path to the file containing the finding, relative to repo root. */
-  readonly filePath: string;
+  readonly filePath: FilePath;
   /** One-indexed line number where the finding applies. */
-  readonly line: number;
+  readonly line: LineNumber;
   /** Code evidence supporting the finding. */
   readonly evidence: string;
   /** Actionable recommendation describing the suggested change. */
@@ -69,7 +79,7 @@ export interface Finding {
    */
   readonly patchSuggestionPolicy?: PatchSuggestionPolicy | undefined;
   /** Confidence score between 0 and 1 inclusive. */
-  readonly confidence: number;
+  readonly confidence: Confidence;
   /** Current lifecycle status of the finding. */
   readonly status: FindingStatus;
 }

@@ -1,3 +1,10 @@
+import type {
+  InstallationId,
+  PRNumber,
+  RepoFullName,
+  SHA,
+} from "./branded";
+
 /**
  * Pull request actions that should trigger a fresh analysis run.
  */
@@ -10,7 +17,7 @@ export interface GitHubRepository {
   /**
    * Repository full name in `owner/name` format.
    */
-  full_name: string;
+  full_name: RepoFullName;
 }
 
 /**
@@ -20,7 +27,7 @@ export interface GitHubPullRequest {
   /**
    * Pull request number in the target repository.
    */
-  number: number;
+  number: PRNumber;
   /**
    * Pull request head metadata.
    */
@@ -28,7 +35,7 @@ export interface GitHubPullRequest {
     /**
      * Head commit SHA for idempotent analysis keys.
      */
-    sha: string;
+    sha: SHA;
   };
   /**
    * Whether the pull request is a draft.
@@ -70,6 +77,6 @@ export interface GitHubPullRequestWebhookEvent {
     /**
      * GitHub App installation identifier.
      */
-    id: number;
+    id: InstallationId;
   };
 }

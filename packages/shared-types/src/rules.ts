@@ -1,3 +1,12 @@
+import type {
+  FilePath,
+  InstallationId,
+  LineNumber,
+  PRNumber,
+  RepoFullName,
+  RuleId,
+  SHA,
+} from "./branded";
 import type { Finding, FindingCategory } from "./findings";
 
 /**
@@ -15,9 +24,9 @@ export interface DiffHunk {
  */
 export interface FileDiff {
   /** File path relative to repository root. */
-  readonly filePath: string;
+  readonly filePath: FilePath;
   /** Previous file path when the file was renamed, or `null`. */
-  readonly previousPath: string | null;
+  readonly previousPath: FilePath | null;
   /** Parsed hunks from the unified diff. */
   readonly hunks: readonly DiffHunk[];
 }
@@ -27,13 +36,13 @@ export interface FileDiff {
  */
 export interface PullRequestMetadata {
   /** Repository full name in `owner/name` format. */
-  readonly repo: string;
+  readonly repo: RepoFullName;
   /** Pull request number. */
-  readonly prNumber: number;
+  readonly prNumber: PRNumber;
   /** Head commit SHA of the pull request. */
-  readonly headSha: string;
+  readonly headSha: SHA;
   /** GitHub App installation identifier for API token resolution. */
-  readonly installationId: number | null;
+  readonly installationId: InstallationId | null;
 }
 
 /**
@@ -76,9 +85,9 @@ export interface SymbolEntry {
   /** Symbol kind. */
   readonly kind: SymbolKind;
   /** File path relative to repository root. */
-  readonly file: string;
+  readonly file: FilePath;
   /** One-indexed line number of the symbol declaration. */
-  readonly line: number;
+  readonly line: LineNumber;
   /** Whether the symbol is exported from its module. */
   readonly exported: boolean;
 }
@@ -109,7 +118,7 @@ export interface CodebaseContext {
  */
 export interface RuleMetadata {
   /** Unique rule identifier (e.g. `"ts-react/exhaustive-deps-missing"`). */
-  readonly ruleId: string;
+  readonly ruleId: RuleId;
   /** Human-readable rule name. */
   readonly name: string;
   /** Review focus category. */
