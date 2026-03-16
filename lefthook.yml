@@ -41,6 +41,8 @@ pre-commit:
           echo "$added" | grep -En 'console\.(log|debug|warn|info)'
           exit 1
         fi
+    no-raw-domain-types:
+      run: bash scripts/check-branded-types.sh
     lint:
       run: bun run lint
     typecheck:
