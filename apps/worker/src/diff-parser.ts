@@ -4,7 +4,7 @@ import type {
   DiffHunk,
   FileDiff,
 } from "@mergewise/shared-types";
-import { toFilePath } from "@mergewise/shared-types";
+import { tryParseFilePath } from "@mergewise/shared-types";
 import type { GitHubPullRequestFile } from "@mergewise/github-client";
 
 /**
@@ -38,11 +38,11 @@ export function buildAnalysisContext(
 export function mapGitHubPullRequestFilesToDiffs(
   githubFiles: readonly GitHubPullRequestFile[],
 ): readonly FileDiff[] {
-  return githubFiles.map((githubFile) => ({
-    filePath: toFilePath(githubFile.filename),
-    previousPath: null,
-    hunks: parsePatchToDiffHunks(githubFile.patch),
-  }));
+  return githubFiles.flatMap((githubFile) => {
+    const filePath = tryParseFilePath(githubFile.filename);
+    if (!filePath) return [];
+    return [{ filePath, previousPath: null, hunks: parsePatchToDiffHunks(githubFile.patch) }];
+  });
 }
 
 /**
