@@ -6,15 +6,26 @@ import { execSync } from "node:child_process";
 import { scan } from "./scanner.ts";
 import type { ScanOptions } from "./scanner.ts";
 
+function cleanGitEnv(): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = { ...process.env, LEFTHOOK: "0" };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("GIT_")) {
+      env[key] = undefined;
+    }
+  }
+  return env;
+}
+
 function initGitRepo(directory: string, files: string[]): void {
-  execSync("git init", { cwd: directory, stdio: "ignore" });
-  execSync("git config user.email test@test.com", { cwd: directory, stdio: "ignore" });
-  execSync("git config user.name test", { cwd: directory, stdio: "ignore" });
+  const env = cleanGitEnv();
+  execSync("git init", { cwd: directory, stdio: "ignore", env });
+  execSync("git config user.email test@test.com", { cwd: directory, stdio: "ignore", env });
+  execSync("git config user.name test", { cwd: directory, stdio: "ignore", env });
   for (const filePath of files) {
-    execSync(`git add "${filePath}"`, { cwd: directory, stdio: "ignore" });
+    execSync(`git add "${filePath}"`, { cwd: directory, stdio: "ignore", env });
   }
   if (files.length > 0) {
-    execSync('git commit -m "init"', { cwd: directory, stdio: "ignore", env: { ...process.env, LEFTHOOK: "0" } });
+    execSync('git commit -m "init"', { cwd: directory, stdio: "ignore", env });
   }
 }
 
