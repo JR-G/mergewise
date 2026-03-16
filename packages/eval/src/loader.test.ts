@@ -6,11 +6,11 @@ import { discoverFixtures, loadFixture, STUB_PR_METADATA } from "./loader";
 
 describe("STUB_PR_METADATA", () => {
   it("has the expected fixture repo name", () => {
-    expect(STUB_PR_METADATA.repo).toBe("eval/fixture");
+    expect(STUB_PR_METADATA.repo as string).toBe("eval/fixture");
   });
 
-  it("has prNumber set to zero", () => {
-    expect(STUB_PR_METADATA.prNumber).toBe(0);
+  it("has prNumber set to one", () => {
+    expect(STUB_PR_METADATA.prNumber as number).toBe(1);
   });
 
   it("has a null installationId", () => {

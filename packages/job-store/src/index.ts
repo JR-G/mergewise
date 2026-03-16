@@ -119,32 +119,32 @@ function isAnalyzePullRequestJob(value: unknown): value is AnalyzePullRequestJob
 
   const candidate = value as Partial<Record<string, unknown>>;
   if (
-    typeof candidate.job_id !== "string" ||
-    typeof candidate.repo_full_name !== "string" ||
-    typeof candidate.head_sha !== "string" ||
-    typeof candidate.queued_at !== "string"
+    typeof candidate["job_id"] !== "string" ||
+    typeof candidate["repo_full_name"] !== "string" ||
+    typeof candidate["head_sha"] !== "string" ||
+    typeof candidate["queued_at"] !== "string"
   ) {
     return false;
   }
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(candidate.job_id)) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(candidate["job_id"])) {
     return false;
   }
-  if (!/^[^/]+\/[^/]+$/.test(candidate.repo_full_name)) {
+  if (!/^[^/]+\/[^/]+$/.test(candidate["repo_full_name"])) {
     return false;
   }
-  if (!/^[a-f0-9]{40}$/.test(candidate.head_sha)) {
+  if (!/^[a-f0-9]{40}$/.test(candidate["head_sha"])) {
     return false;
   }
-  if (candidate.trace_id !== undefined && typeof candidate.trace_id !== "string") {
+  if (candidate["trace_id"] !== undefined && typeof candidate["trace_id"] !== "string") {
     return false;
   }
   if (
-    candidate.installation_id !== null &&
-    (typeof candidate.installation_id !== "number" || !Number.isInteger(candidate.installation_id) || candidate.installation_id <= 0)
+    candidate["installation_id"] !== null &&
+    (typeof candidate["installation_id"] !== "number" || !Number.isInteger(candidate["installation_id"]) || candidate["installation_id"] <= 0)
   ) {
     return false;
   }
-  if (typeof candidate.pr_number !== "number" || !Number.isInteger(candidate.pr_number) || candidate.pr_number <= 0) {
+  if (typeof candidate["pr_number"] !== "number" || !Number.isInteger(candidate["pr_number"]) || candidate["pr_number"] <= 0) {
     return false;
   }
   return true;
@@ -234,29 +234,29 @@ export function isCollectFeedbackJob(value: unknown): value is CollectFeedbackJo
 
   const candidate = value as Partial<Record<string, unknown>>;
   if (
-    candidate.type !== "collect-feedback" ||
-    typeof candidate.job_id !== "string" ||
-    typeof candidate.repo_full_name !== "string" ||
-    typeof candidate.queued_at !== "string"
+    candidate["type"] !== "collect-feedback" ||
+    typeof candidate["job_id"] !== "string" ||
+    typeof candidate["repo_full_name"] !== "string" ||
+    typeof candidate["queued_at"] !== "string"
   ) {
     return false;
   }
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(candidate.job_id)) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(candidate["job_id"])) {
     return false;
   }
-  if (!/^[^/]+\/[^/]+$/.test(candidate.repo_full_name)) {
+  if (!/^[^/]+\/[^/]+$/.test(candidate["repo_full_name"])) {
     return false;
   }
-  if (candidate.installation_id !== null && typeof candidate.installation_id !== "number") {
+  if (candidate["installation_id"] !== null && typeof candidate["installation_id"] !== "number") {
     return false;
   }
-  if (typeof candidate.installation_id === "number" && (!Number.isFinite(candidate.installation_id) || !Number.isInteger(candidate.installation_id) || candidate.installation_id <= 0)) {
+  if (typeof candidate["installation_id"] === "number" && (!Number.isFinite(candidate["installation_id"]) || !Number.isInteger(candidate["installation_id"]) || candidate["installation_id"] <= 0)) {
     return false;
   }
-  if (candidate.trace_id !== undefined && typeof candidate.trace_id !== "string") {
+  if (candidate["trace_id"] !== undefined && typeof candidate["trace_id"] !== "string") {
     return false;
   }
-  if (typeof candidate.pr_number !== "number" || !Number.isFinite(candidate.pr_number) || !Number.isInteger(candidate.pr_number) || candidate.pr_number <= 0) {
+  if (typeof candidate["pr_number"] !== "number" || !Number.isFinite(candidate["pr_number"]) || !Number.isInteger(candidate["pr_number"]) || candidate["pr_number"] <= 0) {
     return false;
   }
   return true;

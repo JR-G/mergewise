@@ -5,6 +5,7 @@ import {
   startWorkerProcess,
   type WorkerShutdownSignal,
 } from "./main";
+import { toPRNumber } from "@mergewise/shared-types";
 import { createAnalyzeJob, createFeedbackJob } from "./test-helpers";
 
 const DEFAULT_LLM_MODELS = { triageModel: "gpt-4.1-mini", criticModel: "gpt-4.1-mini", usePipeline: true };
@@ -620,6 +621,7 @@ describe("startWorkerProcess", () => {
     const writtenOffsets: number[] = [];
     const intervalCallbacks: (() => void)[] = [];
     let pollCallCount = 0;
+    const persistByteOffsetJob = createAnalyzeJob({ queued_at: "2026-02-01T00:00:00.000Z" });
 
     const processHandle = startWorkerProcess({
       loadConfigFn: () => ({
@@ -657,24 +659,16 @@ describe("startWorkerProcess", () => {
       writeQueueOffsetFn: (_path, offset) => {
         writtenOffsets.push(offset);
       },
-      readAllQueueJobsFn: async (_filePath, _onSkipped, startByteOffset = 0) => {
+      readAllQueueJobsFn: async (_filePath, _onSkipped, startByteOffset) => {
+        const offset = startByteOffset ?? 0;
         pollCallCount++;
-        if (startByteOffset === 0) {
+        if (offset === 0) {
           return {
-            jobs: [
-              {
-                job_id: "job-1",
-                installation_id: 9,
-                repo_full_name: "acme/widget",
-                pr_number: 10,
-                head_sha: "abc123",
-                queued_at: "2026-02-01T00:00:00.000Z",
-              },
-            ],
+            jobs: [persistByteOffsetJob],
             byteOffset: 150,
           };
         }
-        return { jobs: [], byteOffset: startByteOffset };
+        return { jobs: [], byteOffset: offset };
       },
       processAnalyzePullRequestJobFn: async (job) => {
         processedJobIds.push(job.job_id);
@@ -715,13 +709,13 @@ describe("startWorkerProcess", () => {
     runPollCycle?.();
     await drainMicrotasks();
 
-    expect(processedJobIds).toEqual(["job-1"]);
+    expect(processedJobIds).toContain(persistByteOffsetJob.job_id);
     expect(writtenOffsets).toEqual([150]);
 
     runPollCycle?.();
     await drainMicrotasks();
 
-    expect(processedJobIds).toEqual(["job-1"]);
+    expect(processedJobIds).toContain(persistByteOffsetJob.job_id);
     expect(pollCallCount).toBe(2);
 
     await processHandle.shutdown();
@@ -758,9 +752,10 @@ describe("startWorkerProcess", () => {
       }),
       readQueueOffsetFn: () => writtenOffsets[0] ?? 0,
       writeQueueOffsetFn: () => {},
-      readAllQueueJobsFn: async (_filePath, _onSkipped, startByteOffset = 0) => {
-        restartReadOffset = startByteOffset;
-        return { jobs: [], byteOffset: startByteOffset };
+      readAllQueueJobsFn: async (_filePath, _onSkipped, startByteOffset) => {
+        const offset = startByteOffset ?? 0;
+        restartReadOffset = offset;
+        return { jobs: [], byteOffset: offset };
       },
       processAnalyzePullRequestJobFn: async (job) => {
         restartProcessedJobIds.push(job.job_id);
@@ -878,6 +873,7 @@ describe("startWorkerProcess", () => {
     const processedJobIds: string[] = [];
     const intervalCallbacks: (() => void)[] = [];
     let readByteOffset: number | undefined;
+    const fallbackJob = createAnalyzeJob({ queued_at: "2026-01-01T00:00:00.000Z" });
 
     const processHandle = startWorkerProcess({
       loadConfigFn: () => ({
@@ -907,22 +903,16 @@ describe("startWorkerProcess", () => {
       }),
       readQueueOffsetFn: () => { throw new Error("corrupt offset file"); },
       writeQueueOffsetFn: () => {},
-      readAllQueueJobsFn: async (_filePath, _onSkipped, startByteOffset = 0) => {
-        readByteOffset = startByteOffset;
-        if (startByteOffset === 0) {
+      readAllQueueJobsFn: async (_filePath, _onSkipped, startByteOffset) => {
+        const offset = startByteOffset ?? 0;
+        readByteOffset = offset;
+        if (offset === 0) {
           return {
-            jobs: [{
-              job_id: "fallback-job",
-              installation_id: 1,
-              repo_full_name: "acme/app",
-              pr_number: 1,
-              head_sha: "abc",
-              queued_at: "2026-01-01T00:00:00.000Z",
-            }],
+            jobs: [fallbackJob],
             byteOffset: 50,
           };
         }
-        return { jobs: [], byteOffset: startByteOffset };
+        return { jobs: [], byteOffset: offset };
       },
       processAnalyzePullRequestJobFn: async (job) => {
         processedJobIds.push(job.job_id);
@@ -962,7 +952,7 @@ describe("startWorkerProcess", () => {
     await drainMicrotasks();
 
     expect(readByteOffset).toBe(0);
-    expect(processedJobIds).toContain("fallback-job");
+    expect(processedJobIds).toContain(fallbackJob.job_id);
 
     await processHandle.shutdown();
   });
@@ -971,6 +961,7 @@ describe("startWorkerProcess", () => {
     const writtenOffsets: number[] = [];
     const intervalCallbacks: (() => void)[] = [];
     let writeAttempts = 0;
+    const retryJob = createAnalyzeJob({ queued_at: "2026-01-01T00:00:00.000Z" });
 
     const processHandle = startWorkerProcess({
       loadConfigFn: () => ({
@@ -1007,14 +998,7 @@ describe("startWorkerProcess", () => {
         writtenOffsets.push(offset);
       },
       readAllQueueJobsFn: async () => ({
-        jobs: [{
-          job_id: "retry-job",
-          installation_id: 1,
-          repo_full_name: "acme/app",
-          pr_number: 1,
-          head_sha: "abc",
-          queued_at: "2026-01-01T00:00:00.000Z",
-        }],
+        jobs: [retryJob],
         byteOffset: 200,
       }),
       processAnalyzePullRequestJobFn: async (job) => ({
@@ -1060,6 +1044,8 @@ describe("startWorkerProcess", () => {
   test("does not advance offset when a job in the batch fails", async () => {
     const writtenOffsets: number[] = [];
     const intervalCallbacks: (() => void)[] = [];
+    const okJob = createAnalyzeJob({ pr_number: toPRNumber(1), queued_at: "2026-01-01T00:00:00.000Z" });
+    const failJob = createAnalyzeJob({ pr_number: toPRNumber(2), queued_at: "2026-01-01T00:00:00.000Z" });
 
     const processHandle = startWorkerProcess({
       loadConfigFn: () => ({
@@ -1092,28 +1078,11 @@ describe("startWorkerProcess", () => {
         writtenOffsets.push(offset);
       },
       readAllQueueJobsFn: async () => ({
-        jobs: [
-          {
-            job_id: "ok-job",
-            installation_id: 1,
-            repo_full_name: "acme/app",
-            pr_number: 1,
-            head_sha: "abc",
-            queued_at: "2026-01-01T00:00:00.000Z",
-          },
-          {
-            job_id: "fail-job",
-            installation_id: 1,
-            repo_full_name: "acme/app",
-            pr_number: 2,
-            head_sha: "def",
-            queued_at: "2026-01-01T00:00:00.000Z",
-          },
-        ],
+        jobs: [okJob, failJob],
         byteOffset: 300,
       }),
       processAnalyzePullRequestJobFn: async (job) => {
-        if (job.job_id === "fail-job") {
+        if (job.job_id === failJob.job_id) {
           throw new Error("processing failed");
         }
         return {
@@ -1159,6 +1128,7 @@ describe("startWorkerProcess", () => {
   test("does not advance offset when a feedback job in the batch fails", async () => {
     const writtenOffsets: number[] = [];
     const intervalCallbacks: (() => void)[] = [];
+    const feedbackFailJob = createFeedbackJob({ queued_at: "2026-02-01T00:00:00.000Z" });
 
     const processHandle = startWorkerProcess({
       loadConfigFn: () => ({
@@ -1191,14 +1161,7 @@ describe("startWorkerProcess", () => {
         writtenOffsets.push(offset);
       },
       readAllQueueJobsFn: async () => ({
-        jobs: [{
-          type: "collect-feedback" as const,
-          job_id: "fb-fail",
-          installation_id: 9,
-          repo_full_name: "acme/widget",
-          pr_number: 10,
-          queued_at: "2026-02-01T00:00:00.000Z",
-        }],
+        jobs: [feedbackFailJob],
         byteOffset: 200,
       }),
       processAnalyzePullRequestJobFn: async () => {

@@ -354,7 +354,7 @@ describe("readAllQueueJobs", () => {
   });
 
   test("returns byte offset matching file size after reading all jobs", async () => {
-    const analyzeJob = makeJob({ job_id: "offset-test" });
+    const analyzeJob = makeJob({ job_id: toJobId("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee") });
     enqueueAnalyzePullRequestJob(analyzeJob, filePath);
 
     const result = await readAllQueueJobs(filePath);
@@ -365,18 +365,18 @@ describe("readAllQueueJobs", () => {
   });
 
   test("reads only new jobs when starting from a byte offset", async () => {
-    const firstJob = makeJob({ job_id: "first" });
+    const firstJob = makeJob({ job_id: toJobId("ffffffff-ffff-ffff-ffff-ffffffffffff") });
     enqueueAnalyzePullRequestJob(firstJob, filePath);
 
     const firstResult = await readAllQueueJobs(filePath);
     expect(firstResult.jobs).toHaveLength(1);
 
-    const secondJob = makeJob({ job_id: "second" });
+    const secondJob = makeJob({ job_id: toJobId("99999999-9999-9999-9999-999999999999") });
     enqueueAnalyzePullRequestJob(secondJob, filePath);
 
     const secondResult = await readAllQueueJobs(filePath, undefined, firstResult.byteOffset);
     expect(secondResult.jobs).toHaveLength(1);
-    expect(secondResult.jobs[0]!.job_id).toBe("second");
+    expect(secondResult.jobs[0]!.job_id).toBe(toJobId("99999999-9999-9999-9999-999999999999"));
   });
 
   test("returns empty jobs when offset equals file size", async () => {
@@ -389,16 +389,16 @@ describe("readAllQueueJobs", () => {
   });
 
   test("resets to start when offset exceeds file size", async () => {
-    enqueueAnalyzePullRequestJob(makeJob({ job_id: "reset-test" }), filePath);
+    enqueueAnalyzePullRequestJob(makeJob({ job_id: toJobId("88888888-8888-8888-8888-888888888888") }), filePath);
 
     const result = await readAllQueueJobs(filePath, undefined, 999_999);
     expect(result.jobs).toHaveLength(1);
-    expect(result.jobs[0]!.job_id).toBe("reset-test");
+    expect(result.jobs[0]!.job_id).toBe(toJobId("88888888-8888-8888-8888-888888888888"));
     expect(result.byteOffset).toBeGreaterThan(0);
   });
 
   test("throws on negative startByteOffset", async () => {
-    enqueueAnalyzePullRequestJob(makeJob({ job_id: "neg-offset" }), filePath);
+    enqueueAnalyzePullRequestJob(makeJob({ job_id: toJobId("77777777-7777-7777-7777-777777777777") }), filePath);
     expect(readAllQueueJobs(filePath, undefined, -10)).rejects.toThrow(RangeError);
   });
 

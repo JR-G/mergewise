@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import type { FileDiff, PullRequestMetadata } from "@mergewise/shared-types";
+import { toConfidence, toFilePath, toLineNumber, toPRNumber, toRepoFullName, toRuleId, toSHA } from "@mergewise/shared-types";
 import {
   extractAddedLineNumbers,
   extractAddedLineMap,
@@ -13,15 +14,15 @@ import {
 import type { RawLlmFinding, AddedLineInfo } from "./schema";
 
 const STUB_PR: PullRequestMetadata = {
-  repo: "test/repo",
-  prNumber: 1,
-  headSha: "abc123",
+  repo: toRepoFullName("test/repo"),
+  prNumber: toPRNumber(1),
+  headSha: toSHA("a".repeat(40)),
   installationId: null,
 };
 
 function makeDiff(lines: readonly string[], header = "@@ -1,3 +1,5 @@"): FileDiff {
   return {
-    filePath: "src/index.ts",
+    filePath: toFilePath("src/index.ts"),
     previousPath: null,
     hunks: [{ header, lines }],
   };
@@ -43,7 +44,7 @@ describe("extractAddedLineNumbers", () => {
   });
 
   it("handles empty hunks", () => {
-    const diff: FileDiff = { filePath: "empty.ts", previousPath: null, hunks: [] };
+    const diff: FileDiff = { filePath: toFilePath("empty.ts"), previousPath: null, hunks: [] };
     const added = extractAddedLineNumbers(diff);
     expect(added.size).toBe(0);
   });
@@ -277,44 +278,44 @@ describe("deduplicateByProximity", () => {
     const base = {
       findingId: "test",
       installationId: null,
-      repo: "test/repo",
-      prNumber: 1,
+      repo: toRepoFullName("test/repo"),
+      prNumber: toPRNumber(1),
       language: "typescript" as const,
-      ruleId: "llm/reviewer",
+      ruleId: toRuleId("llm/reviewer"),
       category: "clean" as const,
-      filePath: "src/index.ts",
+      filePath: toFilePath("src/index.ts"),
       evidence: "test",
       recommendation: "fix",
       status: "posted" as const,
     };
     const findings = [
-      { ...base, line: 10, confidence: 0.7 },
-      { ...base, line: 12, confidence: 0.95 },
-      { ...base, line: 14, confidence: 0.8 },
+      { ...base, line: toLineNumber(10), confidence: toConfidence(0.7) },
+      { ...base, line: toLineNumber(12), confidence: toConfidence(0.95) },
+      { ...base, line: toLineNumber(14), confidence: toConfidence(0.8) },
     ];
     const result = deduplicateByProximity(findings);
     expect(result).toHaveLength(1);
-    expect(result[0]?.confidence).toBe(0.95);
+    expect(result[0]?.confidence as number).toBe(0.95);
   });
 
   it("caps output at maxFindings", () => {
     const base = {
       findingId: "test",
       installationId: null,
-      repo: "test/repo",
-      prNumber: 1,
+      repo: toRepoFullName("test/repo"),
+      prNumber: toPRNumber(1),
       language: "typescript" as const,
-      ruleId: "llm/reviewer",
+      ruleId: toRuleId("llm/reviewer"),
       category: "clean" as const,
-      filePath: "src/index.ts",
+      filePath: toFilePath("src/index.ts"),
       evidence: "test",
       recommendation: "fix",
       status: "posted" as const,
     };
     const findings = Array.from({ length: 20 }, (_, index) => ({
       ...base,
-      line: index * 100,
-      confidence: 0.9,
+      line: toLineNumber(index * 100 + 1),
+      confidence: toConfidence(0.9),
     }));
     const result = deduplicateByProximity(findings, 5, 3);
     expect(result.length).toBeLessThanOrEqual(3);

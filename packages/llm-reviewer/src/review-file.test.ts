@@ -4,18 +4,19 @@ import type {
   FileDiff,
   PullRequestMetadata,
 } from "@mergewise/shared-types";
+import { toFilePath, toPRNumber, toRepoFullName, toSHA } from "@mergewise/shared-types";
 import type { ReviewClient, CompletionResult } from "./client";
 import { reviewFile } from "./review-file";
 
 const STUB_PR: PullRequestMetadata = {
-  repo: "test/repo",
-  prNumber: 1,
-  headSha: "abc123",
+  repo: toRepoFullName("test/repo"),
+  prNumber: toPRNumber(1),
+  headSha: toSHA("a".repeat(40)),
   installationId: null,
 };
 
 const STUB_DIFF: FileDiff = {
-  filePath: "src/index.ts",
+  filePath: toFilePath("src/index.ts"),
   previousPath: null,
   hunks: [
     {
