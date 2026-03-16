@@ -1,14 +1,15 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { FileDiff, PullRequestMetadata } from "@mergewise/shared-types";
+import { toRepoFullName, toPRNumber, toSHA } from "@mergewise/shared-types";
 import type { EvalFixture, ExpectedFinding } from "./types";
 
 const FIXTURES_DIR = join(import.meta.dirname, "..", "fixtures");
 
 const STUB_PR_METADATA: PullRequestMetadata = {
-  repo: "eval/fixture",
-  prNumber: 0,
-  headSha: "0000000000000000000000000000000000000000",
+  repo: toRepoFullName("eval/fixture"),
+  prNumber: toPRNumber(1),
+  headSha: toSHA("0000000000000000000000000000000000000000"),
   installationId: null,
 };
 

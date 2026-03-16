@@ -52,8 +52,8 @@ describe("webhook-to-worker pipeline", () => {
     const job = buildAnalyzePullRequestJob(
       validOpened as GitHubPullRequestWebhookEvent,
     );
-    expect(job.repo_full_name).toBe("acme/widget");
-    expect(job.pr_number).toBe(1);
+    expect(job.repo_full_name as string).toBe("acme/widget");
+    expect(job.pr_number as number).toBe(1);
 
     enqueueAnalyzePullRequestJob(job, queuePath);
 

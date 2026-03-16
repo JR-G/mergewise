@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type { Finding } from "@mergewise/shared-types";
+import {
+  toConfidence,
+  toFilePath,
+  toInstallationId,
+  toLineNumber,
+  toPRNumber,
+  toRepoFullName,
+  toRuleId,
+} from "@mergewise/shared-types";
 import type { ExpectedFinding } from "./types";
 import { matchFinding, scoreFindings } from "./scorer";
 
@@ -8,12 +17,12 @@ function makeFinding(
 ): Finding {
   return {
     findingId: `test:${overrides.line}:${overrides.category}`,
-    installationId: 1,
-    repo: "eval/fixture",
-    prNumber: 0,
+    installationId: toInstallationId(1),
+    repo: toRepoFullName("eval/fixture"),
+    prNumber: toPRNumber(1),
     language: "typescript",
-    ruleId: "llm/reviewer",
-    filePath: "src/file.ts",
+    ruleId: toRuleId("llm/reviewer"),
+    filePath: toFilePath("src/file.ts"),
     evidence: "some code",
     recommendation: "fix it",
     status: "posted",
@@ -24,9 +33,9 @@ function makeFinding(
 describe("matchFinding", () => {
   test("matches when all specified fields match", () => {
     const finding = makeFinding({
-      line: 5,
+      line: toLineNumber(5),
       category: "clean",
-      confidence: 0.9,
+      confidence: toConfidence(0.9),
       evidence: "const data = fetch()",
       recommendation: "Extract into a custom hook",
     });
@@ -43,7 +52,7 @@ describe("matchFinding", () => {
   });
 
   test("rejects when line is outside range", () => {
-    const finding = makeFinding({ line: 15, category: "clean", confidence: 0.9 });
+    const finding = makeFinding({ line: toLineNumber(15), category: "clean", confidence: toConfidence(0.9) });
     const expectation: ExpectedFinding = {
       description: "test",
       matchLineRange: [1, 10],
@@ -54,7 +63,7 @@ describe("matchFinding", () => {
   });
 
   test("rejects when category does not match", () => {
-    const finding = makeFinding({ line: 5, category: "perf", confidence: 0.9 });
+    const finding = makeFinding({ line: toLineNumber(5), category: "perf", confidence: toConfidence(0.9) });
     const expectation: ExpectedFinding = {
       description: "test",
       matchCategory: "clean",
@@ -68,7 +77,7 @@ describe("matchFinding", () => {
 describe("scoreFindings", () => {
   test("perfect recall when all required expectations matched", () => {
     const findings = [
-      makeFinding({ line: 5, category: "clean", confidence: 0.9, recommendation: "Extract hook" }),
+      makeFinding({ line: toLineNumber(5), category: "clean", confidence: toConfidence(0.9), recommendation: "Extract hook" }),
     ];
     const expectations: ExpectedFinding[] = [
       {
@@ -86,7 +95,7 @@ describe("scoreFindings", () => {
 
   test("zero recall when required expectation not matched", () => {
     const findings = [
-      makeFinding({ line: 50, category: "perf", confidence: 0.9 }),
+      makeFinding({ line: toLineNumber(50), category: "perf", confidence: toConfidence(0.9) }),
     ];
     const expectations: ExpectedFinding[] = [
       {
@@ -105,9 +114,9 @@ describe("scoreFindings", () => {
   test("counts forbidden matches as false positives", () => {
     const findings = [
       makeFinding({
-        line: 3,
+        line: toLineNumber(3),
         category: "safety",
-        confidence: 0.85,
+        confidence: toConfidence(0.85),
         recommendation: "Fix the null check",
       }),
     ];
@@ -128,7 +137,7 @@ describe("scoreFindings", () => {
 
   test("forbidden findings do not count as matched", () => {
     const findings = [
-      makeFinding({ line: 3, category: "clean", confidence: 0.9 }),
+      makeFinding({ line: toLineNumber(3), category: "clean", confidence: toConfidence(0.9) }),
     ];
     const expectations: ExpectedFinding[] = [
       {
@@ -147,8 +156,8 @@ describe("scoreFindings", () => {
 
   test("mixed forbidden and required expectations scored correctly", () => {
     const findings = [
-      makeFinding({ line: 5, category: "clean", confidence: 0.9, recommendation: "Extract" }),
-      makeFinding({ line: 12, category: "safety", confidence: 0.8, recommendation: "Fix null" }),
+      makeFinding({ line: toLineNumber(5), category: "clean", confidence: toConfidence(0.9), recommendation: "Extract" }),
+      makeFinding({ line: toLineNumber(12), category: "safety", confidence: toConfidence(0.8), recommendation: "Fix null" }),
     ];
     const expectations: ExpectedFinding[] = [
       {
@@ -176,15 +185,15 @@ describe("scoreFindings", () => {
   test("optimal matching succeeds where greedy assignment would fail", () => {
     const findings = [
       makeFinding({
-        line: 5,
+        line: toLineNumber(5),
         category: "clean",
-        confidence: 0.9,
+        confidence: toConfidence(0.9),
         recommendation: "Extract function",
       }),
       makeFinding({
-        line: 5,
+        line: toLineNumber(5),
         category: "clean",
-        confidence: 0.9,
+        confidence: toConfidence(0.9),
         recommendation: "Extract function and rename variable",
       }),
     ];
@@ -213,8 +222,8 @@ describe("scoreFindings", () => {
 
   test("optimal matching for optional expectations", () => {
     const findings = [
-      makeFinding({ line: 10, category: "perf", confidence: 0.7, recommendation: "Cache result" }),
-      makeFinding({ line: 10, category: "perf", confidence: 0.7, recommendation: "Cache result and batch" }),
+      makeFinding({ line: toLineNumber(10), category: "perf", confidence: toConfidence(0.7), recommendation: "Cache result" }),
+      makeFinding({ line: toLineNumber(10), category: "perf", confidence: toConfidence(0.7), recommendation: "Cache result and batch" }),
     ];
 
     const expectations: ExpectedFinding[] = [
