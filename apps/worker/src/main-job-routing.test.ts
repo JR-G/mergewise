@@ -49,7 +49,7 @@ describe("startWorkerProcess job routing", () => {
           include: [],
           exclude: [],
         },
-        review: { skipPatterns: [] },
+        review: { skipPatterns: [], agentFriendliness: false },
         llm: {
           enabled: false,
           model: "gpt-4o",
@@ -142,7 +142,7 @@ describe("startWorkerProcess job routing", () => {
       loadMergewiseConfigFn: () => ({
         gating: { confidenceThreshold: 0.8, maxComments: 10 },
         rules: { include: [], exclude: [] },
-        review: { skipPatterns: [] },
+        review: { skipPatterns: [], agentFriendliness: false },
         llm: {
           enabled: false, model: "gpt-4o", ...DEFAULT_LLM_MODELS,
           tokenBudget: 30_000, baseUrl: "https://api.openai.com/v1", consistencySamples: 1,
@@ -222,7 +222,7 @@ describe("startWorkerProcess job routing", () => {
       loadMergewiseConfigFn: () => ({
         gating: { confidenceThreshold: 0.8, maxComments: 10 },
         rules: { include: [], exclude: [] },
-        review: { skipPatterns: [] },
+        review: { skipPatterns: [], agentFriendliness: false },
         llm: {
           enabled: false, model: "gpt-4o", ...DEFAULT_LLM_MODELS,
           tokenBudget: 30_000, baseUrl: "https://api.openai.com/v1", consistencySamples: 1,
@@ -278,7 +278,7 @@ describe("startWorkerProcess job routing", () => {
       loadMergewiseConfigFn: () => ({
         gating: { confidenceThreshold: 0.8, maxComments: 10 },
         rules: { include: [], exclude: [] },
-        review: { skipPatterns: [] },
+        review: { skipPatterns: [], agentFriendliness: false },
         llm: {
           enabled: false, model: "gpt-4o", ...DEFAULT_LLM_MODELS,
           tokenBudget: 30_000, baseUrl: "https://api.openai.com/v1", consistencySamples: 1,

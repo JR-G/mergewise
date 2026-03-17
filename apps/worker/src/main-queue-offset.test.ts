@@ -25,7 +25,7 @@ function makeMergewiseConfig() {
   return {
     gating: { confidenceThreshold: 0.8, maxComments: 10 },
     rules: { include: [] as string[], exclude: [] as string[] },
-    review: { skipPatterns: [] as string[] },
+    review: { skipPatterns: [] as string[], agentFriendliness: false },
     llm: {
       enabled: false,
       model: "gpt-4o",

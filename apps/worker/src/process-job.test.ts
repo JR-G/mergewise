@@ -325,7 +325,7 @@ describe("processAnalyzePullRequestJob", () => {
             include: ["test/rule-a", "test/rule-c"],
             exclude: ["test/rule-c"],
           },
-          review: { skipPatterns: [] },
+          review: { skipPatterns: [], agentFriendliness: false },
           llm: {
             enabled: false,
             model: "gpt-4o",
@@ -389,7 +389,7 @@ describe("processAnalyzePullRequestJob", () => {
             include: [],
             exclude: [],
           },
-          review: { skipPatterns: [] },
+          review: { skipPatterns: [], agentFriendliness: false },
           llm: {
             enabled: false,
             model: "gpt-4o",

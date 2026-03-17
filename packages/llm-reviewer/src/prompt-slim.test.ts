@@ -82,6 +82,26 @@ describe("buildSlimSystemPrompt", () => {
     expect(prompt).toContain("Do NOT act as a linter, bug finder, or security scanner");
     expect(prompt).toContain("Do NOT suggest error handling additions unless");
   });
+
+  test("includes agent-specific detection criteria when agentFriendliness is true", () => {
+    const agentPrompt = buildSlimSystemPrompt({ agentFriendliness: true });
+    expect(agentPrompt).toContain("AI agent compatibility");
+    expect(agentPrompt).toContain("Context window overflows");
+    expect(agentPrompt).toContain("Implicit conventions");
+    expect(agentPrompt).toContain("Tangled read/write");
+    expect(agentPrompt).toContain("Missing interfaces");
+    expect(agentPrompt).toContain("Distributed state mutations");
+  });
+
+  test("omits agent criteria when agentFriendliness is false", () => {
+    const standardPrompt = buildSlimSystemPrompt({ agentFriendliness: false });
+    expect(standardPrompt).not.toContain("AI agent compatibility");
+  });
+
+  test("omits agent criteria when options are omitted", () => {
+    const standardPrompt = buildSlimSystemPrompt();
+    expect(standardPrompt).not.toContain("AI agent compatibility");
+  });
 });
 
 describe("buildDynamicFilePrompt", () => {
@@ -249,6 +269,55 @@ describe("buildDynamicFilePrompt", () => {
     });
     expect(result).toContain("pref-4");
     expect(result).not.toContain("pref-5");
+  });
+
+  test("includes agent-impact evidence note when agentFriendliness and graphContext are both present", () => {
+    const graphContext: FileGraphContext = {
+      filePath: toFilePath("src/index.ts"),
+      callers: [toFilePath("src/app.ts")],
+      centrality: 0.9,
+      isHotspot: true,
+    };
+
+    const result = buildDynamicFilePrompt({
+      fileDiff: makeDiff(),
+      fullContent: null,
+      signals: makeSignals(),
+      knowledge: [],
+      graphContext,
+      agentFriendliness: true,
+    });
+    expect(result).toContain("caller count, centrality score, and hotspot status");
+  });
+
+  test("omits agent-impact evidence note when agentFriendliness is false with graphContext", () => {
+    const graphContext: FileGraphContext = {
+      filePath: toFilePath("src/index.ts"),
+      callers: [toFilePath("src/app.ts")],
+      centrality: 0.9,
+      isHotspot: true,
+    };
+
+    const result = buildDynamicFilePrompt({
+      fileDiff: makeDiff(),
+      fullContent: null,
+      signals: makeSignals(),
+      knowledge: [],
+      graphContext,
+      agentFriendliness: false,
+    });
+    expect(result).not.toContain("caller count, centrality score, and hotspot status");
+  });
+
+  test("omits agent-impact evidence note when agentFriendliness is true but no graphContext", () => {
+    const result = buildDynamicFilePrompt({
+      fileDiff: makeDiff(),
+      fullContent: null,
+      signals: makeSignals(),
+      knowledge: [],
+      agentFriendliness: true,
+    });
+    expect(result).not.toContain("caller count, centrality score, and hotspot status");
   });
 
   test("truncates full file content beyond MAX_FULL_FILE_LINES", () => {

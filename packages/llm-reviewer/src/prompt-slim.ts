@@ -73,10 +73,43 @@ If you have no findings, return {"findings": []}.
 
 Identify distinct anti-patterns before writing findings. Each finding = one anti-pattern. Maximise breadth across categories.`;
 
+const AGENT_FRIENDLINESS_ADDENDUM = `
+
+## Additional focus: AI agent compatibility
+
+When reviewing, also look for patterns that make this code difficult for AI coding agents to work with autonomously. These are structural issues that impair an agent's ability to understand, navigate, and safely modify the codebase.
+
+7. **Context window overflows**: Files or functions large enough that an AI agent cannot fit them in a single context window alongside the necessary surrounding code. A 300-line function with 8 dependencies means the agent must load ~500+ lines of context before it can reason about a change.
+   Suggest: Break into focused modules that an agent can load and modify independently.
+
+8. **Implicit conventions and hidden coupling**: Magic strings, undocumented side effects, ordering dependencies, or conventions only discoverable by reading distant code. An agent following the type signatures will produce correct-looking but broken code.
+   Suggest: Make conventions explicit through types, named constants, or enforced interfaces.
+
+9. **Tangled read/write operations**: Functions that mix reading state, computing, and writing side effects. An agent cannot safely make a targeted edit because the read and write concerns are interleaved — changing one line risks breaking the other.
+   Suggest: Separate pure computation from side effects so an agent can modify either independently.
+
+10. **Missing interfaces and entry points**: Modules with no clear public API surface — everything is exported, or the entry point depends on implicit knowledge of which function to call first. An agent cannot determine where to integrate without understanding the full module.
+    Suggest: Define explicit interfaces or barrel exports that make the module's contract obvious.
+
+11. **Distributed state mutations**: State changes spread across multiple files with no central coordination point. An agent modifying one mutation site has no way to discover the others without searching the entire codebase.
+    Suggest: Centralise related mutations behind a single coordination module.
+
+For every suggestion (including standard refactoring findings), explain the AI agent impact alongside the engineering cost. If codebase context is provided (callers, centrality, hotspot status), cite those metrics as evidence of the impact radius.`;
+
+/**
+ * Options for building the slim system prompt.
+ */
+export interface SlimSystemPromptOptions {
+  readonly agentFriendliness?: boolean | undefined;
+}
+
 /**
  * Returns the language-agnostic slim system prompt for the pipeline review stage.
  */
-export function buildSlimSystemPrompt(): string {
+export function buildSlimSystemPrompt(options?: SlimSystemPromptOptions): string {
+  if (options?.agentFriendliness) {
+    return SLIM_SYSTEM_PROMPT + AGENT_FRIENDLINESS_ADDENDUM;
+  }
   return SLIM_SYSTEM_PROMPT;
 }
 
@@ -154,6 +187,7 @@ export interface DynamicPromptInput {
   readonly knowledge: readonly KnowledgeDocument[];
   readonly graphContext?: FileGraphContext | undefined;
   readonly learnings?: ReviewLearnings | undefined;
+  readonly agentFriendliness?: boolean | undefined;
 }
 
 /**
@@ -199,6 +233,13 @@ export function buildDynamicFilePrompt(input: DynamicPromptInput): string {
       ...(callerList.length > 0 ? [`Callers: ${callerList}`] : []),
       `Centrality: ${input.graphContext.centrality}`,
       ...(input.graphContext.isHotspot ? ["This file is a change hotspot."] : []),
+    );
+  }
+
+  if (input.agentFriendliness && input.graphContext) {
+    parts.push(
+      "",
+      "Use the caller count, centrality score, and hotspot status above as evidence when explaining AI agent impact in your suggestions.",
     );
   }
 
