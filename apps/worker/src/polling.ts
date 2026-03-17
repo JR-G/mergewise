@@ -129,14 +129,11 @@ export function createPollingLoopController(
       return;
     }
 
-    const pendingPollPromise = Promise.resolve().then(() => pollCycle()).catch((error: unknown) => {
+    inFlightPollPromise = Promise.resolve().then(() => pollCycle()).catch((error: unknown) => {
       const details = error instanceof Error ? error.stack ?? error.message : String(error);
       errorLogger(`[worker] poll cycle failed: ${details}`);
-    });
-    inFlightPollPromise = pendingPollPromise.finally(() => {
-      if (inFlightPollPromise === pendingPollPromise) {
-        inFlightPollPromise = null;
-      }
+    }).finally(() => {
+      inFlightPollPromise = null;
     });
   };
 

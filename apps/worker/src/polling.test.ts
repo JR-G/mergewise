@@ -168,6 +168,34 @@ describe("createPollingLoopController", () => {
       "pollIntervalMs must be a finite positive number",
     );
   });
+
+  it("continues polling after the first cycle completes", async () => {
+    let pollCount = 0;
+    let capturedCallback: (() => void) | undefined;
+
+    const controller = createPollingLoopController(
+      100,
+      async () => { pollCount++; },
+      {
+        setIntervalFn: (callback, _delay) => { capturedCallback = callback; return 1 as unknown as WorkerPollingTimerHandle; },
+        clearIntervalFn: () => {},
+      },
+    );
+
+    controller.start();
+
+    capturedCallback?.();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(pollCount).toBe(1);
+
+    capturedCallback?.();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(pollCount).toBe(2);
+
+    capturedCallback?.();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(pollCount).toBe(3);
+  });
 });
 
 describe("createProcessedKeyState", () => {
