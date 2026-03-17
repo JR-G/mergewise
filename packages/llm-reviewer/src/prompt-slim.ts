@@ -1,10 +1,12 @@
 import type { DiffHunk, FileDiff } from "@mergewise/shared-types";
+import type { AntiPattern } from "./anti-pattern-types";
 import type { StructuralSignals } from "./signals";
 import type {
   KnowledgeDocument,
   FileGraphContext,
   ReviewLearnings,
 } from "./pipeline-types";
+import { buildAntiPatternReferenceTable } from "./anti-pattern-table";
 import { formatKnowledgeSection } from "./knowledge/format";
 import { computeContextWindows } from "./prompt";
 
@@ -152,6 +154,7 @@ export interface DynamicPromptInput {
   readonly fullContent: string | null;
   readonly signals: StructuralSignals;
   readonly knowledge: readonly KnowledgeDocument[];
+  readonly filteredPatterns?: readonly AntiPattern[] | undefined;
   readonly graphContext?: FileGraphContext | undefined;
   readonly learnings?: ReviewLearnings | undefined;
 }
@@ -190,6 +193,14 @@ export function buildDynamicFilePrompt(input: DynamicPromptInput): string {
   if (knowledgeSection.length > 0) {
     parts.push("");
     parts.push(knowledgeSection);
+  }
+
+  const patternTable = input.filteredPatterns
+    ? buildAntiPatternReferenceTable(input.filteredPatterns)
+    : "";
+  if (patternTable.length > 0) {
+    parts.push("");
+    parts.push(patternTable);
   }
 
   if (input.graphContext) {

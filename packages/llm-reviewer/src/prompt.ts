@@ -1,6 +1,7 @@
 import type { DiffHunk, FileDiff, RepoLearnings } from "@mergewise/shared-types";
 import type { AntiPattern } from "./anti-patterns";
 import { ANTI_PATTERNS } from "./anti-patterns";
+import { buildAntiPatternReferenceTable } from "./anti-pattern-table";
 import type { StructuralSignals } from "./signals";
 
 const CONTEXT_PADDING = 50;
@@ -123,27 +124,6 @@ function buildFileContextSection(
   }
 
   return parts;
-}
-
-const escapePipe = (value: string): string => value.replaceAll("|", "\\|");
-
-function buildAntiPatternReferenceTable(
-  patterns: readonly AntiPattern[],
-): string {
-  if (patterns.length === 0) return "";
-  const header =
-    "| id | title | category | principle | detectionHint |\n| --- | --- | --- | --- | --- |";
-  const rows = patterns.map(
-    (pattern) =>
-      `| ${escapePipe(pattern.id)} | ${escapePipe(pattern.title)} | ${escapePipe(pattern.category)} | ${escapePipe(pattern.principle)} | ${escapePipe(pattern.detectionHint)} |`,
-  );
-  return `## Anti-pattern reference (recognition aid — not a checklist)
-
-Use this table to **confirm** a problem you have already identified — do not scan it looking for patterns to match. A detection hint describes executable code structure, not string content, comments, or data objects. When you flag a catalogued pattern, reference its id.
-
-${header}\n${rows.join("\n")}
-
-`;
 }
 
 function buildCoreFewShotExamples(): string {
