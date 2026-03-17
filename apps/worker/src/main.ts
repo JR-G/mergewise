@@ -239,9 +239,9 @@ export function startWorkerProcess(
 
   const pollAndProcessJobs = async (): Promise<void> => {
     const didRun = await runPollCycleWithInFlightGuard(pollCycleState, async () => {
-      let readResult: Awaited<ReturnType<typeof readAllQueueJobs>>;
+      let readResult: ReturnType<typeof readAllQueueJobs>;
       try {
-        readResult = await readAllQueueJobsFn(undefined, undefined, currentByteOffset);
+        readResult = readAllQueueJobsFn(undefined, undefined, currentByteOffset);
       } catch (error) {
         const details = error instanceof Error ? error.stack ?? error.message : String(error);
         errorLogger(`[worker] failed to read queued jobs: ${details}`);

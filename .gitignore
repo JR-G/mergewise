@@ -38,3 +38,6 @@ packages/eval/results/
 docs/internal/
 .mergewise-runtime/
 .claude/
+
+# lefthook generated hooks
+.hooks/

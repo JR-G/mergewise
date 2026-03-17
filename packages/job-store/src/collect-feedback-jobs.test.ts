@@ -134,11 +134,11 @@ describe("enqueueCollectFeedbackJob", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test("round-trips enqueue then read via readAllQueueJobs", async () => {
+  test("round-trips enqueue then read via readAllQueueJobs", () => {
     const feedbackJob = makeFeedbackJob();
     enqueueCollectFeedbackJob(feedbackJob, filePath);
 
-    const result = await readAllQueueJobs(filePath);
+    const result = readAllQueueJobs(filePath);
     expect(result.jobs).toHaveLength(1);
     expect(result.jobs[0]).toEqual(feedbackJob);
   });
