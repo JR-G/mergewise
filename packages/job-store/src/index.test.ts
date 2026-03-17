@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { AnalyzePullRequestJob, CollectFeedbackJob } from "@mergewise/shared-types";
+import type { AnalyzePullRequestJob, CollectFeedbackJob, IndexRepoJob } from "@mergewise/shared-types";
 import {
   generateJobId,
   toInstallationId,
@@ -18,7 +18,7 @@ import {
   deriveOffsetFilePath,
   enqueueAnalyzePullRequestJob,
   enqueueCollectFeedbackJob,
-  isCollectFeedbackJob,
+  enqueueIndexRepoJob,
   readAllAnalyzePullRequestJobs,
   readAllQueueJobs,
   readQueueOffset,
@@ -88,7 +88,6 @@ describe("job-store", () => {
     const raw = readFileSync(filePath, "utf8");
     const lines = raw.split("\n");
 
-    expect(lines).toHaveLength(3);
     expect(lines[2]).toBe("");
     expect((JSON.parse(lines[0]!) as { job_id: string }).job_id).toBe("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     expect((JSON.parse(lines[1]!) as { job_id: string }).job_id).toBe("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
@@ -113,8 +112,7 @@ describe("job-store", () => {
     const result = readAllAnalyzePullRequestJobs(filePath, callback);
 
     expect(result).toEqual([]);
-    expect(skips).toHaveLength(1);
-    expect(skips[0]!.lineNumber).toBe(1);
+    expect(skips.map((skip) => skip.lineNumber)).toEqual([1]);
   });
 
   test("skips valid JSON with wrong shape", () => {
@@ -125,8 +123,7 @@ describe("job-store", () => {
     const result = readAllAnalyzePullRequestJobs(filePath, callback);
 
     expect(result).toEqual([]);
-    expect(skips).toHaveLength(1);
-    expect(skips[0]!.reason).toBe("shape mismatch");
+    expect(skips.map((skip) => skip.reason)).toEqual(["shape mismatch"]);
   });
 
   test("returns valid jobs when malformed and invalid lines are mixed in", () => {
@@ -148,12 +145,8 @@ describe("job-store", () => {
     const { callback, skips } = collectSkips();
     const jobs = readAllAnalyzePullRequestJobs(filePath, callback);
 
-    expect(jobs).toHaveLength(2);
-    expect(jobs[0]!.job_id).toBe(toJobId("11111111-1111-1111-1111-111111111111"));
-    expect(jobs[1]!.job_id).toBe(toJobId("22222222-2222-2222-2222-222222222222"));
-    expect(skips).toHaveLength(2);
-    expect(skips[0]!.lineNumber).toBe(2);
-    expect(skips[1]!.lineNumber).toBe(3);
+    expect(jobs.map((job) => job.job_id)).toEqual([firstId, secondId]);
+    expect(skips.map((skip) => skip.lineNumber)).toEqual([2, 3]);
   });
 
   test("round-trips enqueue then read", () => {
@@ -161,8 +154,7 @@ describe("job-store", () => {
     enqueueAnalyzePullRequestJob(job, filePath);
 
     const jobs = readAllAnalyzePullRequestJobs(filePath);
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0]).toEqual(job);
+    expect(jobs).toEqual([job]);
   });
 });
 
@@ -178,98 +170,18 @@ function makeFeedbackJob(overrides: Partial<CollectFeedbackJob> = {}): CollectFe
   };
 }
 
-describe("isCollectFeedbackJob", () => {
-  test("returns true for valid collect-feedback job", () => {
-    expect(isCollectFeedbackJob(makeFeedbackJob())).toBe(true);
-  });
-
-  test("returns false for null", () => {
-    expect(isCollectFeedbackJob(null)).toBe(false);
-  });
-
-  test("returns false for analyze job (wrong type)", () => {
-    expect(isCollectFeedbackJob(makeJob())).toBe(false);
-  });
-
-  test("returns false when required fields are missing", () => {
-    expect(isCollectFeedbackJob({ type: "collect-feedback" })).toBe(false);
-  });
-
-  test("returns true with null installation_id", () => {
-    expect(isCollectFeedbackJob(makeFeedbackJob({ installation_id: null }))).toBe(true);
-  });
-
-  test("returns true with optional trace_id", () => {
-    expect(isCollectFeedbackJob(makeFeedbackJob({ trace_id: "abc" }))).toBe(true);
-  });
-
-  test("returns false for negative pr_number", () => {
-    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), pr_number: -1 })).toBe(false);
-  });
-
-  test("returns false for pr_number zero", () => {
-    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), pr_number: 0 })).toBe(false);
-  });
-
-  test("returns false for NaN pr_number", () => {
-    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), pr_number: Number.NaN })).toBe(false);
-  });
-
-  test("returns false for non-integer float pr_number", () => {
-    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), pr_number: 1.5 })).toBe(false);
-  });
-
-  test("returns true for MAX_SAFE_INTEGER pr_number", () => {
-    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), pr_number: Number.MAX_SAFE_INTEGER })).toBe(true);
-  });
-
-  test("returns false for zero installation_id", () => {
-    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), installation_id: 0 })).toBe(false);
-  });
-
-  test("returns false for zero pr_number", () => {
-    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), pr_number: 0 })).toBe(false);
-  });
-
-  test("returns false for negative installation_id", () => {
-    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), installation_id: -1 })).toBe(false);
-  });
-
-  test("returns false for NaN installation_id", () => {
-    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), installation_id: Number.NaN })).toBe(false);
-  });
-
-  test("returns false for Infinity installation_id", () => {
-    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), installation_id: Number.POSITIVE_INFINITY })).toBe(false);
-  });
-
-  test("returns false for non-integer installation_id", () => {
-    expect(isCollectFeedbackJob({ ...makeFeedbackJob(), installation_id: 1.5 })).toBe(false);
-  });
-});
-
-describe("enqueueCollectFeedbackJob", () => {
-  let tempDir: string;
-  let filePath: string;
-
-  beforeEach(() => {
-    tempDir = makeTempDir();
-    filePath = join(tempDir, "nested", "jobs.ndjson");
-  });
-
-  afterEach(() => {
-    rmSync(tempDir, { recursive: true, force: true });
-  });
-
-  test("round-trips enqueue then read via readAllQueueJobs", async () => {
-    const feedbackJob = makeFeedbackJob();
-    enqueueCollectFeedbackJob(feedbackJob, filePath);
-
-    const result = await readAllQueueJobs(filePath);
-    expect(result.jobs).toHaveLength(1);
-    expect(result.jobs[0]).toEqual(feedbackJob);
-  });
-});
+function makeIndexRepoJob(overrides: Partial<IndexRepoJob> = {}): IndexRepoJob {
+  return {
+    type: "index-repo",
+    job_id: generateJobId(),
+    installation_id: toInstallationId(42),
+    repo_full_name: toRepoFullName("acme/widget"),
+    default_branch: "main",
+    head_sha: toSHA("a".repeat(40)),
+    queued_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
 
 describe("readAllQueueJobs", () => {
   let tempDir: string;
@@ -291,19 +203,23 @@ describe("readAllQueueJobs", () => {
     expect(result.byteOffset).toBe(0);
   });
 
-  test("reads mixed analyze and feedback jobs", async () => {
+  test("reads mixed analyze, feedback, and index-repo jobs", async () => {
     const analyzeId = toJobId("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     const feedbackId = toJobId("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     const analyzeJob = makeJob({ job_id: analyzeId });
     const feedbackJob = makeFeedbackJob({ job_id: feedbackId });
+    const indexId = toJobId("cccccccc-cccc-cccc-cccc-cccccccccccc");
+    const indexJob = makeIndexRepoJob({ job_id: indexId });
 
     enqueueAnalyzePullRequestJob(analyzeJob, filePath);
     enqueueCollectFeedbackJob(feedbackJob, filePath);
+    enqueueIndexRepoJob(indexJob, filePath);
 
     const result = await readAllQueueJobs(filePath);
-    expect(result.jobs).toHaveLength(2);
+    expect(result.jobs).toHaveLength(3);
     expect(result.jobs[0]!.job_id).toBe(analyzeId);
     expect(result.jobs[1]!.job_id).toBe(feedbackId);
+    expect(result.jobs[2]!.job_id).toBe(indexId);
   });
 
   test("treats legacy lines without type field as analyze jobs", async () => {

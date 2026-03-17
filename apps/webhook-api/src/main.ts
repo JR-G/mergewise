@@ -1,16 +1,19 @@
-import { enqueueAnalyzePullRequestJob, enqueueCollectFeedbackJob } from "@mergewise/job-store";
+import { enqueueAnalyzePullRequestJob, enqueueCollectFeedbackJob, enqueueIndexRepoJob } from "@mergewise/job-store";
 
 import {
   buildAnalyzePullRequestJob,
   buildCollectFeedbackJob,
+  buildIndexRepoJob,
   cancelOrphanedCheckRun,
   createPendingCheckRun,
   createWebhookErrorResponse,
   createWebhookJsonResponse,
   getRequestId,
   isClosedOrMergedPullRequest,
+  isDefaultBranchPush,
   isDraftPullRequest,
   isPullRequestWebhookEvent,
+  isPushWebhookEvent,
   isSupportedPullRequestAction,
   isWebhookSignatureValid,
   loadConfig,
@@ -19,6 +22,75 @@ import {
 } from "./index";
 
 const config = loadConfig();
+
+function handlePushEvent(
+  payload: unknown,
+  requestId: string,
+  eventName: string,
+): Response {
+  if (!isPushWebhookEvent(payload)) {
+    return createWebhookJsonResponse(
+      { status: "ignored", request_id: requestId, reason: "unsupported_push_payload" },
+      202,
+      requestId,
+    );
+  }
+
+  if (!isDefaultBranchPush(payload)) {
+    return createWebhookJsonResponse(
+      { status: "ignored", request_id: requestId, reason: "non_default_branch_push" },
+      202,
+      requestId,
+    );
+  }
+
+  const indexJob = buildIndexRepoJob(payload, requestId);
+  try {
+    enqueueIndexRepoJob(indexJob);
+  } catch (error) {
+    const cause = error instanceof Error ? error.stack ?? error.message : String(error);
+    logWebhookFailure({
+      event: "webhook_request_failed",
+      request_id: requestId,
+      http_status: 503,
+      error_code: "queue_enqueue_failed",
+      message: "Failed to queue index-repo job",
+      github_event: eventName,
+      repository_full_name: indexJob.repo_full_name,
+      job_id: indexJob.job_id,
+      cause,
+    });
+    return createWebhookErrorResponse(
+      "queue_enqueue_failed",
+      "Failed to queue index-repo job",
+      503,
+      requestId,
+    );
+  }
+
+  console.log(
+    JSON.stringify({
+      event: "webhook_index_job_queued",
+      request_id: requestId,
+      trace_id: indexJob.trace_id,
+      job_id: indexJob.job_id,
+      repo_full_name: indexJob.repo_full_name,
+      head_sha: indexJob.head_sha,
+      default_branch: indexJob.default_branch,
+    }),
+  );
+
+  return createWebhookJsonResponse(
+    {
+      status: "queued",
+      request_id: requestId,
+      job_id: indexJob.job_id,
+      repo: indexJob.repo_full_name,
+    },
+    200,
+    requestId,
+  );
+}
 
 Bun.serve({
   port: config.port,
@@ -53,7 +125,7 @@ Bun.serve({
       );
     }
 
-    if (eventName !== "pull_request") {
+    if (eventName !== "pull_request" && eventName !== "push") {
       return createWebhookJsonResponse(
         { status: "ignored", request_id: requestId, reason: "event_ignored" },
         202,
@@ -103,6 +175,10 @@ Bun.serve({
         400,
         requestId,
       );
+    }
+
+    if (eventName === "push") {
+      return handlePushEvent(payload, requestId, eventName);
     }
 
     if (!isPullRequestWebhookEvent(payload)) {

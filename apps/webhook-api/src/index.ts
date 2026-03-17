@@ -13,6 +13,8 @@ import type {
   CollectFeedbackJob,
   GitHubPullRequestAction,
   GitHubPullRequestWebhookEvent,
+  GitHubPushWebhookEvent,
+  IndexRepoJob,
 } from "@mergewise/shared-types";
 
 import {
@@ -269,6 +271,91 @@ export function buildCollectFeedbackJob(
     trace_id: traceId,
     queued_at: new Date().toISOString(),
   };
+}
+
+/**
+ * Narrowly validates that a payload looks like the push webhook shape.
+ *
+ * @param payload - Parsed JSON payload.
+ * @returns `true` when required push event fields are present.
+ */
+export function isPushWebhookEvent(
+  payload: unknown,
+): payload is GitHubPushWebhookEvent {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  const event = payload as Partial<GitHubPushWebhookEvent>;
+  if (
+    typeof event.ref !== "string" ||
+    typeof event.after !== "string"
+  ) {
+    return false;
+  }
+
+  const repository = event.repository;
+  if (!repository) {
+    return false;
+  }
+
+  if (
+    typeof repository.full_name !== "string" ||
+    typeof repository.default_branch !== "string"
+  ) {
+    return false;
+  }
+
+  if (
+    event.installation !== undefined &&
+    event.installation !== null &&
+    (typeof event.installation !== "object" ||
+      typeof event.installation.id !== "number" ||
+      !Number.isSafeInteger(event.installation.id) ||
+      event.installation.id <= 0)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Returns whether a push event targets the repository's default branch.
+ *
+ * @param payload - Validated push webhook event.
+ * @returns `true` when the pushed ref matches `refs/heads/<default_branch>`.
+ */
+export function isDefaultBranchPush(
+  payload: GitHubPushWebhookEvent,
+): boolean {
+  return payload.ref === `refs/heads/${payload.repository.default_branch}`;
+}
+
+/**
+ * Converts a push webhook event into an index-repo job payload.
+ *
+ * @param payload - Parsed and validated push webhook event.
+ * @param traceId - Optional end-to-end trace identifier sourced from request handling.
+ * @returns Local queue job payload for repo indexing.
+ */
+export function buildIndexRepoJob(
+  payload: GitHubPushWebhookEvent,
+  traceId?: string,
+): IndexRepoJob {
+  const base = {
+    type: "index-repo" as const,
+    job_id: generateJobId(),
+    installation_id: payload.installation?.id ?? null,
+    repo_full_name: payload.repository.full_name,
+    default_branch: payload.repository.default_branch,
+    head_sha: payload.after,
+    queued_at: new Date().toISOString(),
+  };
+  if (traceId !== undefined) {
+    return { ...base, trace_id: traceId };
+  }
+  return base;
 }
 
 /**

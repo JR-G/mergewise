@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { buildPrGraphContext, formatGraphContextPrompt } from "./graph-context.ts";
-import type { DebtGraph, DebtNode, DebtEdge, HotspotEntry } from "./graph-types.ts";
+import { buildPrGraphContext, formatGraphContextPrompt } from "./graph-context";
+import type { DebtGraph, DebtNode, DebtEdge, HotspotEntry } from "./graph-types";
 
 function makeNode(filePath: string, centrality: number): DebtNode {
   return {

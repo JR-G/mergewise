@@ -1,4 +1,4 @@
-import type { DebtProfile, DebtFinding, HotspotEntry, ScanSummary } from "./graph-types.ts";
+import type { DebtProfile, DebtFinding, HotspotEntry, ScanSummary } from "./graph-types";
 
 export interface HotspotChange {
   readonly filePath: string;

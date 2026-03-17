@@ -2,33 +2,33 @@ import { afterEach, describe, it, expect } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { execSync, execFileSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import { scan } from "./scanner.ts";
 import type { ScanOptions } from "./scanner.ts";
 
-function gitEnvFor(directory: string): Record<string, string | undefined> {
+function isolatedGitEnv(directory: string): Record<string, string | undefined> {
   const env = { ...process.env };
   env["GIT_DIR"] = join(directory, ".git");
   env["GIT_WORK_TREE"] = directory;
   delete env["GIT_INDEX_FILE"];
+  delete env["GIT_AUTHOR_NAME"];
+  delete env["GIT_AUTHOR_EMAIL"];
+  delete env["GIT_COMMITTER_NAME"];
+  delete env["GIT_COMMITTER_EMAIL"];
   return env;
 }
 
 function initGitRepo(directory: string, files: string[]): void {
-  const initEnv = { ...process.env };
-  delete initEnv["GIT_DIR"];
-  delete initEnv["GIT_WORK_TREE"];
-  delete initEnv["GIT_INDEX_FILE"];
-  execSync("git init", { cwd: directory, stdio: "ignore", env: initEnv });
-
-  const env = gitEnvFor(directory);
-  execSync("git config user.email test@test.com", { cwd: directory, stdio: "ignore", env });
-  execSync("git config user.name test", { cwd: directory, stdio: "ignore", env });
+  const env = isolatedGitEnv(directory);
+  const opts = { cwd: directory, stdio: "ignore" as const, env };
+  execSync(`git init "${directory}"`, opts);
+  execSync(`git -C "${directory}" config user.email test@test.com`, opts);
+  execSync(`git -C "${directory}" config user.name test`, opts);
   for (const filePath of files) {
-    execFileSync("git", ["add", "--", filePath], { cwd: directory, stdio: "ignore", env });
+    execSync(`git -C "${directory}" add "${filePath}"`, opts);
   }
   if (files.length > 0) {
-    execSync('git commit -m "init"', { cwd: directory, stdio: "ignore", env });
+    execSync(`git -C "${directory}" commit -m "init"`, opts);
   }
 }
 

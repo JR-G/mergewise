@@ -1,5 +1,5 @@
-import type { DebtFinding, DebtProfile } from "./graph-types.ts";
-import type { HotspotChange, ScanComparison } from "./compare.ts";
+import type { DebtFinding, DebtProfile } from "./graph-types";
+import type { HotspotChange, ScanComparison } from "./compare";
 
 const MAX_HOTSPOTS = 50;
 const MAX_FINDINGS_PER_FILE = 20;
@@ -9,6 +9,24 @@ const MAX_COMPARISON_ITEMS = 30;
  * Formats a debt profile as a JSON string.
  */
 export function formatJsonReport(profile: DebtProfile): string {
+  const cappedHotspots = profile.hotspots.slice(0, MAX_HOTSPOTS);
+
+  const groupedByFile = new Map<string, DebtFinding[]>();
+  for (const finding of profile.findings) {
+    const existing = groupedByFile.get(finding.nodeId);
+    if (existing) {
+      existing.push(finding);
+    } else {
+      groupedByFile.set(finding.nodeId, [finding]);
+    }
+  }
+  const cappedFindings: DebtFinding[] = [];
+  for (const fileFindings of groupedByFile.values()) {
+    for (const finding of fileFindings.slice(0, MAX_FINDINGS_PER_FILE)) {
+      cappedFindings.push(finding);
+    }
+  }
+
   const serialisable = {
     repoPath: profile.repoPath,
     scannedAt: profile.scannedAt,
@@ -18,8 +36,8 @@ export function formatJsonReport(profile: DebtProfile): string {
       totalFindings: profile.findings.length,
       hotspotCount: profile.hotspots.length,
     },
-    hotspots: profile.hotspots,
-    findings: profile.findings,
+    hotspots: cappedHotspots,
+    findings: cappedFindings,
   };
 
   return JSON.stringify(serialisable, null, 2);

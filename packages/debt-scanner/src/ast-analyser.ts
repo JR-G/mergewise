@@ -1,7 +1,7 @@
 import type { StructuralSignals } from "@mergewise/llm-reviewer";
 import { relative } from "node:path";
 import ts from "typescript";
-import type { DebtNode } from "./graph-types.ts";
+import type { DebtNode } from "./graph-types";
 
 const TSX_PATTERN = /\.tsx$/i;
 

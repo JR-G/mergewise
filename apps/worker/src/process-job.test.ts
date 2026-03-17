@@ -641,13 +641,13 @@ describe("processAnalyzePullRequestJob", () => {
         createCheckRunFn: async () => {
           throw new Error("Checks API permission denied");
         },
-        logError: (msg) => errors.push(msg),
+        logError: (message) => errors.push(message),
       },
     );
 
     expect(summary.jobId).toBe(checkFailJob.job_id);
-    expect(errors.some((msg) => msg.includes("in-progress check run"))).toBe(true);
-    expect(errors.some((msg) => msg.includes("check_run_failed"))).toBe(true);
+    expect(errors.some((message) => message.includes("in-progress check run"))).toBe(true);
+    expect(errors.some((message) => message.includes("check_run_failed"))).toBe(true);
   });
 
   test("skips review submission when there are zero inline comments", async () => {
@@ -755,7 +755,7 @@ describe("processAnalyzePullRequestJob", () => {
             failedRuleIds: [],
           };
         },
-        logInfo: (msg) => logs.push(msg),
+        logInfo: (message) => logs.push(message),
       },
     );
 
@@ -763,7 +763,7 @@ describe("processAnalyzePullRequestJob", () => {
     expect(summary.totalFindings).toBe(0);
     expect(summary.totalRules).toBe(0);
     expect(summary.postedCommentCount).toBe(0);
-    expect(logs.some((msg) => msg.includes("skipped_closed_pr"))).toBe(true);
+    expect(logs.some((message) => message.includes("skipped_closed_pr"))).toBe(true);
   });
 
   test("completes queued check run when PR is closed and check_run_id exists", async () => {
@@ -1053,7 +1053,7 @@ describe("processAnalyzePullRequestJob feedback logging", () => {
         deliveryMode: "github",
         rules: [createRule("test/rule-a")],
         githubFetchOptions: workerFetchOptions,
-        logInfo: (msg: string) => logs.push(msg),
+        logInfo: (message: string) => logs.push(message),
         logError: () => {},
         createGitHubAppJwtFn: () => "fake-jwt",
         exchangeInstallationAccessTokenFn: async () => ({
@@ -1120,7 +1120,7 @@ describe("processAnalyzePullRequestJob feedback logging", () => {
         deliveryMode: "github",
         rules: [],
         githubFetchOptions: workerFetchOptions,
-        logInfo: (msg: string) => logs.push(msg),
+        logInfo: (message: string) => logs.push(message),
         logError: () => {},
         createGitHubAppJwtFn: () => "fake-jwt",
         exchangeInstallationAccessTokenFn: async () => ({
@@ -1155,5 +1155,171 @@ describe("processAnalyzePullRequestJob feedback logging", () => {
 
     const summaryLine = logs.find((line) => line.includes("feedback_summary"));
     expect(summaryLine).toBeUndefined();
+  });
+});
+
+describe("processAnalyzePullRequestJob debt store wiring", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  test("logs graph context when debtStore returns a scan with hotspots", async () => {
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
+
+    const logs: string[] = [];
+
+    const debtJob = createAnalyzeJob();
+
+    const summary = await processAnalyzePullRequestJob(
+      debtJob,
+      {
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        fetchPullRequestFn: async () => openPullRequestState,
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => ({
+          findings: [],
+          summary: {
+            totalRules: 0,
+            successfulRules: 0,
+            failedRules: 0,
+            totalFindings: 0,
+            findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          },
+          failedRuleIds: [],
+        }),
+        logInfo: (message: string) => logs.push(message),
+        logError: () => {},
+        debtStore: {
+          latestScan: () => ({
+            repoPath: "acme/widget",
+            scannedAt: "2026-01-01T00:00:00Z",
+            graph: { nodes: new Map([["src/index.ts", { id: "src/index.ts", kind: "file" as const, filePath: "src/index.ts", signals: { componentLineCount: 0, hookCount: 0, classCount: 0, functionCount: 1, maxFunctionLineCount: 10, maxNestingDepth: 1, maxParameterCount: 1, typeAssertionCount: 0, importCount: 2 }, lineCount: 20, centrality: 0.5 }]]), edges: [] },
+            findings: [],
+            hotspots: [{ nodeId: "src/index.ts", filePath: "src/index.ts", score: 0.8, centrality: 0.5, signalDensity: 0.3, lineCount: 20 }],
+          }),
+          saveScan: () => "scan-id",
+          listScans: () => [],
+          loadScan: () => null,
+          close: () => {},
+        },
+      },
+    );
+
+    expect(summary.jobId).toBe(debtJob.job_id);
+    const graphLine = logs.find((line) => line.includes("graph_context"));
+    expect(graphLine).toBeDefined();
+    expect(graphLine).toContain("repo=acme/widget");
+    expect(graphLine).toContain("hotspots=1");
+    expect(graphLine).toContain("nodes=1");
+  });
+
+  test("proceeds without toolkit when debtStore returns no scan", async () => {
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
+
+    const logs: string[] = [];
+    const errors: string[] = [];
+    const noScanJob = createAnalyzeJob();
+
+    const summary = await processAnalyzePullRequestJob(
+      noScanJob,
+      {
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        fetchPullRequestFn: async () => openPullRequestState,
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => ({
+          findings: [],
+          summary: {
+            totalRules: 0,
+            successfulRules: 0,
+            failedRules: 0,
+            totalFindings: 0,
+            findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          },
+          failedRuleIds: [],
+        }),
+        logInfo: (message: string) => logs.push(message),
+        logError: (message: string) => errors.push(message),
+        debtStore: {
+          latestScan: () => null,
+          saveScan: () => "scan-id",
+          listScans: () => [],
+          loadScan: () => null,
+          close: () => {},
+        },
+      },
+    );
+
+    expect(summary.jobId).toBe(noScanJob.job_id);
+    const graphLine = logs.find((line) => line.includes("graph_context"));
+    expect(graphLine).toBeUndefined();
+    expect(errors.some((message) => message.includes("graph_context"))).toBe(false);
+  });
+
+  test("logs error and proceeds when debtStore.latestScan throws", async () => {
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
+
+    const logs: string[] = [];
+    const errors: string[] = [];
+    const errorJob = createAnalyzeJob();
+
+    const summary = await processAnalyzePullRequestJob(
+      errorJob,
+      {
+        githubFetchOptions: workerFetchOptions,
+        rules: [],
+        fetchPullRequestFn: async () => openPullRequestState,
+        createGitHubAppJwtFn: () => "jwt",
+        exchangeInstallationAccessTokenFn: async () => ({
+          token: "installation-token",
+          expires_at: "2026-01-01T00:00:00Z",
+        }),
+        fetchPullRequestFilesWithRetryFn: async () => [],
+        executeRulesFn: async () => ({
+          findings: [],
+          summary: {
+            totalRules: 0,
+            successfulRules: 0,
+            failedRules: 0,
+            totalFindings: 0,
+            findingsByCategory: { clean: 0, perf: 0, safety: 0, idiomatic: 0 },
+          },
+          failedRuleIds: [],
+        }),
+        logInfo: (message: string) => logs.push(message),
+        logError: (message: string) => errors.push(message),
+        debtStore: {
+          latestScan: () => { throw new Error("SQLite disk I/O error"); },
+          saveScan: () => "scan-id",
+          listScans: () => [],
+          loadScan: () => null,
+          close: () => {},
+        },
+      },
+    );
+
+    expect(summary.jobId).toBe(errorJob.job_id);
+    const graphSuccessLine = logs.find((line) => line.includes("graph_context"));
+    expect(graphSuccessLine).toBeUndefined();
+    const graphErrorLine = errors.find((line) => line.includes("graph_context_failed"));
+    expect(graphErrorLine).toBeDefined();
+    expect(graphErrorLine).toContain("SQLite disk I/O error");
+    expect(graphErrorLine).toContain("repo=acme/widget");
   });
 });

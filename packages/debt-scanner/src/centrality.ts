@@ -1,4 +1,4 @@
-import type { DebtGraph } from "./graph-types.ts";
+import type { DebtGraph } from "./graph-types";
 
 const DEFAULT_DAMPING = 0.85;
 const DEFAULT_ITERATIONS = 20;

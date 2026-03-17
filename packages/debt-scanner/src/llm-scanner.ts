@@ -5,7 +5,7 @@ import {
   type CompletionResult,
 } from "@mergewise/llm-reviewer";
 import { resolve } from "node:path";
-import type { DebtFinding, HotspotEntry } from "./graph-types.ts";
+import type { DebtFinding, HotspotEntry } from "./graph-types";
 
 const DEFAULT_MAX_TOKENS_PER_FILE = 2048;
 const DEFAULT_TOKEN_BUDGET = 50_000;

@@ -1,6 +1,6 @@
 import { describe, expect, test, afterEach } from "bun:test";
-import { openStore } from "./store.ts";
-import type { DebtProfile, DebtGraph, DebtFinding, HotspotEntry } from "./graph-types.ts";
+import { openStore } from "./store";
+import type { DebtProfile, DebtGraph, DebtFinding, HotspotEntry } from "./graph-types";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { unlinkSync } from "node:fs";
@@ -23,6 +23,18 @@ function makeProfile(overrides: Partial<DebtProfile> = {}): DebtProfile {
         },
         lineCount: 120,
         centrality: 0.5,
+      }],
+      ["src/utils.ts", {
+        id: "src/utils.ts",
+        kind: "file",
+        filePath: "src/utils.ts",
+        signals: {
+          componentLineCount: 0, hookCount: 0, importCount: 0,
+          maxNestingDepth: 1, functionCount: 2, maxFunctionLineCount: 20,
+          maxParameterCount: 1, classCount: 0, typeAssertionCount: 0,
+        },
+        lineCount: 40,
+        centrality: 0.1,
       }],
     ]),
     edges: [{ source: "src/index.ts", target: "src/utils.ts", kind: "imports" }],
@@ -96,6 +108,17 @@ describe("store", () => {
     expect(loaded!.scannedAt).toBe(profile.scannedAt);
     expect(loaded!.hotspots).toEqual(profile.hotspots);
     expect(loaded!.findings).toEqual(profile.findings);
+    expect(loaded!.graph.nodes.size).toBe(profile.graph.nodes.size);
+    expect(loaded!.graph.edges).toEqual(profile.graph.edges);
+
+    const loadedNode = loaded!.graph.nodes.get("src/index.ts");
+    const originalNode = profile.graph.nodes.get("src/index.ts");
+    expect(loadedNode).toBeDefined();
+    expect(loadedNode!.kind).toBe(originalNode!.kind);
+    expect(loadedNode!.filePath).toBe(originalNode!.filePath);
+    expect(loadedNode!.signals).toEqual(originalNode!.signals);
+    expect(loadedNode!.lineCount).toBe(originalNode!.lineCount);
+    expect(loadedNode!.centrality).toBe(originalNode!.centrality);
 
     store.close();
   });

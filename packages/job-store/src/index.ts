@@ -2,7 +2,7 @@ import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, 
 import { createInterface } from "node:readline";
 import { dirname } from "node:path";
 
-import type { AnalyzePullRequestJob, CollectFeedbackJob, QueueJob } from "@mergewise/shared-types";
+import type { AnalyzePullRequestJob, CollectFeedbackJob, IndexRepoJob, QueueJob } from "@mergewise/shared-types";
 import {
   tryParseInstallationId,
   tryParseJobId,
@@ -244,6 +244,44 @@ export function enqueueCollectFeedbackJob(
 }
 
 /**
+ * Determines whether a parsed value matches the index-repo job shape.
+ *
+ * @param value - Parsed JSON value from the local queue file.
+ * @returns `true` when the value satisfies required index-repo job fields.
+ */
+export function isIndexRepoJob(value: unknown): value is IndexRepoJob {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<Record<string, unknown>>;
+  if (candidate["type"] !== "index-repo") return false;
+  if (typeof candidate["job_id"] !== "string" || !tryParseJobId(candidate["job_id"])) return false;
+  if (typeof candidate["repo_full_name"] !== "string" || !tryParseRepoFullName(candidate["repo_full_name"])) return false;
+  if (typeof candidate["default_branch"] !== "string") return false;
+  if (typeof candidate["head_sha"] !== "string" || !tryParseSHA(candidate["head_sha"])) return false;
+  if (typeof candidate["queued_at"] !== "string") return false;
+  if (candidate["trace_id"] !== undefined && typeof candidate["trace_id"] !== "string") return false;
+  if (candidate["installation_id"] !== null && (typeof candidate["installation_id"] !== "number" || !tryParseInstallationId(candidate["installation_id"]))) return false;
+  return true;
+}
+
+/**
+ * Appends an index-repo job as one NDJSON line to the local queue file.
+ *
+ * @param job - Index-repo job payload to persist.
+ * @param filePath - Optional file path override for tests/local customization.
+ * @throws May throw on file system errors (permissions, disk full, etc.).
+ */
+export function enqueueIndexRepoJob(
+  job: IndexRepoJob,
+  filePath = DEFAULT_JOB_FILE_PATH,
+): void {
+  ensureParentDirectory(filePath);
+  appendFileSync(filePath, `${JSON.stringify(job)}\n`, "utf8");
+}
+
+/**
  * Maximum number of jobs read from the queue file in a single call.
  */
 const MAX_QUEUE_SIZE = 10_000;
@@ -320,9 +358,7 @@ export async function readAllQueueJobs(
 
       try {
         const parsed = JSON.parse(line) as unknown;
-        if (isCollectFeedbackJob(parsed)) {
-          jobs.push(parsed);
-        } else if (isAnalyzePullRequestJob(parsed)) {
+        if (isCollectFeedbackJob(parsed) || isIndexRepoJob(parsed) || isAnalyzePullRequestJob(parsed)) {
           jobs.push(parsed);
         } else {
           onSkippedLine(lineNumber, "shape mismatch");

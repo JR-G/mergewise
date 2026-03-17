@@ -25,6 +25,7 @@ import type {
   Rule,
 } from "@mergewise/shared-types";
 import type { FeedbackStore } from "@mergewise/feedback-store";
+import type { DebtStore } from "@mergewise/debt-scanner";
 import type { WorkerGitHubFetchOptions } from "./config";
 import type { WorkerFindingDeliveryOptions } from "./delivery";
 import type { fetchPullRequestFilesWithRetry } from "./github-fetch";
@@ -162,4 +163,8 @@ export interface WorkerProcessingDependencies {
    * Persistent store for PR comment reaction feedback.
    */
   readonly feedbackStore?: FeedbackStore | undefined;
+  /**
+   * Persistent store for repository debt scans and graph context.
+   */
+  readonly debtStore?: DebtStore;
 }
