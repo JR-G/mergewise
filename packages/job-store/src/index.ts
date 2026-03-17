@@ -1,5 +1,4 @@
-import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { createInterface } from "node:readline";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import type { AnalyzePullRequestJob, CollectFeedbackJob, IndexRepoJob, QueueJob } from "@mergewise/shared-types";
@@ -318,11 +317,11 @@ const LINE_SEPARATOR_BYTES = 1;
  * @param startByteOffset - Byte position to resume reading from. Defaults to 0.
  * @returns Parsed queue jobs and the new byte offset after reading.
  */
-export async function readAllQueueJobs(
+export function readAllQueueJobs(
   filePath = DEFAULT_JOB_FILE_PATH,
   onSkippedLine: OnSkippedLine = defaultOnSkippedLine,
   startByteOffset = 0,
-): Promise<QueueReadResult> {
+): QueueReadResult {
   if (startByteOffset !== 0 && (!Number.isFinite(startByteOffset) || !Number.isInteger(startByteOffset) || startByteOffset < 0)) {
     throw new RangeError(`readAllQueueJobs: startByteOffset must be a finite non-negative integer, got ${startByteOffset}`);
   }
@@ -338,42 +337,45 @@ export async function readAllQueueJobs(
     return { jobs: [], byteOffset: safeOffset };
   }
 
+  const fileBuffer = readFileSync(filePath);
+  const slice = safeOffset > 0 ? fileBuffer.subarray(safeOffset) : fileBuffer;
+  const content = slice.toString("utf8");
+  const lines = content.split("\n");
+
   const jobs: QueueJob[] = [];
-  const streamOptions = safeOffset > 0
-    ? { encoding: "utf8" as const, start: safeOffset }
-    : { encoding: "utf8" as const };
-  const stream = createReadStream(filePath, streamOptions);
-  const reader = createInterface({ input: stream, crlfDelay: Infinity });
   let lineNumber = 0;
   let bytesConsumed = 0;
 
-  try {
-    for await (const line of reader) {
-      lineNumber++;
-      bytesConsumed += Buffer.byteLength(line, "utf8") + LINE_SEPARATOR_BYTES;
-
-      if (!line.trim()) {
-        continue;
-      }
-
-      try {
-        const parsed = JSON.parse(line) as unknown;
-        if (isCollectFeedbackJob(parsed) || isIndexRepoJob(parsed) || isAnalyzePullRequestJob(parsed)) {
-          jobs.push(parsed);
-        } else {
-          onSkippedLine(lineNumber, "shape mismatch");
-        }
-      } catch (error) {
-        const details = error instanceof Error ? error.message : String(error);
-        onSkippedLine(lineNumber, details);
-      }
-
-      if (jobs.length >= MAX_QUEUE_SIZE || lineNumber >= MAX_SCAN_LINES) {
-        break;
-      }
+  for (const line of lines) {
+    if (bytesConsumed + Buffer.byteLength(line, "utf8") > slice.byteLength) {
+      break;
     }
-  } finally {
-    reader.close();
+
+    const isLastElement = lineNumber === lines.length - 1;
+    const lineBytes = Buffer.byteLength(line, "utf8");
+    const separatorBytes = isLastElement && !content.endsWith("\n") ? 0 : LINE_SEPARATOR_BYTES;
+    bytesConsumed += lineBytes + separatorBytes;
+    lineNumber++;
+
+    if (!line.trim()) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(line) as unknown;
+      if (isCollectFeedbackJob(parsed) || isIndexRepoJob(parsed) || isAnalyzePullRequestJob(parsed)) {
+        jobs.push(parsed);
+      } else {
+        onSkippedLine(lineNumber, "shape mismatch");
+      }
+    } catch (error) {
+      const details = error instanceof Error ? error.message : String(error);
+      onSkippedLine(lineNumber, details);
+    }
+
+    if (jobs.length >= MAX_QUEUE_SIZE || lineNumber >= MAX_SCAN_LINES) {
+      break;
+    }
   }
 
   return { jobs, byteOffset: Math.min(safeOffset + bytesConsumed, fileSize) };
