@@ -43,7 +43,7 @@
     "test:coverage": "bun test --coverage",
     "test:coverage:check": "bash scripts/check-coverage.sh 80",
     "eval": "bun run packages/eval/src/main.ts",
-    "prepare": "git config core.hooksPath .hooks",
+    "prepare": "git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git config core.hooksPath .hooks || true",
     "prepublishOnly": "bun run lint && bun run typecheck && bun run test"
   },
   "dependencies": {
