@@ -1,0 +1,24 @@
+#!/bin/sh
+
+if [ "$LEFTHOOK" = "0" ]; then
+  exit 0
+fi
+
+if [ "$LEFTHOOK_VERBOSE" = "1" ] || [ "$LEFTHOOK_VERBOSE" = "true" ]; then
+  set -x
+fi
+
+root="$(git rev-parse --show-toplevel)"
+osArch=$(uname | tr '[:upper:]' '[:lower:]')
+cpuArch=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')
+binary="$root/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook"
+
+if test -n "$LEFTHOOK_BIN"; then
+  "$LEFTHOOK_BIN" run "pre-commit" "$@"
+elif test -f "$binary"; then
+  "$binary" run "pre-commit" "$@"
+else
+  echo "lefthook not found at: $binary" >&2
+  echo "Run 'bun install' in this worktree: $root" >&2
+  exit 1
+fi
