@@ -1166,20 +1166,15 @@ describe("processAnalyzePullRequestJob debt store wiring", () => {
   });
 
   test("logs graph context when debtStore returns a scan with hotspots", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     const logs: string[] = [];
 
+    const debtJob = createAnalyzeJob();
+
     const summary = await processAnalyzePullRequestJob(
-      {
-        job_id: "job-debt-scan",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 50,
-        head_sha: "debt123",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
+      debtJob,
       {
         githubFetchOptions: workerFetchOptions,
         rules: [],
@@ -1219,7 +1214,7 @@ describe("processAnalyzePullRequestJob debt store wiring", () => {
       },
     );
 
-    expect(summary.jobId).toBe("job-debt-scan");
+    expect(summary.jobId).toBe(debtJob.job_id);
     const graphLine = logs.find((line) => line.includes("graph_context"));
     expect(graphLine).toBeDefined();
     expect(graphLine).toContain("repo=acme/widget");
@@ -1228,21 +1223,15 @@ describe("processAnalyzePullRequestJob debt store wiring", () => {
   });
 
   test("proceeds without toolkit when debtStore returns no scan", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     const logs: string[] = [];
     const errors: string[] = [];
+    const noScanJob = createAnalyzeJob();
 
     const summary = await processAnalyzePullRequestJob(
-      {
-        job_id: "job-no-debt-scan",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 50,
-        head_sha: "nodebt123",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
+      noScanJob,
       {
         githubFetchOptions: workerFetchOptions,
         rules: [],
@@ -1276,28 +1265,22 @@ describe("processAnalyzePullRequestJob debt store wiring", () => {
       },
     );
 
-    expect(summary.jobId).toBe("job-no-debt-scan");
+    expect(summary.jobId).toBe(noScanJob.job_id);
     const graphLine = logs.find((line) => line.includes("graph_context"));
     expect(graphLine).toBeUndefined();
     expect(errors.some((message) => message.includes("graph_context"))).toBe(false);
   });
 
   test("logs error and proceeds when debtStore.latestScan throws", async () => {
-    process.env.GITHUB_APP_ID = "123";
-    process.env.GITHUB_APP_PRIVATE_KEY = "placeholder-private-key";
+    process.env["GITHUB_APP_ID"] = "123";
+    process.env["GITHUB_APP_PRIVATE_KEY"] = "placeholder-private-key";
 
     const logs: string[] = [];
     const errors: string[] = [];
+    const errorJob = createAnalyzeJob();
 
     const summary = await processAnalyzePullRequestJob(
-      {
-        job_id: "job-debt-error",
-        installation_id: 44,
-        repo_full_name: "acme/widget",
-        pr_number: 50,
-        head_sha: "debterr123",
-        queued_at: "2025-01-01T00:00:00Z",
-      },
+      errorJob,
       {
         githubFetchOptions: workerFetchOptions,
         rules: [],
@@ -1331,7 +1314,7 @@ describe("processAnalyzePullRequestJob debt store wiring", () => {
       },
     );
 
-    expect(summary.jobId).toBe("job-debt-error");
+    expect(summary.jobId).toBe(errorJob.job_id);
     const graphSuccessLine = logs.find((line) => line.includes("graph_context"));
     expect(graphSuccessLine).toBeUndefined();
     const graphErrorLine = errors.find((line) => line.includes("graph_context_failed"));

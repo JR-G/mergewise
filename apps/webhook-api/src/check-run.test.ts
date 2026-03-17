@@ -7,13 +7,19 @@ import {
 import type { WebhookApiConfig } from "./index";
 
 import type { GitHubPullRequestWebhookEvent } from "@mergewise/shared-types";
+import {
+  toInstallationId,
+  toPRNumber,
+  toRepoFullName,
+  toSHA,
+} from "@mergewise/shared-types";
 
 describe("createPendingCheckRun", () => {
   const payload: GitHubPullRequestWebhookEvent = {
     action: "opened",
-    repository: { full_name: "acme/widget" },
-    pull_request: { number: 1, head: { sha: "abc123" } },
-    installation: { id: 99 },
+    repository: { full_name: toRepoFullName("acme/widget") },
+    pull_request: { number: toPRNumber(1), head: { sha: toSHA("abc123".padEnd(40, "0")) } },
+    installation: { id: toInstallationId(99) },
   };
 
   test("returns null when app credentials are missing", async () => {
@@ -55,12 +61,12 @@ describe("createPendingCheckRun", () => {
     );
     expect(result).toBe(77);
     expect(capturedOptions).toBeDefined();
-    expect(capturedOptions?.owner).toBe("acme");
-    expect(capturedOptions?.repository).toBe("widget");
-    expect(capturedOptions?.headSha).toBe("abc123");
-    expect(capturedOptions?.name).toBe("Mergewise");
-    expect(capturedOptions?.status).toBe("queued");
-    expect(capturedOptions?.output).toEqual({
+    expect(capturedOptions?.["owner"]).toBe("acme");
+    expect(capturedOptions?.["repository"]).toBe("widget");
+    expect(capturedOptions?.["headSha"]).toBe("abc123".padEnd(40, "0"));
+    expect(capturedOptions?.["name"]).toBe("Mergewise");
+    expect(capturedOptions?.["status"]).toBe("queued");
+    expect(capturedOptions?.["output"]).toEqual({
       title: "Queued",
       summary: "Waiting for analysis to begin...",
     });
@@ -86,9 +92,9 @@ describe("createPendingCheckRun", () => {
 describe("cancelOrphanedCheckRun", () => {
   const payload: GitHubPullRequestWebhookEvent = {
     action: "opened",
-    repository: { full_name: "acme/widget" },
-    pull_request: { number: 1, head: { sha: "abc123" } },
-    installation: { id: 99 },
+    repository: { full_name: toRepoFullName("acme/widget") },
+    pull_request: { number: toPRNumber(1), head: { sha: toSHA("abc123".padEnd(40, "0")) } },
+    installation: { id: toInstallationId(99) },
   };
 
   const validConfig: WebhookApiConfig = {
@@ -113,9 +119,9 @@ describe("cancelOrphanedCheckRun", () => {
     });
 
     expect(capturedOptions).toBeDefined();
-    expect(capturedOptions?.checkRunId).toBe(42);
-    expect(capturedOptions?.status).toBe("completed");
-    expect(capturedOptions?.conclusion).toBe("failure");
+    expect(capturedOptions?.["checkRunId"]).toBe(42);
+    expect(capturedOptions?.["status"]).toBe("completed");
+    expect(capturedOptions?.["conclusion"]).toBe("failure");
   });
 
   test("does nothing when app credentials are missing", async () => {

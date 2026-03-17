@@ -10,7 +10,7 @@ import {
 import { loadMergewiseConfig } from "@mergewise/config-loader";
 import { openFeedbackStore, type FeedbackStore } from "@mergewise/feedback-store";
 import { openStore, type DebtStore } from "@mergewise/debt-scanner";
-import type { CollectFeedbackJob, IndexRepoJob, QueueJob } from "@mergewise/shared-types";
+import type { CollectFeedbackJob, IndexRepoJob } from "@mergewise/shared-types";
 
 import {
   buildIdempotencyKey,
@@ -216,7 +216,7 @@ export function startWorkerProcess(
     throw storeError;
   }
 
-  const openDebtStoreFn = dependencies.openDebtStoreFn ?? (() => openStore(DEFAULT_DEBT_DB_PATH));
+  const openDebtStoreFn = dependencies.openDebtStoreFn ?? ((): DebtStore => openStore(DEFAULT_DEBT_DB_PATH));
   let debtStore: DebtStore | undefined;
   try {
     debtStore = openDebtStoreFn();
@@ -276,11 +276,12 @@ export function startWorkerProcess(
         }
 
         if (isIndexRepoJob(queuedJob)) {
-          await handleIndexJob(
+          const indexOk = await handleIndexJob(
             queuedJob, debtStore, processedKeyState, config.maxProcessedKeys,
             processIndexRepoJobFn, config.githubApiBaseUrl,
             infoLogger, errorLogger,
           );
+          batchFailed = batchFailed || !indexOk;
           continue;
         }
 
@@ -296,7 +297,7 @@ export function startWorkerProcess(
             mergewiseConfig,
             githubFetchOptions,
             feedbackStore,
-            debtStore,
+            ...(debtStore ? { debtStore } : {}),
           });
           trackProcessedKey(idempotencyKey, processedKeyState, config.maxProcessedKeys);
         } catch (error) {
@@ -443,19 +444,19 @@ async function handleIndexJob(
   githubApiBaseUrl: string,
   infoLogger: (message: string) => void,
   errorLogger: (message: string) => void,
-): Promise<void> {
+): Promise<boolean> {
   const indexIdempotencyKey = `index:${queuedJob.repo_full_name}@${queuedJob.head_sha}`;
   if (processedKeyState.keys.has(indexIdempotencyKey)) {
-    return;
+    return true;
   }
 
   if (!debtStore) {
     infoLogger(`[worker] skipping index job=${queuedJob.job_id}: debt store unavailable`);
     trackProcessedKey(indexIdempotencyKey, processedKeyState, maxProcessedKeys);
-    return;
+    return true;
   }
 
-  await processIndexJobEntry(
+  return processIndexJobEntry(
     queuedJob, processedKeyState, maxProcessedKeys,
     processIndexRepoJobFn, debtStore, githubApiBaseUrl,
     infoLogger, errorLogger,
@@ -471,11 +472,8 @@ async function processIndexJobEntry(
   githubApiBaseUrl: string,
   infoLogger: (message: string) => void,
   errorLogger: (message: string) => void,
-): Promise<void> {
+): Promise<boolean> {
   const indexIdempotencyKey = `index:${queuedJob.repo_full_name}@${queuedJob.head_sha}`;
-  if (processedKeyState.keys.has(indexIdempotencyKey)) {
-    return;
-  }
 
   try {
     await processIndexRepoJobFn(queuedJob, {
@@ -485,11 +483,13 @@ async function processIndexJobEntry(
       logError: errorLogger,
     });
     trackProcessedKey(indexIdempotencyKey, processedKeyState, maxProcessedKeys);
+    return true;
   } catch (error) {
     const details = error instanceof Error ? error.stack ?? error.message : String(error);
     errorLogger(
       `[worker] failed to process index job=${queuedJob.job_id}: ${details}`,
     );
+    return false;
   }
 }
 

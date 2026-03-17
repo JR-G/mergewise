@@ -172,7 +172,11 @@ function resolveProcessingConfig(
 
   const toolkit = loadReviewToolkit(dependencies, job.repo_full_name, traceId, loggers);
 
-  const baseLlmRules = buildLlmRules({ mergewiseConfig, traceId, loggers, repoLearnings, toolkit });
+  const baseLlmRules = buildLlmRules({
+    mergewiseConfig, traceId, loggers,
+    ...(repoLearnings ? { repoLearnings } : {}),
+    ...(toolkit ? { toolkit } : {}),
+  });
   const rules = dependencies.rules ?? [...baseLlmRules];
 
   const baseBlockedRuleIds = dependencies.findingDeliveryOptions?.blockedRuleIds

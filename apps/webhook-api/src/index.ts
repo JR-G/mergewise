@@ -311,7 +311,7 @@ export function isPushWebhookEvent(
     event.installation !== null &&
     (typeof event.installation !== "object" ||
       typeof event.installation.id !== "number" ||
-      !Number.isInteger(event.installation.id) ||
+      !Number.isSafeInteger(event.installation.id) ||
       event.installation.id <= 0)
   ) {
     return false;
@@ -343,16 +343,19 @@ export function buildIndexRepoJob(
   payload: GitHubPushWebhookEvent,
   traceId?: string,
 ): IndexRepoJob {
-  return {
-    type: "index-repo",
-    job_id: randomUUID(),
+  const base = {
+    type: "index-repo" as const,
+    job_id: generateJobId(),
     installation_id: payload.installation?.id ?? null,
     repo_full_name: payload.repository.full_name,
     default_branch: payload.repository.default_branch,
     head_sha: payload.after,
-    trace_id: traceId,
     queued_at: new Date().toISOString(),
   };
+  if (traceId !== undefined) {
+    return { ...base, trace_id: traceId };
+  }
+  return base;
 }
 
 /**

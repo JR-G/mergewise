@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 
@@ -37,20 +37,18 @@ const STUB_PROFILE: DebtProfile = {
   totalEdges: 0,
 };
 
-await mock.module("@mergewise/debt-scanner", () => ({
-  scan: async () => STUB_PROFILE,
-}));
+const stubScanFn = async () => STUB_PROFILE;
 
 const originalEnv = { ...process.env };
 
 beforeAll(() => {
-  process.env.GITHUB_APP_ID = "99999";
-  process.env.GITHUB_APP_PRIVATE_KEY = "fake-pem-key-for-tests";
+  process.env["GITHUB_APP_ID"] = "99999";
+  process.env["GITHUB_APP_PRIVATE_KEY"] = "fake-pem-key-for-tests";
 });
 
 afterAll(() => {
-  process.env.GITHUB_APP_ID = originalEnv.GITHUB_APP_ID;
-  process.env.GITHUB_APP_PRIVATE_KEY = originalEnv.GITHUB_APP_PRIVATE_KEY;
+  process.env["GITHUB_APP_ID"] = originalEnv["GITHUB_APP_ID"];
+  process.env["GITHUB_APP_PRIVATE_KEY"] = originalEnv["GITHUB_APP_PRIVATE_KEY"];
 });
 
 function makeJob(overrides: Partial<IndexRepoJob> = {}): IndexRepoJob {
@@ -85,6 +83,7 @@ function baseDependencies(
 ): IndexJobDependencies {
   return {
     debtStore: makeDebtStore(),
+    scanFn: stubScanFn,
     createGitHubAppJwtFn: () => "jwt-token",
     exchangeInstallationAccessTokenFn: async () => ({
       token: "ghs_test_token",
@@ -168,10 +167,16 @@ describe("processIndexRepoJob", () => {
         logInfo: (message) => logs.push(message),
       });
 
-      await processIndexRepoJob(
-        makeJob({ trace_id: undefined, job_id: "fallback-trace-job" }),
-        dependencies,
-      );
+      const jobWithoutTrace: IndexRepoJob = {
+        type: "index-repo",
+        job_id: "fallback-trace-job",
+        installation_id: 42,
+        repo_full_name: "acme/widget",
+        default_branch: "main",
+        head_sha: "abc123def456",
+        queued_at: new Date().toISOString(),
+      };
+      await processIndexRepoJob(jobWithoutTrace, dependencies);
 
       expect(logs.some((log) => log.includes("trace=fallback-trace-job"))).toBe(true);
     });
@@ -248,7 +253,7 @@ describe("processIndexRepoJob", () => {
       await processIndexRepoJob(makeJob({ installation_id: 42 }), dependencies);
 
       expect(receivedOptions).toBeDefined();
-      expect(receivedOptions!.apiBaseUrl).toBe("https://ghes.corp.io/api/v3");
+      expect(receivedOptions!["apiBaseUrl"]).toBe("https://ghes.corp.io/api/v3");
     });
 
     test("passes installation_id to token exchange", async () => {
@@ -326,62 +331,42 @@ describe("processIndexRepoJob", () => {
 
   describe("scan failure", () => {
     test("propagates error when scan throws", async () => {
-      await mock.module("@mergewise/debt-scanner", () => ({
-        scan: async () => {
-          throw new Error("AST parse failure");
-        },
-      }));
-
-      const { processIndexRepoJob: freshProcessor } = await import(
-        "./process-index-job"
-      );
+      const failingScanFn = async () => {
+        throw new Error("AST parse failure");
+      };
 
       let thrownError: unknown;
       try {
-        await freshProcessor(makeJob(), baseDependencies());
+        await processIndexRepoJob(makeJob(), baseDependencies({ scanFn: failingScanFn }));
       } catch (error) {
         thrownError = error;
       }
 
       expect(thrownError).toBeInstanceOf(Error);
       expect((thrownError as Error).message).toBe("AST parse failure");
-
-      await mock.module("@mergewise/debt-scanner", () => ({
-        scan: async () => STUB_PROFILE,
-      }));
     });
 
     test("cleans up temp directory when scan throws", async () => {
       let capturedTargetDir = "";
-
-      await mock.module("@mergewise/debt-scanner", () => ({
-        scan: async () => {
-          throw new Error("scan boom");
-        },
-      }));
-
-      const { processIndexRepoJob: freshProcessor } = await import(
-        "./process-index-job"
-      );
+      const failingScanFn = async () => {
+        throw new Error("scan boom");
+      };
 
       const dependencies = baseDependencies({
+        scanFn: failingScanFn,
         spawnClone: async (_url, targetDir, _sha) => {
           capturedTargetDir = targetDir;
         },
       });
 
       try {
-        await freshProcessor(makeJob(), dependencies);
+        await processIndexRepoJob(makeJob(), dependencies);
       } catch {
         /* expected */
       }
 
       expect(capturedTargetDir).toContain("mergewise-index-");
       expect(existsSync(capturedTargetDir)).toBe(false);
-
-      await mock.module("@mergewise/debt-scanner", () => ({
-        scan: async () => STUB_PROFILE,
-      }));
     });
   });
 

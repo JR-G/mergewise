@@ -8,7 +8,7 @@ import {
 import { toPRNumber } from "@mergewise/shared-types";
 import { createAnalyzeJob, createFeedbackJob } from "./test-helpers";
 
-const DEFAULT_LLM_MODELS = { triageModel: "gpt-4o-mini", criticModel: "gpt-4o-mini", usePipeline: true };
+const DEFAULT_LLM_MODELS = { triageModel: "gpt-4.1-mini", criticModel: "gpt-4.1-mini", usePipeline: true };
 
 function invokeSignalHandler(
   handler: (signal: WorkerShutdownSignal) => void,
@@ -108,7 +108,7 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => [],
+      readAllQueueJobsFn: async () => ({ jobs: [], byteOffset: 0 }),
       processAnalyzePullRequestJobFn: async () => {
         throw new Error("should not run");
       },
@@ -181,7 +181,7 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => queuedJobs,
+      readAllQueueJobsFn: async () => ({ jobs: queuedJobs, byteOffset: 500 }),
       processAnalyzePullRequestJobFn: async (job) => {
         processedJobIds.push(job.job_id);
         return {
@@ -337,7 +337,7 @@ describe("startWorkerProcess", () => {
           consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => [queuedJob],
+      readAllQueueJobsFn: async () => ({ jobs: [queuedJob], byteOffset: 100 }),
       processAnalyzePullRequestJobFn: async () => {
         await processingGate;
         throw new Error("processing failed");
@@ -433,7 +433,7 @@ describe("startWorkerProcess", () => {
             consistencySamples: 1,
           },
         }),
-        readAllQueueJobsFn: async () => [],
+        readAllQueueJobsFn: async () => ({ jobs: [], byteOffset: 0 }),
         processAnalyzePullRequestJobFn: async () => {
           throw new Error("should not run");
         },

@@ -1,4 +1,5 @@
 import type { FileGraphContext, ReviewToolkit } from "@mergewise/llm-reviewer";
+import type { FilePath } from "@mergewise/shared-types";
 
 import type { DebtGraph, HotspotEntry } from "./graph-types";
 import { buildPrGraphContext } from "./graph-context";
@@ -21,15 +22,15 @@ export function buildReviewToolkit(
   hotspots: readonly HotspotEntry[],
 ): ReviewToolkit {
   return {
-    getCallers(filePath: string): FileGraphContext {
+    getCallers(filePath: FilePath): FileGraphContext {
       const context = buildPrGraphContext([filePath], graph, hotspots);
       const fileContext = context.files[0];
       if (!fileContext) {
         return { filePath, callers: [], centrality: 0, isHotspot: false };
       }
       return {
-        filePath: fileContext.filePath,
-        callers: fileContext.importedBy.slice(0, MAX_CALLERS),
+        filePath: fileContext.filePath as FilePath,
+        callers: fileContext.importedBy.slice(0, MAX_CALLERS) as FilePath[],
         centrality: fileContext.centralityScore,
         isHotspot: fileContext.isHotspot,
       };

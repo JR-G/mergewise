@@ -1,4 +1,5 @@
 import { describe, test, expect } from "bun:test";
+import { toFilePath } from "@mergewise/shared-types";
 import { buildReviewToolkit } from "./toolkit-adapter";
 import type { DebtGraph, DebtNode, DebtEdge, HotspotEntry } from "./graph-types";
 
@@ -54,27 +55,27 @@ describe("buildReviewToolkit", () => {
     );
 
     const toolkit = buildReviewToolkit(graph, []);
-    const result = toolkit.getCallers!("src/core.ts");
+    const result = toolkit.getCallers!(toFilePath("src/core.ts"));
 
-    expect(result.filePath).toBe("src/core.ts");
+    expect(result.filePath).toBe(toFilePath("src/core.ts"));
     expect(result.centrality).toBe(0.75);
-    expect(result.callers).toContain("src/consumer-a.ts");
-    expect(result.callers).toContain("src/consumer-b.ts");
+    expect(result.callers).toContain(toFilePath("src/consumer-a.ts"));
+    expect(result.callers).toContain(toFilePath("src/consumer-b.ts"));
   });
 
   test("returns empty defaults for a file not in the graph", () => {
     const graph = makeGraph([], []);
     const toolkit = buildReviewToolkit(graph, []);
-    const result = toolkit.getCallers!("src/unknown.ts");
+    const result = toolkit.getCallers!(toFilePath("src/unknown.ts"));
 
-    expect(result.filePath).toBe("src/unknown.ts");
+    expect(result.filePath).toBe(toFilePath("src/unknown.ts"));
     expect(result.callers).toEqual([]);
     expect(result.centrality).toBe(0);
     expect(result.isHotspot).toBe(false);
   });
 
   test("caps callers at 50 entries", () => {
-    const targetFile = "src/popular.ts";
+    const targetFile = toFilePath("src/popular.ts");
     const callerNodes = Array.from({ length: 60 }, (_, index) =>
       makeNode(`src/caller-${index}.ts`, 0.01),
     );
@@ -88,13 +89,13 @@ describe("buildReviewToolkit", () => {
     const toolkit = buildReviewToolkit(graph, []);
     const result = toolkit.getCallers!(targetFile);
 
-    expect(result.callers.length).toBeLessThanOrEqual(50);
+    expect(result.callers.length).toBe(50);
   });
 
   test("returns zero centrality for a node with centrality zero", () => {
     const graph = makeGraph([makeNode("src/leaf.ts", 0)], []);
     const toolkit = buildReviewToolkit(graph, []);
-    const result = toolkit.getCallers!("src/leaf.ts");
+    const result = toolkit.getCallers!(toFilePath("src/leaf.ts"));
 
     expect(result.centrality).toBe(0);
     expect(result.callers).toEqual([]);
@@ -103,9 +104,9 @@ describe("buildReviewToolkit", () => {
   test("returns empty callers and zero centrality for an empty graph", () => {
     const emptyGraph: DebtGraph = { nodes: new Map(), edges: [] };
     const toolkit = buildReviewToolkit(emptyGraph, []);
-    const result = toolkit.getCallers!("src/anything.ts");
+    const result = toolkit.getCallers!(toFilePath("src/anything.ts"));
 
-    expect(result.filePath).toBe("src/anything.ts");
+    expect(result.filePath).toBe(toFilePath("src/anything.ts"));
     expect(result.callers).toEqual([]);
     expect(result.centrality).toBe(0);
     expect(result.isHotspot).toBe(false);
@@ -115,7 +116,7 @@ describe("buildReviewToolkit", () => {
     const graph = makeGraph([makeNode("src/hot.ts", 0.85)], []);
     const hotspots = [makeHotspot("src/hot.ts", 0.85)];
     const toolkit = buildReviewToolkit(graph, hotspots);
-    const result = toolkit.getCallers!("src/hot.ts");
+    const result = toolkit.getCallers!(toFilePath("src/hot.ts"));
 
     expect(result.isHotspot).toBe(true);
   });
@@ -124,7 +125,7 @@ describe("buildReviewToolkit", () => {
     const graph = makeGraph([makeNode("src/cold.ts", 0.1)], []);
     const hotspots = [makeHotspot("src/other.ts", 0.9)];
     const toolkit = buildReviewToolkit(graph, hotspots);
-    const result = toolkit.getCallers!("src/cold.ts");
+    const result = toolkit.getCallers!(toFilePath("src/cold.ts"));
 
     expect(result.isHotspot).toBe(false);
   });
@@ -143,16 +144,16 @@ describe("buildReviewToolkit", () => {
     );
 
     const toolkit = buildReviewToolkit(graph, []);
-    const result = toolkit.getCallers!("src/base.ts");
+    const result = toolkit.getCallers!(toFilePath("src/base.ts"));
 
-    expect(result.callers).toContain("src/importer.ts");
-    expect(result.callers).not.toContain("src/derived.ts");
+    expect(result.callers).toContain(toFilePath("src/importer.ts"));
+    expect(result.callers).not.toContain(toFilePath("src/derived.ts"));
   });
 
   test("passes through negative centrality without clamping", () => {
     const graph = makeGraph([makeNode("src/neg.ts", -0.5)], []);
     const toolkit = buildReviewToolkit(graph, []);
-    const result = toolkit.getCallers!("src/neg.ts");
+    const result = toolkit.getCallers!(toFilePath("src/neg.ts"));
 
     expect(result.centrality).toBe(-0.5);
   });
@@ -160,7 +161,7 @@ describe("buildReviewToolkit", () => {
   test("passes through very large centrality values", () => {
     const graph = makeGraph([makeNode("src/huge.ts", Number.MAX_VALUE)], []);
     const toolkit = buildReviewToolkit(graph, []);
-    const result = toolkit.getCallers!("src/huge.ts");
+    const result = toolkit.getCallers!(toFilePath("src/huge.ts"));
 
     expect(Number.isFinite(result.centrality)).toBe(true);
     expect(result.centrality).toBe(Number.MAX_VALUE);
@@ -169,7 +170,7 @@ describe("buildReviewToolkit", () => {
   test("passes through NaN centrality without coercing", () => {
     const graph = makeGraph([makeNode("src/nan.ts", NaN)], []);
     const toolkit = buildReviewToolkit(graph, []);
-    const result = toolkit.getCallers!("src/nan.ts");
+    const result = toolkit.getCallers!(toFilePath("src/nan.ts"));
 
     expect(result.centrality).toBeNaN();
   });

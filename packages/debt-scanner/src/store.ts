@@ -142,15 +142,18 @@ function toHotspot(row: HotspotRow): HotspotEntry {
 }
 
 function toNode(row: NodeRow): DebtNode {
-  return {
+  const base = {
     id: row.node_id,
     kind: row.kind as DebtNode["kind"],
     filePath: row.file_path,
-    name: row.name ?? undefined,
     signals: JSON.parse(row.signals_json) as StructuralSignals,
     lineCount: row.line_count,
     centrality: row.centrality,
   };
+  if (row.name !== null) {
+    return { ...base, name: row.name };
+  }
+  return base;
 }
 
 function toEdge(row: EdgeRow): DebtEdge {
@@ -277,10 +280,10 @@ function prepareStatements(database: Database): Statements {
     queryScanById: database.prepare("SELECT * FROM scans WHERE id = ? LIMIT 1"),
     queryLatestByRepo: database.prepare("SELECT * FROM scans WHERE repo_path = ? ORDER BY scanned_at DESC LIMIT 1"),
     queryNodes: database.prepare(
-      "SELECT node_id, kind, file_path, name, signals_json, line_count, centrality FROM nodes WHERE scan_id = ? LIMIT 10000",
+      "SELECT node_id, kind, file_path, name, signals_json, line_count, centrality FROM nodes WHERE scan_id = ? ORDER BY node_id ASC LIMIT 10000",
     ),
     queryEdges: database.prepare(
-      "SELECT source_id, target_id, kind FROM edges WHERE scan_id = ? LIMIT 50000",
+      "SELECT source_id, target_id, kind FROM edges WHERE scan_id = ? ORDER BY source_id ASC, target_id ASC, kind ASC LIMIT 50000",
     ),
     queryHotspots: database.prepare(
       "SELECT node_id, file_path, score, centrality, signal_density, line_count FROM hotspots WHERE scan_id = ? ORDER BY score DESC LIMIT 500",
@@ -291,17 +294,25 @@ function prepareStatements(database: Database): Statements {
   };
 }
 
+const MAX_PERSISTED_NODES = 10_000;
+const MAX_PERSISTED_EDGES = 50_000;
+
 function executeSave(stmts: Statements, database: Database, profile: DebtProfile): string {
   const scanId = randomUUID();
+
+  const nodeEntries = Array.from(profile.graph.nodes.values())
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .slice(0, MAX_PERSISTED_NODES);
+  const edges = profile.graph.edges.slice(0, MAX_PERSISTED_EDGES);
 
   database.transaction(() => {
     stmts.insertScan.run(
       scanId, profile.repoPath, profile.scannedAt,
-      profile.graph.nodes.size, profile.graph.edges.length,
+      nodeEntries.length, edges.length,
       profile.findings.length, profile.hotspots.length,
     );
 
-    for (const [, node] of profile.graph.nodes) {
+    for (const node of nodeEntries) {
       stmts.insertNode.run(
         scanId, node.id, node.kind, node.filePath,
         node.name ?? null, JSON.stringify(node.signals),
@@ -309,7 +320,7 @@ function executeSave(stmts: Statements, database: Database, profile: DebtProfile
       );
     }
 
-    for (const edge of profile.graph.edges) {
+    for (const edge of edges) {
       stmts.insertEdge.run(scanId, edge.source, edge.target, edge.kind);
     }
 

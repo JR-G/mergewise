@@ -1,10 +1,16 @@
 import { describe, expect, test } from "bun:test";
 
+import type { QueueJob } from "@mergewise/shared-types";
+
 import {
   startWorkerProcess,
 } from "./main";
 
 const DEFAULT_LLM_MODELS = { triageModel: "gpt-4.1-mini", criticModel: "gpt-4.1-mini", usePipeline: true };
+
+const FEEDBACK_JOB_ID = "00000000-0000-4000-8000-000000000001";
+const INDEX_JOB_ID_1 = "00000000-0000-4000-8000-000000000002";
+const INDEX_JOB_ID_2 = "00000000-0000-4000-8000-000000000003";
 
 describe("startWorkerProcess job routing", () => {
   test("routes feedback jobs to processCollectFeedbackJobFn and skips analyze handler", async () => {
@@ -14,12 +20,12 @@ describe("startWorkerProcess job routing", () => {
 
     const feedbackJob = {
       type: "collect-feedback" as const,
-      job_id: "fb-1",
+      job_id: FEEDBACK_JOB_ID,
       installation_id: 9,
       repo_full_name: "acme/widget",
       pr_number: 10,
       queued_at: "2026-02-01T00:00:00.000Z",
-    };
+    } as QueueJob;
 
     const processHandle = startWorkerProcess({
       loadConfigFn: () => ({
@@ -53,7 +59,7 @@ describe("startWorkerProcess job routing", () => {
           consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => [feedbackJob],
+      readAllQueueJobsFn: async () => ({ jobs: [feedbackJob], byteOffset: 100 }),
       processAnalyzePullRequestJobFn: async (job) => {
         analyzeJobIds.push(job.job_id);
         return {
@@ -93,14 +99,14 @@ describe("startWorkerProcess job routing", () => {
     runPollCycle?.();
     await Promise.resolve();
 
-    expect(feedbackJobIds).toEqual(["fb-1"]);
+    expect(feedbackJobIds).toEqual([FEEDBACK_JOB_ID]);
     expect(analyzeJobIds).toEqual([]);
 
     runPollCycle?.();
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(feedbackJobIds).toEqual(["fb-1"]);
+    expect(feedbackJobIds).toEqual([FEEDBACK_JOB_ID]);
 
     await processHandle.shutdown();
   });
@@ -112,13 +118,13 @@ describe("startWorkerProcess job routing", () => {
 
     const indexJob = {
       type: "index-repo" as const,
-      job_id: "idx-1",
+      job_id: INDEX_JOB_ID_1,
       installation_id: 42,
       repo_full_name: "acme/widget",
       default_branch: "main",
-      head_sha: "sha123",
+      head_sha: "a".repeat(40),
       queued_at: "2026-02-01T00:00:00.000Z",
-    };
+    } as QueueJob;
 
     const processHandle = startWorkerProcess({
       loadConfigFn: () => ({
@@ -142,7 +148,7 @@ describe("startWorkerProcess job routing", () => {
           tokenBudget: 30_000, baseUrl: "https://api.openai.com/v1", consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => [indexJob],
+      readAllQueueJobsFn: async () => ({ jobs: [indexJob], byteOffset: 100 }),
       processAnalyzePullRequestJobFn: async (job) => {
         analyzeJobIds.push(job.job_id);
         return {} as never;
@@ -174,14 +180,14 @@ describe("startWorkerProcess job routing", () => {
     runPollCycle?.();
     await Promise.resolve();
 
-    expect(indexJobIds).toEqual(["idx-1"]);
+    expect(indexJobIds).toEqual([INDEX_JOB_ID_1]);
     expect(analyzeJobIds).toEqual([]);
 
     runPollCycle?.();
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(indexJobIds).toEqual(["idx-1"]);
+    expect(indexJobIds).toEqual([INDEX_JOB_ID_1]);
 
     await processHandle.shutdown();
   });
@@ -192,13 +198,13 @@ describe("startWorkerProcess job routing", () => {
 
     const indexJob = {
       type: "index-repo" as const,
-      job_id: "idx-2",
+      job_id: INDEX_JOB_ID_2,
       installation_id: 42,
       repo_full_name: "acme/widget",
       default_branch: "main",
-      head_sha: "sha456",
+      head_sha: "b".repeat(40),
       queued_at: "2026-02-01T00:00:00.000Z",
-    };
+    } as QueueJob;
 
     const processHandle = startWorkerProcess({
       loadConfigFn: () => ({
@@ -222,7 +228,7 @@ describe("startWorkerProcess job routing", () => {
           tokenBudget: 30_000, baseUrl: "https://api.openai.com/v1", consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => [indexJob],
+      readAllQueueJobsFn: async () => ({ jobs: [indexJob], byteOffset: 100 }),
       processAnalyzePullRequestJobFn: async () => ({} as never),
       openDebtStoreFn: () => { throw new Error("SQLite init failed"); },
       createPollingLoopControllerFn: (_pollIntervalMs, pollCycle) => ({
@@ -241,13 +247,13 @@ describe("startWorkerProcess job routing", () => {
     runPollCycle?.();
     await Promise.resolve();
 
-    const skipCount = infoLogs.filter((log) => log.includes("skipping index job=idx-2")).length;
+    const skipCount = infoLogs.filter((log) => log.includes(`skipping index job=${INDEX_JOB_ID_2}`)).length;
     expect(skipCount).toBe(1);
     expect(infoLogs.some((log) => log.includes("debt store unavailable"))).toBe(true);
 
     runPollCycle?.();
     await Promise.resolve();
-    const skipCountAfterSecondPoll = infoLogs.filter((log) => log.includes("skipping index job=idx-2")).length;
+    const skipCountAfterSecondPoll = infoLogs.filter((log) => log.includes(`skipping index job=${INDEX_JOB_ID_2}`)).length;
     expect(skipCountAfterSecondPoll).toBe(1);
 
     await processHandle.shutdown();
@@ -278,7 +284,7 @@ describe("startWorkerProcess job routing", () => {
           tokenBudget: 30_000, baseUrl: "https://api.openai.com/v1", consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => [],
+      readAllQueueJobsFn: async () => ({ jobs: [], byteOffset: 0 }),
       processAnalyzePullRequestJobFn: async () => ({} as never),
       openDebtStoreFn: () => { throw new Error("disk full"); },
       createPollingLoopControllerFn: () => ({

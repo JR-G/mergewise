@@ -6,7 +6,8 @@ import {
   createGitHubAppJwt,
   exchangeInstallationAccessToken,
 } from "@mergewise/github-client";
-import { scan, type DebtStore } from "@mergewise/debt-scanner";
+import { scan as defaultScan, type DebtStore, type ScanOptions } from "@mergewise/debt-scanner";
+import type { DebtProfile } from "@mergewise/debt-scanner";
 import type { IndexRepoJob } from "@mergewise/shared-types";
 
 import { loadGitHubAppCredentials } from "./github-auth";
@@ -30,6 +31,7 @@ export interface IndexJobDependencies {
   readonly githubApiBaseUrl?: string;
   readonly createGitHubAppJwtFn?: typeof createGitHubAppJwt;
   readonly exchangeInstallationAccessTokenFn?: typeof exchangeInstallationAccessToken;
+  readonly scanFn?: (options: ScanOptions) => Promise<DebtProfile>;
   readonly spawnClone?: (url: string, targetDir: string, sha: string, token?: string) => Promise<void>;
   readonly logInfo?: (message: string) => void;
   readonly logError?: (message: string) => void;
@@ -79,7 +81,8 @@ export async function processIndexRepoJob(
       `[worker] index_clone_complete trace=${traceId} repo=${job.repo_full_name}`,
     );
 
-    const profile = await scan({
+    const scanFn = dependencies.scanFn ?? defaultScan;
+    const profile = await scanFn({
       repoPath: cloneDir,
       skipLlm: true,
     });
