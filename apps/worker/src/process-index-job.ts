@@ -130,7 +130,7 @@ export function resolveCloneHost(apiBaseUrl: string): string {
     if (url.hostname === "api.github.com") {
       return "github.com";
     }
-    return url.hostname;
+    return url.host;
   } catch {
     return "github.com";
   }

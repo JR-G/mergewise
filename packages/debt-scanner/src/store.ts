@@ -303,7 +303,10 @@ function executeSave(stmts: Statements, database: Database, profile: DebtProfile
   const nodeEntries = Array.from(profile.graph.nodes.values())
     .sort((left, right) => left.id.localeCompare(right.id))
     .slice(0, MAX_PERSISTED_NODES);
-  const edges = profile.graph.edges.slice(0, MAX_PERSISTED_EDGES);
+  const persistedNodeIds = new Set(nodeEntries.map((node) => node.id));
+  const edges = profile.graph.edges
+    .filter((edge) => persistedNodeIds.has(edge.source) && persistedNodeIds.has(edge.target))
+    .slice(0, MAX_PERSISTED_EDGES);
 
   database.transaction(() => {
     stmts.insertScan.run(

@@ -24,6 +24,18 @@ function makeProfile(overrides: Partial<DebtProfile> = {}): DebtProfile {
         lineCount: 120,
         centrality: 0.5,
       }],
+      ["src/utils.ts", {
+        id: "src/utils.ts",
+        kind: "file",
+        filePath: "src/utils.ts",
+        signals: {
+          componentLineCount: 0, hookCount: 0, importCount: 0,
+          maxNestingDepth: 1, functionCount: 2, maxFunctionLineCount: 20,
+          maxParameterCount: 1, classCount: 0, typeAssertionCount: 0,
+        },
+        lineCount: 40,
+        centrality: 0.1,
+      }],
     ]),
     edges: [{ source: "src/index.ts", target: "src/utils.ts", kind: "imports" }],
   };
