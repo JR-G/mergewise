@@ -2,15 +2,16 @@ import { describe, it, expect } from "bun:test";
 import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { toRepoFullName, toPRNumber } from "@mergewise/shared-types";
 import { discoverFixtures, loadFixture, STUB_PR_METADATA } from "./loader";
 
 describe("STUB_PR_METADATA", () => {
   it("has the expected fixture repo name", () => {
-    expect(STUB_PR_METADATA.repo as string).toBe("eval/fixture");
+    expect(STUB_PR_METADATA.repo).toBe(toRepoFullName("eval/fixture"));
   });
 
   it("has prNumber set to one", () => {
-    expect(STUB_PR_METADATA.prNumber as number).toBe(1);
+    expect(STUB_PR_METADATA.prNumber).toBe(toPRNumber(1));
   });
 
   it("has a null installationId", () => {

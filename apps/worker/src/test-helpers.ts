@@ -21,6 +21,8 @@ import {
 
 import type { WorkerGitHubFetchOptions } from "./index";
 
+const DEFAULT_QUEUED_AT = "2020-01-01T00:00:00.000Z";
+
 /** Minimal open PR state for dependency injection in worker tests. */
 export const openPullRequestState = {
   number: 50,
@@ -136,7 +138,7 @@ export function createFeedbackJob(
     repo_full_name: toRepoFullName("acme/widget"),
     pr_number: toPRNumber(10),
     trace_id: "trace-fb-1",
-    queued_at: new Date().toISOString(),
+    queued_at: DEFAULT_QUEUED_AT,
     ...overrides,
   };
 }

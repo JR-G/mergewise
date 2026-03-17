@@ -159,7 +159,7 @@ describe("executeRules", () => {
     });
 
     expect(result.findings).toHaveLength(1);
-    expect(result.findings[0]!.ruleId as string).toBe("stateless/success");
+    expect(result.findings[0]!.ruleId).toBe(toRuleId("stateless/success"));
     expect(result.failedRuleIds).toEqual(["stateless/failing"]);
     expect(result.summary.totalRules).toBe(2);
     expect(result.summary.successfulRules).toBe(1);

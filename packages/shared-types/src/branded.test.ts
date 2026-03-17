@@ -320,6 +320,14 @@ describe("LineNumber", () => {
     const result: number | null = tryParseLineNumber(42);
     expect(result).toBe(42);
   });
+
+  test("rejects beyond MAX_SAFE_INTEGER", () => {
+    expect(() => toLineNumber(Number.MAX_SAFE_INTEGER + 1)).toThrow(TypeError);
+  });
+
+  test("tryParse returns null beyond MAX_SAFE_INTEGER", () => {
+    expect(tryParseLineNumber(Number.MAX_SAFE_INTEGER + 1)).toBeNull();
+  });
 });
 
 describe("PRNumber", () => {

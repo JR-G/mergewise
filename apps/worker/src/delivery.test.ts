@@ -396,7 +396,7 @@ describe("finding delivery", () => {
     );
 
     expect(delivery.comments[0]).toBeDefined();
-    expect(delivery.comments[0]!.finding.filePath as string).toBe("src/index.ts");
+    expect(delivery.comments[0]!.finding.filePath).toBe(toFilePath("src/index.ts"));
   });
 
   test("prepareFindingDelivery allows high-confidence test findings when no non-test findings exist", () => {

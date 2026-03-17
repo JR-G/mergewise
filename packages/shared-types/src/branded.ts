@@ -87,7 +87,7 @@ const REPO_FULL_NAME_PATTERN = /^[^/]+\/[^/]+$/;
 const RULE_ID_PATTERN = /^[a-z0-9._-]+\/[a-z0-9._-]+$/;
 
 function isPositiveInteger(value: number): boolean {
-  return Number.isInteger(value) && value > 0;
+  return Number.isInteger(value) && value > 0 && value <= Number.MAX_SAFE_INTEGER;
 }
 
 /**
@@ -189,7 +189,7 @@ export function tryParseScanId(value: string): ScanId | null {
  * Generates a new random {@link ScanId}.
  */
 export function generateScanId(): ScanId {
-  return randomUUID() as ScanId;
+  return toScanId(randomUUID());
 }
 
 /**
@@ -218,7 +218,7 @@ export function tryParseJobId(value: string): JobId | null {
  * Generates a new random {@link JobId}.
  */
 export function generateJobId(): JobId {
-  return randomUUID() as JobId;
+  return toJobId(randomUUID());
 }
 
 /**

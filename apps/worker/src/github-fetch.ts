@@ -177,7 +177,13 @@ export async function buildAnalysisContextFromGitHub(
     },
   );
 
-  const mappedDiffs = mapGitHubPullRequestFilesToDiffs(fetchedFiles);
+  const warnLogger = dependencies.logWarn ?? dependencies.logError;
+  const mappedDiffs = mapGitHubPullRequestFilesToDiffs(
+    fetchedFiles,
+    warnLogger
+      ? (filename: string): void => { warnLogger(`[worker] invalid_file_path_skipped filename=${filename}`); }
+      : undefined,
+  );
   return {
     analysisContext: buildAnalysisContext(job, mappedDiffs),
     owner: repositoryCoordinates.owner,

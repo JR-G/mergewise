@@ -214,16 +214,16 @@ export function isPullRequestWebhookEvent(
   }
 
   const event = payload as Record<string, unknown>;
-  const repo = event["repository"] as Record<string, unknown> | undefined;
-  const pr = event["pull_request"] as Record<string, unknown> | undefined;
-  const head = pr?.["head"] as Record<string, unknown> | undefined;
-  const install = event["installation"] as Record<string, unknown> | undefined;
+  const repository = event["repository"] as Record<string, unknown> | undefined;
+  const pullRequest = event["pull_request"] as Record<string, unknown> | undefined;
+  const pullRequestHead = pullRequest?.["head"] as Record<string, unknown> | undefined;
+  const installation = event["installation"] as Record<string, unknown> | null | undefined;
 
   if (typeof event["action"] !== "string") return false;
-  if (typeof repo?.["full_name"] !== "string" || !tryParseRepoFullName(repo["full_name"])) return false;
-  if (typeof pr?.["number"] !== "number" || !tryParsePRNumber(pr["number"])) return false;
-  if (typeof head?.["sha"] !== "string" || !tryParseSHA(head["sha"])) return false;
-  if (install !== undefined && (typeof install["id"] !== "number" || !tryParseInstallationId(install["id"]))) return false;
+  if (typeof repository?.["full_name"] !== "string" || !tryParseRepoFullName(repository["full_name"])) return false;
+  if (typeof pullRequest?.["number"] !== "number" || !tryParsePRNumber(pullRequest["number"])) return false;
+  if (typeof pullRequestHead?.["sha"] !== "string" || !tryParseSHA(pullRequestHead["sha"])) return false;
+  if (installation != null && (typeof installation["id"] !== "number" || !tryParseInstallationId(installation["id"]))) return false;
   return true;
 }
 

@@ -37,10 +37,14 @@ export function buildAnalysisContext(
  */
 export function mapGitHubPullRequestFilesToDiffs(
   githubFiles: readonly GitHubPullRequestFile[],
+  onInvalidFilePath?: (filename: string) => void,
 ): readonly FileDiff[] {
   return githubFiles.flatMap((githubFile) => {
     const filePath = tryParseFilePath(githubFile.filename);
-    if (!filePath) return [];
+    if (!filePath) {
+      onInvalidFilePath?.(githubFile.filename);
+      return [];
+    }
     return [{ filePath, previousPath: null, hunks: parsePatchToDiffHunks(githubFile.patch) }];
   });
 }

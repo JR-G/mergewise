@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import { scan } from "./scanner.ts";
 import type { ScanOptions } from "./scanner.ts";
 
@@ -25,7 +25,7 @@ function initGitRepo(directory: string, files: string[]): void {
   execSync("git config user.email test@test.com", { cwd: directory, stdio: "ignore", env });
   execSync("git config user.name test", { cwd: directory, stdio: "ignore", env });
   for (const filePath of files) {
-    execSync(`git add "${filePath}"`, { cwd: directory, stdio: "ignore", env });
+    execFileSync("git", ["add", "--", filePath], { cwd: directory, stdio: "ignore", env });
   }
   if (files.length > 0) {
     execSync('git commit -m "init"', { cwd: directory, stdio: "ignore", env });
