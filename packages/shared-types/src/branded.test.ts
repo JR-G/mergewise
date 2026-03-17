@@ -344,6 +344,11 @@ describe("LineNumber", () => {
     expect(result).toBe(42);
   });
 
+  test("accepts MAX_SAFE_INTEGER", () => {
+    expect(toLineNumber(Number.MAX_SAFE_INTEGER)).toBe(toLineNumber(Number.MAX_SAFE_INTEGER));
+    expect(tryParseLineNumber(Number.MAX_SAFE_INTEGER)).toBe(toLineNumber(Number.MAX_SAFE_INTEGER));
+  });
+
   test("rejects beyond MAX_SAFE_INTEGER", () => {
     expect(() => toLineNumber(Number.MAX_SAFE_INTEGER + 1)).toThrow(TypeError);
   });
@@ -389,6 +394,11 @@ describe("PRNumber", () => {
     expect(result).toBe(42);
   });
 
+  test("accepts MAX_SAFE_INTEGER", () => {
+    expect(toPRNumber(Number.MAX_SAFE_INTEGER)).toBe(toPRNumber(Number.MAX_SAFE_INTEGER));
+    expect(tryParsePRNumber(Number.MAX_SAFE_INTEGER)).toBe(toPRNumber(Number.MAX_SAFE_INTEGER));
+  });
+
   test("rejects beyond MAX_SAFE_INTEGER", () => {
     expect(() => toPRNumber(Number.MAX_SAFE_INTEGER + 1)).toThrow(TypeError);
   });
@@ -431,6 +441,11 @@ describe("InstallationId", () => {
   test("tryParse returns branded value for valid id", () => {
     const result: number | null = tryParseInstallationId(12345);
     expect(result).toBe(12345);
+  });
+
+  test("accepts MAX_SAFE_INTEGER", () => {
+    expect(toInstallationId(Number.MAX_SAFE_INTEGER)).toBe(toInstallationId(Number.MAX_SAFE_INTEGER));
+    expect(tryParseInstallationId(Number.MAX_SAFE_INTEGER)).toBe(toInstallationId(Number.MAX_SAFE_INTEGER));
   });
 
   test("rejects beyond MAX_SAFE_INTEGER", () => {

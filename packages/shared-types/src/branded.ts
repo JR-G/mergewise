@@ -83,7 +83,7 @@ export type InstallationId = Brand<number, "InstallationId">;
 const SHA_PATTERN = /^[a-f0-9]{40}$/;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const REPO_FULL_NAME_PATTERN = /^[^/]+\/[^/]+$/;
+const REPO_FULL_NAME_PATTERN = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/;
 const RULE_ID_PATTERN = /^[a-z0-9._-]+\/[a-z0-9._-]+$/;
 
 function isPositiveInteger(value: number): boolean {
