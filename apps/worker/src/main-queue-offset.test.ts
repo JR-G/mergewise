@@ -81,7 +81,7 @@ describe("startWorkerProcess queue offset", () => {
       loadMergewiseConfigFn: () => makeMergewiseConfig(),
       readQueueOffsetFn: () => 0,
       writeQueueOffsetFn: (_path, offset) => { writtenOffsets.push(offset); },
-      readAllQueueJobsFn: async (_filePath, _onSkipped, startByteOffset) => {
+      readAllQueueJobsFn: (_filePath, _onSkipped, startByteOffset) => {
         const offset = startByteOffset ?? 0;
         pollCallCount++;
         if (offset === 0) {
@@ -123,7 +123,7 @@ describe("startWorkerProcess queue offset", () => {
       loadMergewiseConfigFn: () => makeMergewiseConfig(),
       readQueueOffsetFn: () => writtenOffsets[0] ?? 0,
       writeQueueOffsetFn: () => {},
-      readAllQueueJobsFn: async (_filePath, _onSkipped, startByteOffset) => {
+      readAllQueueJobsFn: (_filePath, _onSkipped, startByteOffset) => {
         const offset = startByteOffset ?? 0;
         restartReadOffset = offset;
         return { jobs: [], byteOffset: offset };
@@ -157,7 +157,7 @@ describe("startWorkerProcess queue offset", () => {
       loadMergewiseConfigFn: () => makeMergewiseConfig(),
       readQueueOffsetFn: () => 500,
       writeQueueOffsetFn: (_path, offset) => { writtenOffsets.push(offset); },
-      readAllQueueJobsFn: async () => ({ jobs: [], byteOffset: 500 }),
+      readAllQueueJobsFn: () => ({ jobs: [], byteOffset: 500 }),
       processAnalyzePullRequestJobFn: async () => { throw new Error("should not run"); },
       createPollingLoopControllerFn: makePollingController(intervalCallbacks),
       registerSignalHandlerFn: () => {},
@@ -185,7 +185,7 @@ describe("startWorkerProcess queue offset", () => {
       loadMergewiseConfigFn: () => makeMergewiseConfig(),
       readQueueOffsetFn: () => { throw new Error("corrupt offset file"); },
       writeQueueOffsetFn: () => {},
-      readAllQueueJobsFn: async (_filePath, _onSkipped, startByteOffset) => {
+      readAllQueueJobsFn: (_filePath, _onSkipped, startByteOffset) => {
         const offset = startByteOffset ?? 0;
         readByteOffset = offset;
         if (offset === 0) {
@@ -230,7 +230,7 @@ describe("startWorkerProcess queue offset", () => {
         }
         writtenOffsets.push(offset);
       },
-      readAllQueueJobsFn: async () => ({ jobs: [retryJob], byteOffset: 200 }),
+      readAllQueueJobsFn: () => ({ jobs: [retryJob], byteOffset: 200 }),
       processAnalyzePullRequestJobFn: async (job) => makeJobResult(job),
       createPollingLoopControllerFn: makePollingController(intervalCallbacks),
       registerSignalHandlerFn: () => {},
@@ -262,7 +262,7 @@ describe("startWorkerProcess queue offset", () => {
       loadMergewiseConfigFn: () => makeMergewiseConfig(),
       readQueueOffsetFn: () => 0,
       writeQueueOffsetFn: (_path, offset) => { writtenOffsets.push(offset); },
-      readAllQueueJobsFn: async () => ({ jobs: [okJob, failJob], byteOffset: 300 }),
+      readAllQueueJobsFn: () => ({ jobs: [okJob, failJob], byteOffset: 300 }),
       processAnalyzePullRequestJobFn: async (job) => {
         if (job.job_id === failJob.job_id) {
           throw new Error("processing failed");
@@ -294,7 +294,7 @@ describe("startWorkerProcess queue offset", () => {
       loadMergewiseConfigFn: () => makeMergewiseConfig(),
       readQueueOffsetFn: () => 0,
       writeQueueOffsetFn: (_path, offset) => { writtenOffsets.push(offset); },
-      readAllQueueJobsFn: async () => ({ jobs: [feedbackFailJob], byteOffset: 200 }),
+      readAllQueueJobsFn: () => ({ jobs: [feedbackFailJob], byteOffset: 200 }),
       processAnalyzePullRequestJobFn: async () => { throw new Error("should not run"); },
       processCollectFeedbackJobFn: async () => { throw new Error("feedback collection failed"); },
       createPollingLoopControllerFn: makePollingController(intervalCallbacks),

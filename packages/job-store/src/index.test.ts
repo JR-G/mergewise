@@ -196,14 +196,14 @@ describe("readAllQueueJobs", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test("returns empty result when file is missing", async () => {
+  test("returns empty result when file is missing", () => {
     const missing = join(tempDir, "does-not-exist.ndjson");
-    const result = await readAllQueueJobs(missing);
+    const result = readAllQueueJobs(missing);
     expect(result.jobs).toEqual([]);
     expect(result.byteOffset).toBe(0);
   });
 
-  test("reads mixed analyze, feedback, and index-repo jobs", async () => {
+  test("reads mixed analyze, feedback, and index-repo jobs", () => {
     const analyzeId = toJobId("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     const feedbackId = toJobId("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     const analyzeJob = makeJob({ job_id: analyzeId });
@@ -215,14 +215,14 @@ describe("readAllQueueJobs", () => {
     enqueueCollectFeedbackJob(feedbackJob, filePath);
     enqueueIndexRepoJob(indexJob, filePath);
 
-    const result = await readAllQueueJobs(filePath);
+    const result = readAllQueueJobs(filePath);
     expect(result.jobs).toHaveLength(3);
     expect(result.jobs[0]!.job_id).toBe(analyzeId);
     expect(result.jobs[1]!.job_id).toBe(feedbackId);
     expect(result.jobs[2]!.job_id).toBe(indexId);
   });
 
-  test("treats legacy lines without type field as analyze jobs", async () => {
+  test("treats legacy lines without type field as analyze jobs", () => {
     const legacyJobId = toJobId("cccccccc-cccc-cccc-cccc-cccccccccccc");
     const legacyJob = {
       job_id: legacyJobId,
@@ -235,26 +235,26 @@ describe("readAllQueueJobs", () => {
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, `${JSON.stringify(legacyJob)}\n`, "utf8");
 
-    const result = await readAllQueueJobs(filePath);
+    const result = readAllQueueJobs(filePath);
     expect(result.jobs).toHaveLength(1);
     expect(result.jobs[0]!.job_id).toBe(legacyJobId);
   });
 
-  test("skips malformed lines", async () => {
+  test("skips malformed lines", () => {
     const goodId = toJobId("dddddddd-dddd-dddd-dddd-dddddddddddd");
     const feedbackJob = makeFeedbackJob({ job_id: goodId });
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, `not-json\n${JSON.stringify(feedbackJob)}\n`, "utf8");
 
     const { callback, skips } = collectSkips();
-    const result = await readAllQueueJobs(filePath, callback);
+    const result = readAllQueueJobs(filePath, callback);
 
     expect(result.jobs).toHaveLength(1);
     expect(result.jobs[0]!.job_id).toBe(goodId);
     expect(skips).toHaveLength(1);
   });
 
-  test("enforces MAX_QUEUE_SIZE cap on returned jobs", async () => {
+  test("enforces MAX_QUEUE_SIZE cap on returned jobs", () => {
     mkdirSync(dirname(filePath), { recursive: true });
     const lines: string[] = [];
     for (let jobIndex = 0; jobIndex < 10_001; jobIndex++) {
@@ -262,72 +262,72 @@ describe("readAllQueueJobs", () => {
     }
     writeFileSync(filePath, lines.join("\n") + "\n", "utf8");
 
-    const result = await readAllQueueJobs(filePath);
+    const result = readAllQueueJobs(filePath);
 
     expect(result.jobs.length).toBe(10_000);
     const fileSize = readFileSync(filePath).byteLength;
     expect(result.byteOffset).toBeLessThan(fileSize);
   });
 
-  test("returns byte offset matching file size after reading all jobs", async () => {
+  test("returns byte offset matching file size after reading all jobs", () => {
     const analyzeJob = makeJob({ job_id: toJobId("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee") });
     enqueueAnalyzePullRequestJob(analyzeJob, filePath);
 
-    const result = await readAllQueueJobs(filePath);
+    const result = readAllQueueJobs(filePath);
     const fileSize = readFileSync(filePath).byteLength;
 
     expect(result.byteOffset).toBe(fileSize);
     expect(result.jobs).toHaveLength(1);
   });
 
-  test("reads only new jobs when starting from a byte offset", async () => {
+  test("reads only new jobs when starting from a byte offset", () => {
     const firstJob = makeJob({ job_id: toJobId("ffffffff-ffff-ffff-ffff-ffffffffffff") });
     enqueueAnalyzePullRequestJob(firstJob, filePath);
 
-    const firstResult = await readAllQueueJobs(filePath);
+    const firstResult = readAllQueueJobs(filePath);
     expect(firstResult.jobs).toHaveLength(1);
 
     const secondJob = makeJob({ job_id: toJobId("99999999-9999-9999-9999-999999999999") });
     enqueueAnalyzePullRequestJob(secondJob, filePath);
 
-    const secondResult = await readAllQueueJobs(filePath, undefined, firstResult.byteOffset);
+    const secondResult = readAllQueueJobs(filePath, undefined, firstResult.byteOffset);
     expect(secondResult.jobs).toHaveLength(1);
     expect(secondResult.jobs[0]!.job_id).toBe(toJobId("99999999-9999-9999-9999-999999999999"));
   });
 
-  test("returns empty jobs when offset equals file size", async () => {
+  test("returns empty jobs when offset equals file size", () => {
     enqueueAnalyzePullRequestJob(makeJob(), filePath);
-    const firstResult = await readAllQueueJobs(filePath);
+    const firstResult = readAllQueueJobs(filePath);
 
-    const secondResult = await readAllQueueJobs(filePath, undefined, firstResult.byteOffset);
+    const secondResult = readAllQueueJobs(filePath, undefined, firstResult.byteOffset);
     expect(secondResult.jobs).toEqual([]);
     expect(secondResult.byteOffset).toBe(firstResult.byteOffset);
   });
 
-  test("resets to start when offset exceeds file size", async () => {
+  test("resets to start when offset exceeds file size", () => {
     enqueueAnalyzePullRequestJob(makeJob({ job_id: toJobId("88888888-8888-8888-8888-888888888888") }), filePath);
 
-    const result = await readAllQueueJobs(filePath, undefined, 999_999);
+    const result = readAllQueueJobs(filePath, undefined, 999_999);
     expect(result.jobs).toHaveLength(1);
     expect(result.jobs[0]!.job_id).toBe(toJobId("88888888-8888-8888-8888-888888888888"));
     expect(result.byteOffset).toBeGreaterThan(0);
   });
 
-  test("throws on negative startByteOffset", async () => {
+  test("throws on negative startByteOffset", () => {
     enqueueAnalyzePullRequestJob(makeJob({ job_id: toJobId("77777777-7777-7777-7777-777777777777") }), filePath);
-    expect(readAllQueueJobs(filePath, undefined, -10)).rejects.toThrow(RangeError);
+    expect(() => readAllQueueJobs(filePath, undefined, -10)).toThrow(RangeError);
   });
 
   test("throws on NaN startByteOffset", () => {
-    expect(readAllQueueJobs(filePath, undefined, NaN)).rejects.toThrow(RangeError);
+    expect(() => readAllQueueJobs(filePath, undefined, NaN)).toThrow(RangeError);
   });
 
   test("throws on fractional startByteOffset", () => {
-    expect(readAllQueueJobs(filePath, undefined, 1.5)).rejects.toThrow(RangeError);
+    expect(() => readAllQueueJobs(filePath, undefined, 1.5)).toThrow(RangeError);
   });
 
-  test("returns zero offset when file does not exist", async () => {
-    const result = await readAllQueueJobs(join(tempDir, "missing.ndjson"), undefined, 42);
+  test("returns zero offset when file does not exist", () => {
+    const result = readAllQueueJobs(join(tempDir, "missing.ndjson"), undefined, 42);
     expect(result.byteOffset).toBe(0);
     expect(result.jobs).toEqual([]);
   });

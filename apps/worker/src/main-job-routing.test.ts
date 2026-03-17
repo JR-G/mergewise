@@ -59,7 +59,7 @@ describe("startWorkerProcess job routing", () => {
           consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => ({ jobs: [feedbackJob], byteOffset: 100 }),
+      readAllQueueJobsFn: () => ({ jobs: [feedbackJob], byteOffset: 100 }),
       processAnalyzePullRequestJobFn: async (job) => {
         analyzeJobIds.push(job.job_id);
         return {
@@ -148,7 +148,7 @@ describe("startWorkerProcess job routing", () => {
           tokenBudget: 30_000, baseUrl: "https://api.openai.com/v1", consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => ({ jobs: [indexJob], byteOffset: 100 }),
+      readAllQueueJobsFn: () => ({ jobs: [indexJob], byteOffset: 100 }),
       processAnalyzePullRequestJobFn: async (job) => {
         analyzeJobIds.push(job.job_id);
         return {} as never;
@@ -228,7 +228,7 @@ describe("startWorkerProcess job routing", () => {
           tokenBudget: 30_000, baseUrl: "https://api.openai.com/v1", consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => ({ jobs: [indexJob], byteOffset: 100 }),
+      readAllQueueJobsFn: () => ({ jobs: [indexJob], byteOffset: 100 }),
       processAnalyzePullRequestJobFn: async () => ({} as never),
       openDebtStoreFn: () => { throw new Error("SQLite init failed"); },
       createPollingLoopControllerFn: (_pollIntervalMs, pollCycle) => ({
@@ -284,7 +284,7 @@ describe("startWorkerProcess job routing", () => {
           tokenBudget: 30_000, baseUrl: "https://api.openai.com/v1", consistencySamples: 1,
         },
       }),
-      readAllQueueJobsFn: async () => ({ jobs: [], byteOffset: 0 }),
+      readAllQueueJobsFn: () => ({ jobs: [], byteOffset: 0 }),
       processAnalyzePullRequestJobFn: async () => ({} as never),
       openDebtStoreFn: () => { throw new Error("disk full"); },
       createPollingLoopControllerFn: () => ({
