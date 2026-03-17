@@ -10,6 +10,7 @@ import {
   readAllAnalyzePullRequestJobs,
 } from "@mergewise/job-store";
 import type { GitHubPullRequestWebhookEvent } from "@mergewise/shared-types";
+import { toRepoFullName, toPRNumber } from "@mergewise/shared-types";
 import {
   buildAnalyzePullRequestJob,
   computeGitHubSignature,
@@ -52,8 +53,8 @@ describe("webhook-to-worker pipeline", () => {
     const job = buildAnalyzePullRequestJob(
       validOpened as GitHubPullRequestWebhookEvent,
     );
-    expect(job.repo_full_name).toBe("acme/widget");
-    expect(job.pr_number).toBe(1);
+    expect(job.repo_full_name).toBe(toRepoFullName("acme/widget"));
+    expect(job.pr_number).toBe(toPRNumber(1));
 
     enqueueAnalyzePullRequestJob(job, queuePath);
 

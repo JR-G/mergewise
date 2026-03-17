@@ -177,13 +177,40 @@ export async function buildAnalysisContextFromGitHub(
     },
   );
 
-  const mappedDiffs = mapGitHubPullRequestFilesToDiffs(fetchedFiles);
+  const warnLogger = dependencies.logWarn ?? dependencies.logError;
+  const mappedDiffs = mapGitHubPullRequestFilesToDiffs(
+    fetchedFiles,
+    warnLogger
+      ? (filename: string): void => { warnLogger(`[worker] invalid_file_path_skipped filename=${sanitiseForLog(filename)}`); }
+      : undefined,
+  );
   return {
     analysisContext: buildAnalysisContext(job, mappedDiffs),
     owner: repositoryCoordinates.owner,
     repository: repositoryCoordinates.repository,
     installationAccessToken: installationAccessToken.token,
   };
+}
+
+const MAX_LOG_FILENAME_LENGTH = 128;
+
+/**
+ * Strips control characters and truncates a filename for safe log output.
+ */
+function sanitiseForLog(value: string): string {
+  const maxScan = MAX_LOG_FILENAME_LENGTH * 4;
+  let cleaned = "";
+  let scanned = 0;
+  for (const char of value) {
+    if (scanned >= maxScan || cleaned.length > MAX_LOG_FILENAME_LENGTH) break;
+    scanned++;
+    const code = char.charCodeAt(0);
+    if (code >= 0x20 && code !== 0x7f) {
+      cleaned += char;
+    }
+  }
+  if (cleaned.length <= MAX_LOG_FILENAME_LENGTH) return cleaned;
+  return `${cleaned.slice(0, MAX_LOG_FILENAME_LENGTH)}…`;
 }
 
 export function defaultSleep(delayMs: number): Promise<void> {

@@ -24,6 +24,12 @@ import {
 import type { WebhookApiConfig } from "./index";
 
 import type { GitHubPullRequestWebhookEvent } from "@mergewise/shared-types";
+import {
+  toInstallationId,
+  toPRNumber,
+  toRepoFullName,
+  toSHA,
+} from "@mergewise/shared-types";
 
 describe("computeGitHubSignature", () => {
   test("produces deterministic sha256-prefixed hex", () => {
@@ -71,7 +77,7 @@ describe("isPullRequestWebhookEvent", () => {
   const validPayload = {
     action: "opened",
     repository: { full_name: "acme/widget" },
-    pull_request: { number: 1, head: { sha: "abc123" } },
+    pull_request: { number: 1, head: { sha: "a".repeat(40) } },
   };
 
   test("returns true for valid payload", () => {
@@ -103,19 +109,19 @@ describe("isPullRequestWebhookEvent", () => {
 });
 
 describe("buildAnalyzePullRequestJob", () => {
-  const payload = {
-    action: "opened" as const,
-    repository: { full_name: "acme/widget" },
-    pull_request: { number: 5, head: { sha: "def456" } },
-    installation: { id: 99 },
+  const payload: GitHubPullRequestWebhookEvent = {
+    action: "opened",
+    repository: { full_name: toRepoFullName("acme/widget") },
+    pull_request: { number: toPRNumber(5), head: { sha: toSHA("d".repeat(40)) } },
+    installation: { id: toInstallationId(99) },
   };
 
   test("maps fields from webhook event", () => {
     const job = buildAnalyzePullRequestJob(payload, "trace-123");
-    expect(job.repo_full_name).toBe("acme/widget");
-    expect(job.pr_number).toBe(5);
-    expect(job.head_sha).toBe("def456");
-    expect(job.installation_id).toBe(99);
+    expect(job.repo_full_name).toBe(toRepoFullName("acme/widget"));
+    expect(job.pr_number).toBe(toPRNumber(5));
+    expect(job.head_sha).toBe(toSHA("d".repeat(40)));
+    expect(job.installation_id).toBe(toInstallationId(99));
     expect(job.trace_id).toBe("trace-123");
   });
 
@@ -136,17 +142,17 @@ describe("buildAnalyzePullRequestJob", () => {
 describe("buildCollectFeedbackJob", () => {
   const payload: GitHubPullRequestWebhookEvent = {
     action: "closed",
-    repository: { full_name: "acme/widget" },
-    pull_request: { number: 5, head: { sha: "def456" } },
-    installation: { id: 99 },
+    repository: { full_name: toRepoFullName("acme/widget") },
+    pull_request: { number: toPRNumber(5), head: { sha: toSHA("d".repeat(40)) } },
+    installation: { id: toInstallationId(99) },
   };
 
   test("maps fields from webhook event", () => {
     const job = buildCollectFeedbackJob(payload, "trace-456");
     expect(job.type).toBe("collect-feedback");
-    expect(job.repo_full_name).toBe("acme/widget");
-    expect(job.pr_number).toBe(5);
-    expect(job.installation_id).toBe(99);
+    expect(job.repo_full_name).toBe(toRepoFullName("acme/widget"));
+    expect(job.pr_number).toBe(toPRNumber(5));
+    expect(job.installation_id).toBe(toInstallationId(99));
     expect(job.trace_id).toBe("trace-456");
   });
 
@@ -513,8 +519,8 @@ describe("logWebhookFailure", () => {
 describe("isDraftPullRequest", () => {
   const basePayload: GitHubPullRequestWebhookEvent = {
     action: "opened",
-    repository: { full_name: "acme/widget" },
-    pull_request: { number: 1, head: { sha: "abc" } },
+    repository: { full_name: toRepoFullName("acme/widget") },
+    pull_request: { number: toPRNumber(1), head: { sha: toSHA("a".repeat(40)) } },
   };
 
   test("returns true when draft is true", () => {
@@ -535,8 +541,8 @@ describe("isDraftPullRequest", () => {
 describe("isClosedOrMergedPullRequest", () => {
   const basePayload: GitHubPullRequestWebhookEvent = {
     action: "opened",
-    repository: { full_name: "acme/widget" },
-    pull_request: { number: 1, head: { sha: "abc" }, state: "open", merged: false },
+    repository: { full_name: toRepoFullName("acme/widget") },
+    pull_request: { number: toPRNumber(1), head: { sha: toSHA("a".repeat(40)) }, state: "open", merged: false },
   };
 
   test("returns true when state is closed", () => {
@@ -556,8 +562,8 @@ describe("isClosedOrMergedPullRequest", () => {
   test("returns false when state and merged are undefined", () => {
     const payload: GitHubPullRequestWebhookEvent = {
       action: "opened",
-      repository: { full_name: "acme/widget" },
-      pull_request: { number: 1, head: { sha: "abc" } },
+      repository: { full_name: toRepoFullName("acme/widget") },
+      pull_request: { number: toPRNumber(1), head: { sha: toSHA("a".repeat(40)) } },
     };
     expect(isClosedOrMergedPullRequest(payload)).toBe(false);
   });
@@ -566,9 +572,9 @@ describe("isClosedOrMergedPullRequest", () => {
 describe("createPendingCheckRun", () => {
   const payload: GitHubPullRequestWebhookEvent = {
     action: "opened",
-    repository: { full_name: "acme/widget" },
-    pull_request: { number: 1, head: { sha: "abc123" } },
-    installation: { id: 99 },
+    repository: { full_name: toRepoFullName("acme/widget") },
+    pull_request: { number: toPRNumber(1), head: { sha: toSHA("a".repeat(40)) } },
+    installation: { id: toInstallationId(99) },
   };
 
   test("returns null when app credentials are missing", async () => {
@@ -627,9 +633,9 @@ describe("createPendingCheckRun", () => {
 describe("cancelOrphanedCheckRun", () => {
   const payload: GitHubPullRequestWebhookEvent = {
     action: "opened",
-    repository: { full_name: "acme/widget" },
-    pull_request: { number: 1, head: { sha: "abc123" } },
-    installation: { id: 99 },
+    repository: { full_name: toRepoFullName("acme/widget") },
+    pull_request: { number: toPRNumber(1), head: { sha: toSHA("a".repeat(40)) } },
+    installation: { id: toInstallationId(99) },
   };
 
   const validConfig: WebhookApiConfig = {

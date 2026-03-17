@@ -1,3 +1,11 @@
+import type {
+  InstallationId,
+  JobId,
+  PRNumber,
+  RepoFullName,
+  SHA,
+} from "./branded";
+
 /**
  * Queue job payload for pull request analysis work.
  */
@@ -9,23 +17,23 @@ export interface AnalyzePullRequestJob {
   /**
    * Stable unique identifier for this queue item.
    */
-  job_id: string;
+  job_id: JobId;
   /**
    * GitHub App installation id for API token resolution.
    */
-  installation_id: number | null;
+  installation_id: InstallationId | null;
   /**
    * Repository full name in `owner/name` format.
    */
-  repo_full_name: string;
+  repo_full_name: RepoFullName;
   /**
    * Pull request number in the repository.
    */
-  pr_number: number;
+  pr_number: PRNumber;
   /**
    * Pull request head commit SHA associated with this job.
    */
-  head_sha: string;
+  head_sha: SHA;
   /**
    * Optional end-to-end trace identifier propagated from webhook intake.
    */
@@ -51,19 +59,19 @@ export interface CollectFeedbackJob {
   /**
    * Stable unique identifier for this queue item.
    */
-  job_id: string;
+  job_id: JobId;
   /**
    * GitHub App installation id for API token resolution.
    */
-  installation_id: number | null;
+  installation_id: InstallationId | null;
   /**
    * Repository full name in `owner/name` format.
    */
-  repo_full_name: string;
+  repo_full_name: RepoFullName;
   /**
    * Pull request number in the repository.
    */
-  pr_number: number;
+  pr_number: PRNumber;
   /**
    * Optional end-to-end trace identifier propagated from webhook intake.
    */

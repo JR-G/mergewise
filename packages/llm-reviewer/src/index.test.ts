@@ -7,6 +7,16 @@ import type {
   PullRequestMetadata,
 } from "@mergewise/shared-types";
 import {
+  toConfidence,
+  toFilePath,
+  toInstallationId,
+  toLineNumber,
+  toPRNumber,
+  toRepoFullName,
+  toRuleId,
+  toSHA,
+} from "@mergewise/shared-types";
+import {
   ANTI_PATTERNS,
   selectFilesForReview,
   extractAddedLineNumbers,
@@ -30,14 +40,14 @@ function makeHunk(header: string, lines: string[]): DiffHunk {
 }
 
 function makeDiff(filePath: string, hunks: DiffHunk[]): FileDiff {
-  return { filePath, previousPath: null, hunks };
+  return { filePath: toFilePath(filePath), previousPath: null, hunks };
 }
 
 const PULL_REQUEST_METADATA: PullRequestMetadata = {
-  repo: "acme/widget",
-  prNumber: 42,
-  headSha: "abc123",
-  installationId: 1,
+  repo: toRepoFullName("acme/widget"),
+  prNumber: toPRNumber(42),
+  headSha: toSHA("a".repeat(40)),
+  installationId: toInstallationId(1),
 };
 
 function makeMockCodebaseContext(files: Record<string, string> = {}): CodebaseContext {
@@ -113,8 +123,8 @@ describe("selectFilesForReview", () => {
 
     const result = selectFilesForReview([small, large], 100_000);
     expect(result).toHaveLength(2);
-    expect(result[0]!.filePath).toBe("src/large.ts");
-    expect(result[1]!.filePath).toBe("src/small.ts");
+    expect(result[0]!.filePath).toBe(toFilePath("src/large.ts"));
+    expect(result[1]!.filePath).toBe(toFilePath("src/small.ts"));
   });
 
   test("prefers tsx over ts at equal change volume", () => {
@@ -122,7 +132,7 @@ describe("selectFilesForReview", () => {
     const tsxFile = makeDiff("src/Component.tsx", [makeHunk("@@ -0,0 +1,3 @@", ["+a", "+b", "+c"])]);
 
     const result = selectFilesForReview([tsFile, tsxFile], 100_000);
-    expect(result[0]!.filePath).toBe("src/Component.tsx");
+    expect(result[0]!.filePath).toBe(toFilePath("src/Component.tsx"));
   });
 
   test("respects token budget", () => {
@@ -148,7 +158,7 @@ describe("selectFilesForReview", () => {
 
     const result = selectFilesForReview(diffs, 100_000, ["src/generated/**"]);
     expect(result).toHaveLength(1);
-    expect(result[0]!.filePath).toBe("src/app.ts");
+    expect(result[0]!.filePath).toBe(toFilePath("src/app.ts"));
   });
 
   test("built-in skip patterns still apply alongside user patterns", () => {
@@ -160,7 +170,7 @@ describe("selectFilesForReview", () => {
 
     const result = selectFilesForReview(diffs, 100_000, ["packages/legacy/**"]);
     expect(result).toHaveLength(1);
-    expect(result[0]!.filePath).toBe("src/index.ts");
+    expect(result[0]!.filePath).toBe(toFilePath("src/index.ts"));
   });
 
   test("empty user skip patterns array has no effect", () => {
@@ -262,10 +272,10 @@ describe("parseLlmResponse", () => {
 
     const result = parseLlmResponse(raw, diff, PULL_REQUEST_METADATA);
     expect(result).toHaveLength(1);
-    expect(result[0]!.line).toBe(2);
+    expect(result[0]!.line).toBe(toLineNumber(2));
     expect(result[0]!.category).toBe("idiomatic");
-    expect(result[0]!.confidence).toBe(0.85);
-    expect(result[0]!.ruleId).toBe("llm/reviewer");
+    expect(result[0]!.confidence).toBe(toConfidence(0.85));
+    expect(result[0]!.ruleId).toBe(toRuleId("llm/reviewer"));
     expect(result[0]!.patchSuggestionPolicy).toBeUndefined();
     expect(result[0]!.status).toBe("posted");
   });
@@ -589,7 +599,7 @@ describe("parseLlmResponse", () => {
     });
     const result = parseLlmResponse(raw, importDiff, PULL_REQUEST_METADATA);
     expect(result).toHaveLength(1);
-    expect(result[0]!.line).toBe(1);
+    expect(result[0]!.line).toBe(toLineNumber(1));
   });
 
 });
@@ -892,12 +902,12 @@ describe("isCommentLine", () => {
 function makeFinding(overrides: Partial<Finding> & Pick<Finding, "line" | "category" | "confidence">): Finding {
   return {
     findingId: `test:${overrides.line}:${overrides.category}`,
-    installationId: 1,
-    repo: "acme/widget",
-    prNumber: 42,
+    installationId: toInstallationId(1),
+    repo: toRepoFullName("acme/widget"),
+    prNumber: toPRNumber(42),
     language: "typescript",
-    ruleId: "llm/reviewer",
-    filePath: "src/file.ts",
+    ruleId: toRuleId("llm/reviewer"),
+    filePath: toFilePath("src/file.ts"),
     evidence: "some code",
     recommendation: "fix it",
     status: "posted",
@@ -908,21 +918,21 @@ function makeFinding(overrides: Partial<Finding> & Pick<Finding, "line" | "categ
 describe("deduplicateByProximity", () => {
   test("collapses findings within proximity into highest-confidence winner", () => {
     const findings = [
-      makeFinding({ line: 4, category: "clean", confidence: 0.85 }),
-      makeFinding({ line: 5, category: "clean", confidence: 0.80 }),
-      makeFinding({ line: 8, category: "clean", confidence: 0.75 }),
+      makeFinding({ line: toLineNumber(4), category: "clean", confidence: toConfidence(0.85) }),
+      makeFinding({ line: toLineNumber(5), category: "clean", confidence: toConfidence(0.80) }),
+      makeFinding({ line: toLineNumber(8), category: "clean", confidence: toConfidence(0.75) }),
     ];
 
     const result = deduplicateByProximity(findings);
     expect(result).toHaveLength(1);
-    expect(result[0]!.line).toBe(4);
-    expect(result[0]!.confidence).toBe(0.85);
+    expect(result[0]!.line).toBe(toLineNumber(4));
+    expect(result[0]!.confidence).toBe(toConfidence(0.85));
   });
 
   test("preserves findings from different clusters", () => {
     const findings = [
-      makeFinding({ line: 2, category: "clean", confidence: 0.85 }),
-      makeFinding({ line: 20, category: "clean", confidence: 0.80 }),
+      makeFinding({ line: toLineNumber(2), category: "clean", confidence: toConfidence(0.85) }),
+      makeFinding({ line: toLineNumber(20), category: "clean", confidence: toConfidence(0.80) }),
     ];
 
     const result = deduplicateByProximity(findings);
@@ -931,8 +941,8 @@ describe("deduplicateByProximity", () => {
 
   test("preserves findings in same cluster with different categories", () => {
     const findings = [
-      makeFinding({ line: 3, category: "clean", confidence: 0.85 }),
-      makeFinding({ line: 5, category: "perf", confidence: 0.80 }),
+      makeFinding({ line: toLineNumber(3), category: "clean", confidence: toConfidence(0.85) }),
+      makeFinding({ line: toLineNumber(5), category: "perf", confidence: toConfidence(0.80) }),
     ];
 
     const result = deduplicateByProximity(findings);
@@ -941,12 +951,12 @@ describe("deduplicateByProximity", () => {
 
   test("caps output at 8 findings", () => {
     const findings = Array.from({ length: 12 }, (_, idx) =>
-      makeFinding({ line: (idx + 1) * 10, category: "clean", confidence: 0.9 - idx * 0.01 }),
+      makeFinding({ line: toLineNumber((idx + 1) * 10), category: "clean", confidence: toConfidence(0.9 - idx * 0.01) }),
     );
 
     const result = deduplicateByProximity(findings);
     expect(result).toHaveLength(8);
-    expect(result[0]!.confidence).toBe(0.9);
+    expect(result[0]!.confidence).toBe(toConfidence(0.9));
   });
 
   test("returns empty array for empty input", () => {
@@ -1389,11 +1399,11 @@ describe("reviewFile (via fake HTTP server)", () => {
         });
         const result = await reviewFile({ fileDiff: diff, pullRequest: PULL_REQUEST_METADATA, codebaseContext, client });
         expect(result.findings).toHaveLength(1);
-        expect(result.findings[0]!.line).toBe(1);
+        expect(result.findings[0]!.line).toBe(toLineNumber(1));
         expect(result.findings[0]!.category).toBe("idiomatic");
-        expect(result.findings[0]!.confidence).toBe(0.85);
-        expect(result.findings[0]!.ruleId).toBe("llm/reviewer");
-        expect(result.findings[0]!.filePath).toBe("src/app.ts");
+        expect(result.findings[0]!.confidence).toBe(toConfidence(0.85));
+        expect(result.findings[0]!.ruleId).toBe(toRuleId("llm/reviewer"));
+        expect(result.findings[0]!.filePath).toBe(toFilePath("src/app.ts"));
         expect(result.findings[0]!.patchSuggestionPolicy).toBeUndefined();
         expect(result.findings[0]!.status).toBe("posted");
       },
@@ -1491,7 +1501,7 @@ describe("createLlmReviewerRule", () => {
     });
 
     expect(rule.kind).toBe("codebase-aware");
-    expect(rule.metadata.ruleId).toBe("llm/reviewer");
+    expect(rule.metadata.ruleId).toBe(toRuleId("llm/reviewer"));
     expect(rule.metadata.category).toBe("idiomatic");
     expect(rule.metadata.languages).toContain("typescript");
   });
@@ -1557,11 +1567,11 @@ describe("createLlmReviewerRule", () => {
         });
         const findings = await rule.analyse(context, codebaseContext);
         expect(findings).toHaveLength(1);
-        expect(findings[0]!.ruleId).toBe("llm/reviewer");
-        expect(findings[0]!.filePath).toBe("src/service.ts");
-        expect(findings[0]!.line).toBe(1);
+        expect(findings[0]!.ruleId).toBe(toRuleId("llm/reviewer"));
+        expect(findings[0]!.filePath).toBe(toFilePath("src/service.ts"));
+        expect(findings[0]!.line).toBe(toLineNumber(1));
         expect(findings[0]!.category).toBe("clean");
-        expect(findings[0]!.confidence).toBe(0.88);
+        expect(findings[0]!.confidence).toBe(toConfidence(0.88));
       },
     );
   });
@@ -1597,8 +1607,8 @@ describe("createLlmReviewerRule", () => {
         const findings = await rule.analyse(context, makeMockCodebaseContext());
         expect(findings).toHaveLength(2);
         const filePaths = findings.map((finding) => finding.filePath);
-        expect(filePaths).toContain("src/a.ts");
-        expect(filePaths).toContain("src/b.ts");
+        expect(filePaths).toContain(toFilePath("src/a.ts"));
+        expect(filePaths).toContain(toFilePath("src/b.ts"));
       },
     );
   });
@@ -1668,9 +1678,9 @@ describe("createLlmReviewerRule", () => {
         };
         const findings = await rule.analyse(context, makeMockCodebaseContext());
         expect(findings).toHaveLength(1);
-        expect(findings[0]!.filePath).toBe("src/pass.ts");
+        expect(findings[0]!.filePath).toBe(toFilePath("src/pass.ts"));
         expect(errors).toHaveLength(1);
-        expect(errors[0]!.filePath).toBe("src/fail.ts");
+        expect(errors[0]!.filePath).toBe(toFilePath("src/fail.ts"));
       },
     );
   });

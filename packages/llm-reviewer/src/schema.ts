@@ -5,6 +5,7 @@ import type {
   PatchPreview,
   PullRequestMetadata,
 } from "@mergewise/shared-types";
+import { toConfidence, toLineNumber, toRuleId } from "@mergewise/shared-types";
 
 const VALID_CATEGORIES = new Set<FindingCategory>([
   "clean",
@@ -315,14 +316,14 @@ export function parseLlmResponse(
       repo: pullRequest.repo,
       prNumber: pullRequest.prNumber,
       language: "typescript",
-      ruleId: "llm/reviewer",
+      ruleId: toRuleId("llm/reviewer"),
       category: rawFinding.category as FindingCategory,
       filePath: diff.filePath,
-      line: rawFinding.line,
+      line: toLineNumber(rawFinding.line),
       evidence: rawFinding.evidence.slice(0, 200),
       recommendation: rawFinding.recommendation.slice(0, 600),
       ...(patchPreview ? { patchPreview } : {}),
-      confidence: rawFinding.confidence,
+      confidence: toConfidence(rawFinding.confidence),
       status: "posted",
     });
   }

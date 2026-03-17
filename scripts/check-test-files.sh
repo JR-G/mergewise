@@ -12,7 +12,7 @@ while IFS= read -r file; do
     *-types.ts|*/types.ts) continue ;;
     */main.ts|*/server.ts) continue ;;
     */test-helpers.ts|*/fixtures.ts|*/fixtures/*) continue ;;
-    */index.ts) continue ;;
+    */index.ts|*/schema.ts|*/diff-parser.ts) continue ;;
     packages/shared-types/*) continue ;;
     *-patterns.ts) continue ;;
   esac

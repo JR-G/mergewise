@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import type { Finding } from "@mergewise/shared-types";
+import { toConfidence, toFilePath, toInstallationId, toLineNumber, toPRNumber, toRepoFullName, toRuleId } from "@mergewise/shared-types";
 
 import {
   PR_SUMMARY_COMMENT_MARKER,
@@ -19,17 +20,17 @@ import {
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
   return {
     findingId: "f1",
-    installationId: 1,
-    repo: "acme/widget",
-    prNumber: 1,
+    installationId: toInstallationId(1),
+    repo: toRepoFullName("acme/widget"),
+    prNumber: toPRNumber(1),
     language: "typescript",
-    ruleId: "rule-1",
+    ruleId: toRuleId("test/rule-1"),
     category: "clean",
-    filePath: "src/index.ts",
-    line: 10,
+    filePath: toFilePath("src/index.ts"),
+    line: toLineNumber(10),
     evidence: "const x = 1;",
     recommendation: "Use a descriptive name.",
-    confidence: 0.9,
+    confidence: toConfidence(0.9),
     status: "posted",
     ...overrides,
   };
@@ -96,22 +97,22 @@ describe("truncateRecommendation", () => {
 
 describe("compareFindings", () => {
   it("sorts safety findings before clean findings", () => {
-    const safety = makeFinding({ category: "safety", filePath: "a.ts", line: 1 });
-    const clean = makeFinding({ category: "clean", filePath: "a.ts", line: 1 });
+    const safety = makeFinding({ category: "safety", filePath: toFilePath("a.ts"), line: toLineNumber(1) });
+    const clean = makeFinding({ category: "clean", filePath: toFilePath("a.ts"), line: toLineNumber(1) });
 
     expect(compareFindings(safety, clean)).toBeLessThan(0);
   });
 
   it("sorts by file path when categories match", () => {
-    const fileA = makeFinding({ filePath: "a.ts", line: 1 });
-    const fileB = makeFinding({ filePath: "b.ts", line: 1 });
+    const fileA = makeFinding({ filePath: toFilePath("a.ts"), line: toLineNumber(1) });
+    const fileB = makeFinding({ filePath: toFilePath("b.ts"), line: toLineNumber(1) });
 
     expect(compareFindings(fileA, fileB)).toBeLessThan(0);
   });
 
   it("sorts by line number when category and file match", () => {
-    const line10 = makeFinding({ line: 10 });
-    const line20 = makeFinding({ line: 20 });
+    const line10 = makeFinding({ line: toLineNumber(10) });
+    const line20 = makeFinding({ line: toLineNumber(20) });
 
     expect(compareFindings(line10, line20)).toBeLessThan(0);
   });
@@ -138,8 +139,8 @@ describe("buildCategoryBadges", () => {
 describe("groupFindingsIntoSuggestions", () => {
   it("groups findings with the same ruleId and recommendation together", () => {
     const findings = [
-      makeFinding({ ruleId: "r1", recommendation: "Fix it.", filePath: "a.ts" }),
-      makeFinding({ ruleId: "r1", recommendation: "Fix it.", filePath: "b.ts" }),
+      makeFinding({ ruleId: toRuleId("test/r1"), recommendation: "Fix it.", filePath: toFilePath("a.ts") }),
+      makeFinding({ ruleId: toRuleId("test/r1"), recommendation: "Fix it.", filePath: toFilePath("b.ts") }),
     ];
     const groups = groupFindingsIntoSuggestions(findings);
     expect(groups.length).toBe(1);
@@ -148,8 +149,8 @@ describe("groupFindingsIntoSuggestions", () => {
 
   it("separates findings with different recommendations into distinct groups", () => {
     const findings = [
-      makeFinding({ ruleId: "r1", recommendation: "Fix A." }),
-      makeFinding({ ruleId: "r1", recommendation: "Fix B." }),
+      makeFinding({ ruleId: toRuleId("test/r1"), recommendation: "Fix A." }),
+      makeFinding({ ruleId: toRuleId("test/r1"), recommendation: "Fix B." }),
     ];
     const groups = groupFindingsIntoSuggestions(findings);
     expect(groups.length).toBe(2);
@@ -229,7 +230,7 @@ describe("buildPrSummaryComment", () => {
     const findings = Array.from({ length: 50 }, (_, index) =>
       makeFinding({
         findingId: `f${String(index)}`,
-        filePath: `src/file-${String(index)}.ts`,
+        filePath: toFilePath(`src/file-${String(index)}.ts`),
         recommendation: "A".repeat(200) + ". " + "B".repeat(200),
       }),
     );

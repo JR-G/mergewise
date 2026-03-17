@@ -8,16 +8,28 @@ import type {
   PatchPreview,
   StatelessRule,
 } from "@mergewise/shared-types";
+import {
+  toConfidence,
+  toFilePath,
+  toInstallationId,
+  toLineNumber,
+  toPRNumber,
+  toRepoFullName,
+  toRuleId,
+  toSHA,
+} from "@mergewise/shared-types";
 
 import { executeRules } from "./index";
+
+const VALID_SHA = "a".repeat(40);
 
 const ANALYSIS_CONTEXT: AnalysisContext = {
   diffs: [],
   pullRequest: {
-    repo: "acme/widget",
-    prNumber: 42,
-    headSha: "abc123",
-    installationId: 9,
+    repo: toRepoFullName("acme/widget"),
+    prNumber: toPRNumber(42),
+    headSha: toSHA(VALID_SHA),
+    installationId: toInstallationId(9),
   },
 };
 
@@ -37,19 +49,19 @@ function buildFinding(
 ): Finding {
   return {
     findingId: `${ruleId}-finding`,
-    installationId: 9,
-    repo: "acme/widget",
-    prNumber: 42,
+    installationId: toInstallationId(9),
+    repo: toRepoFullName("acme/widget"),
+    prNumber: toPRNumber(42),
     language: "typescript",
-    ruleId,
+    ruleId: toRuleId(ruleId),
     category,
-    filePath: "src/index.ts",
-    line: 1,
+    filePath: toFilePath("src/index.ts"),
+    line: toLineNumber(1),
     evidence: "const value: any = input;",
     recommendation: "Replace any with a concrete type.",
     patchPreview: options?.patchPreview,
     patchSuggestionPolicy: options?.patchSuggestionPolicy,
-    confidence: 0.95,
+    confidence: toConfidence(0.95),
     status: "posted",
   };
 }
@@ -69,7 +81,7 @@ describe("executeRules", () => {
     const statelessRule: StatelessRule = {
       kind: "stateless",
       metadata: {
-        ruleId: "stateless/sample",
+        ruleId: toRuleId("stateless/sample"),
         name: "stateless sample",
         category: "safety",
         languages: ["typescript"],
@@ -80,7 +92,7 @@ describe("executeRules", () => {
     const codebaseRule: CodebaseAwareRule = {
       kind: "codebase-aware",
       metadata: {
-        ruleId: "codebase/sample",
+        ruleId: toRuleId("codebase/sample"),
         name: "codebase sample",
         category: "perf",
         languages: ["typescript"],
@@ -114,7 +126,7 @@ describe("executeRules", () => {
     const failingRule: StatelessRule = {
       kind: "stateless",
       metadata: {
-        ruleId: "stateless/failing",
+        ruleId: toRuleId("stateless/failing"),
         name: "failing",
         category: "clean",
         languages: ["typescript"],
@@ -127,7 +139,7 @@ describe("executeRules", () => {
     const successfulRule: StatelessRule = {
       kind: "stateless",
       metadata: {
-        ruleId: "stateless/success",
+        ruleId: toRuleId("stateless/success"),
         name: "success",
         category: "idiomatic",
         languages: ["typescript"],
@@ -147,7 +159,7 @@ describe("executeRules", () => {
     });
 
     expect(result.findings).toHaveLength(1);
-    expect(result.findings[0]!.ruleId).toBe("stateless/success");
+    expect(result.findings[0]!.ruleId).toBe(toRuleId("stateless/success"));
     expect(result.failedRuleIds).toEqual(["stateless/failing"]);
     expect(result.summary.totalRules).toBe(2);
     expect(result.summary.successfulRules).toBe(1);
@@ -160,7 +172,7 @@ describe("executeRules", () => {
     const codebaseRule: CodebaseAwareRule = {
       kind: "codebase-aware",
       metadata: {
-        ruleId: "codebase/needs-context",
+        ruleId: toRuleId("codebase/needs-context"),
         name: "needs context",
         category: "perf",
         languages: ["typescript"],
@@ -189,7 +201,7 @@ describe("executeRules", () => {
     const failingRule: StatelessRule = {
       kind: "stateless",
       metadata: {
-        ruleId: "stateless/default-log",
+        ruleId: toRuleId("stateless/default-log"),
         name: "default log",
         category: "clean",
         languages: ["typescript"],
@@ -231,7 +243,7 @@ describe("executeRules", () => {
     const rule: StatelessRule = {
       kind: "stateless",
       metadata: {
-        ruleId: "stateless/safe-patch-derived",
+        ruleId: toRuleId("stateless/safe-patch-derived"),
         name: "safe patch derived",
         category: "clean",
         languages: ["typescript"],
@@ -258,7 +270,7 @@ describe("executeRules", () => {
     const rule: StatelessRule = {
       kind: "stateless",
       metadata: {
-        ruleId: "stateless/manual-with-patch",
+        ruleId: toRuleId("stateless/manual-with-patch"),
         name: "manual with patch",
         category: "clean",
         languages: ["typescript"],
@@ -296,7 +308,7 @@ describe("executeRules", () => {
     const rule: StatelessRule = {
       kind: "stateless",
       metadata: {
-        ruleId: "stateless/safe-without-patch",
+        ruleId: toRuleId("stateless/safe-without-patch"),
         name: "safe without patch",
         category: "clean",
         languages: ["typescript"],
@@ -329,7 +341,7 @@ describe("executeRules", () => {
     const rule: StatelessRule = {
       kind: "stateless",
       metadata: {
-        ruleId: "stateless/partial-enforcement-failure",
+        ruleId: toRuleId("stateless/partial-enforcement-failure"),
         name: "partial enforcement failure",
         category: "clean",
         languages: ["typescript"],

@@ -1,8 +1,27 @@
 import type { GitHubReactionCounts } from "@mergewise/github-client";
 import type { RuleExecutionResult } from "@mergewise/rule-engine";
-import type { Finding, FindingCategory, Rule } from "@mergewise/shared-types";
+import type {
+  AnalyzePullRequestJob,
+  CollectFeedbackJob,
+  Finding,
+  FindingCategory,
+  Rule,
+} from "@mergewise/shared-types";
+import {
+  generateJobId,
+  toConfidence,
+  toFilePath,
+  toInstallationId,
+  toLineNumber,
+  toPRNumber,
+  toRepoFullName,
+  toRuleId,
+  toSHA,
+} from "@mergewise/shared-types";
 
 import type { WorkerGitHubFetchOptions } from "./index";
+
+const DEFAULT_QUEUED_AT = "2020-01-01T00:00:00.000Z";
 
 /** Minimal open PR state for dependency injection in worker tests. */
 export const openPullRequestState = {
@@ -26,7 +45,7 @@ export function createRule(ruleId: string): Rule {
   return {
     kind: "stateless",
     metadata: {
-      ruleId,
+      ruleId: toRuleId(ruleId),
       name: ruleId,
       category: "clean",
       languages: ["typescript"],
@@ -44,17 +63,17 @@ export function createFinding(
 ): Finding {
   return {
     findingId,
-    installationId: 44,
-    repo: "acme/widget",
-    prNumber: 50,
+    installationId: toInstallationId(44),
+    repo: toRepoFullName("acme/widget"),
+    prNumber: toPRNumber(50),
     language: "typescript",
-    ruleId: "rule-a",
+    ruleId: toRuleId("test/rule-a"),
     category,
-    filePath: "src/index.ts",
-    line: 1,
+    filePath: toFilePath("src/index.ts"),
+    line: toLineNumber(1),
     evidence: "const unsafe: any = value",
     recommendation: "Avoid explicit any",
-    confidence,
+    confidence: toConfidence(confidence),
     status: "posted",
   };
 }
@@ -89,3 +108,37 @@ export function createExecutionResultWithFindings(findings: readonly Finding[]):
 export const ZERO_REACTIONS: GitHubReactionCounts = {
   "+1": 0, "-1": 0, laugh: 0, confused: 0, heart: 0, hooray: 0, rocket: 0, eyes: 0,
 };
+
+/** Valid 40-char hex SHA for test fixtures. */
+export const TEST_SHA = toSHA("a".repeat(40));
+
+/** Creates a valid AnalyzePullRequestJob with branded types; override fields via Partial. */
+export function createAnalyzeJob(
+  overrides: Partial<AnalyzePullRequestJob> = {},
+): AnalyzePullRequestJob {
+  return {
+    job_id: generateJobId(),
+    installation_id: toInstallationId(44),
+    repo_full_name: toRepoFullName("acme/widget"),
+    pr_number: toPRNumber(50),
+    head_sha: TEST_SHA,
+    queued_at: "2025-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+/** Creates a valid CollectFeedbackJob with branded types; override fields via Partial. */
+export function createFeedbackJob(
+  overrides: Partial<CollectFeedbackJob> = {},
+): CollectFeedbackJob {
+  return {
+    type: "collect-feedback",
+    job_id: generateJobId(),
+    installation_id: toInstallationId(42),
+    repo_full_name: toRepoFullName("acme/widget"),
+    pr_number: toPRNumber(10),
+    trace_id: "trace-fb-1",
+    queued_at: DEFAULT_QUEUED_AT,
+    ...overrides,
+  };
+}

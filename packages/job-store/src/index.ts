@@ -3,6 +3,13 @@ import { createInterface } from "node:readline";
 import { dirname } from "node:path";
 
 import type { AnalyzePullRequestJob, CollectFeedbackJob, QueueJob } from "@mergewise/shared-types";
+import {
+  tryParseInstallationId,
+  tryParseJobId,
+  tryParsePRNumber,
+  tryParseRepoFullName,
+  tryParseSHA,
+} from "@mergewise/shared-types";
 
 /**
  * Logical queue file location used by the local development skeleton.
@@ -117,27 +124,14 @@ function isAnalyzePullRequestJob(value: unknown): value is AnalyzePullRequestJob
     return false;
   }
 
-  const candidate = value as Partial<AnalyzePullRequestJob>;
-  if (
-    typeof candidate.job_id !== "string" ||
-    typeof candidate.repo_full_name !== "string" ||
-    typeof candidate.head_sha !== "string" ||
-    typeof candidate.queued_at !== "string"
-  ) {
-    return false;
-  }
-  if (candidate.trace_id !== undefined && typeof candidate.trace_id !== "string") {
-    return false;
-  }
-  if (
-    candidate.installation_id !== null &&
-    (typeof candidate.installation_id !== "number" || !Number.isInteger(candidate.installation_id) || candidate.installation_id <= 0)
-  ) {
-    return false;
-  }
-  if (typeof candidate.pr_number !== "number" || !Number.isInteger(candidate.pr_number) || candidate.pr_number <= 0) {
-    return false;
-  }
+  const candidate = value as Partial<Record<string, unknown>>;
+  if (typeof candidate["job_id"] !== "string" || !tryParseJobId(candidate["job_id"])) return false;
+  if (typeof candidate["repo_full_name"] !== "string" || !tryParseRepoFullName(candidate["repo_full_name"])) return false;
+  if (typeof candidate["head_sha"] !== "string" || !tryParseSHA(candidate["head_sha"])) return false;
+  if (typeof candidate["queued_at"] !== "string") return false;
+  if (candidate["trace_id"] !== undefined && typeof candidate["trace_id"] !== "string") return false;
+  if (candidate["installation_id"] !== null && (typeof candidate["installation_id"] !== "number" || !tryParseInstallationId(candidate["installation_id"]))) return false;
+  if (typeof candidate["pr_number"] !== "number" || !tryParsePRNumber(candidate["pr_number"])) return false;
   return true;
 }
 
@@ -223,27 +217,14 @@ export function isCollectFeedbackJob(value: unknown): value is CollectFeedbackJo
     return false;
   }
 
-  const candidate = value as Partial<CollectFeedbackJob>;
-  if (
-    candidate.type !== "collect-feedback" ||
-    typeof candidate.job_id !== "string" ||
-    typeof candidate.repo_full_name !== "string" ||
-    typeof candidate.queued_at !== "string"
-  ) {
-    return false;
-  }
-  if (candidate.installation_id !== null && typeof candidate.installation_id !== "number") {
-    return false;
-  }
-  if (typeof candidate.installation_id === "number" && (!Number.isFinite(candidate.installation_id) || !Number.isInteger(candidate.installation_id) || candidate.installation_id <= 0)) {
-    return false;
-  }
-  if (candidate.trace_id !== undefined && typeof candidate.trace_id !== "string") {
-    return false;
-  }
-  if (typeof candidate.pr_number !== "number" || !Number.isFinite(candidate.pr_number) || !Number.isInteger(candidate.pr_number) || candidate.pr_number <= 0) {
-    return false;
-  }
+  const candidate = value as Partial<Record<string, unknown>>;
+  if (candidate["type"] !== "collect-feedback") return false;
+  if (typeof candidate["job_id"] !== "string" || !tryParseJobId(candidate["job_id"])) return false;
+  if (typeof candidate["repo_full_name"] !== "string" || !tryParseRepoFullName(candidate["repo_full_name"])) return false;
+  if (typeof candidate["queued_at"] !== "string") return false;
+  if (candidate["installation_id"] !== null && (typeof candidate["installation_id"] !== "number" || !tryParseInstallationId(candidate["installation_id"]))) return false;
+  if (candidate["trace_id"] !== undefined && typeof candidate["trace_id"] !== "string") return false;
+  if (typeof candidate["pr_number"] !== "number" || !tryParsePRNumber(candidate["pr_number"])) return false;
   return true;
 }
 

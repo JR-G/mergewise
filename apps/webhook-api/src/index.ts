@@ -1,4 +1,4 @@
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import {
@@ -13,6 +13,14 @@ import type {
   CollectFeedbackJob,
   GitHubPullRequestAction,
   GitHubPullRequestWebhookEvent,
+} from "@mergewise/shared-types";
+
+import {
+  generateJobId,
+  tryParseInstallationId,
+  tryParsePRNumber,
+  tryParseRepoFullName,
+  tryParseSHA,
 } from "@mergewise/shared-types";
 
 import type { WebhookApiConfig } from "./types";
@@ -205,13 +213,18 @@ export function isPullRequestWebhookEvent(
     return false;
   }
 
-  const event = payload as Partial<GitHubPullRequestWebhookEvent>;
-  return (
-    typeof event.action === "string" &&
-    typeof event.repository?.full_name === "string" &&
-    typeof event.pull_request?.number === "number" &&
-    typeof event.pull_request?.head?.sha === "string" // eslint-disable-line @typescript-eslint/no-unnecessary-condition -- head is nested inside optional pull_request
-  );
+  const event = payload as Record<string, unknown>;
+  const repository = event["repository"] as Record<string, unknown> | undefined;
+  const pullRequest = event["pull_request"] as Record<string, unknown> | undefined;
+  const pullRequestHead = pullRequest?.["head"] as Record<string, unknown> | undefined;
+  const installation = event["installation"] as Record<string, unknown> | null | undefined;
+
+  if (typeof event["action"] !== "string") return false;
+  if (typeof repository?.["full_name"] !== "string" || !tryParseRepoFullName(repository["full_name"])) return false;
+  if (typeof pullRequest?.["number"] !== "number" || !tryParsePRNumber(pullRequest["number"])) return false;
+  if (typeof pullRequestHead?.["sha"] !== "string" || !tryParseSHA(pullRequestHead["sha"])) return false;
+  if (installation != null && (typeof installation["id"] !== "number" || !tryParseInstallationId(installation["id"]))) return false;
+  return true;
 }
 
 /**
@@ -226,7 +239,7 @@ export function buildAnalyzePullRequestJob(
   traceId?: string,
 ): AnalyzePullRequestJob {
   return {
-    job_id: randomUUID(),
+    job_id: generateJobId(),
     installation_id: payload.installation?.id ?? null,
     repo_full_name: payload.repository.full_name,
     pr_number: payload.pull_request.number,
@@ -249,7 +262,7 @@ export function buildCollectFeedbackJob(
 ): CollectFeedbackJob {
   return {
     type: "collect-feedback",
-    job_id: randomUUID(),
+    job_id: generateJobId(),
     installation_id: payload.installation?.id ?? null,
     repo_full_name: payload.repository.full_name,
     pr_number: payload.pull_request.number,

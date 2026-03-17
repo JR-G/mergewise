@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import type { AnalyzePullRequestJob } from "@mergewise/shared-types";
+import { toInstallationId, toJobId, toPRNumber, toRepoFullName, toSHA } from "@mergewise/shared-types";
 import type { GitHubCheckRun } from "@mergewise/github-client";
 import type { WorkerProcessingDependencies, ResolvedLoggers } from "./process-job-types";
 import type { GitHubAnalysisContextResult } from "./github-fetch";
@@ -15,11 +16,11 @@ import {
 
 function buildStubJob(overrides: Partial<AnalyzePullRequestJob> = {}): AnalyzePullRequestJob {
   return {
-    job_id: "job-1",
-    installation_id: 100,
-    repo_full_name: "acme/repo",
-    pr_number: 7,
-    head_sha: "abc123",
+    job_id: toJobId("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+    installation_id: toInstallationId(100),
+    repo_full_name: toRepoFullName("acme/repo"),
+    pr_number: toPRNumber(7),
+    head_sha: toSHA("a".repeat(40)),
     queued_at: "2025-01-01T00:00:00Z",
     ...overrides,
   };
@@ -40,10 +41,10 @@ function buildStubAnalysisContext(): GitHubAnalysisContextResult {
     analysisContext: {
       diffs: [],
       pullRequest: {
-        repo: "acme/repo",
-        prNumber: 7,
-        headSha: "abc123",
-        installationId: 100,
+        repo: toRepoFullName("acme/repo"),
+        prNumber: toPRNumber(7),
+        headSha: toSHA("a".repeat(40)),
+        installationId: toInstallationId(100),
       },
     },
     owner: "acme",

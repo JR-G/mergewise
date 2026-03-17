@@ -1,21 +1,29 @@
 import { describe, expect, test } from "bun:test";
 import type { Finding } from "@mergewise/shared-types";
+import {
+  toConfidence,
+  toFilePath,
+  toLineNumber,
+  toPRNumber,
+  toRepoFullName,
+  toRuleId,
+} from "@mergewise/shared-types";
 import { parseCriticResponse, splitByVerdicts } from "./critic";
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
   return {
     findingId: "test-finding-1",
     installationId: null,
-    repo: "owner/repo",
-    prNumber: 1,
+    repo: toRepoFullName("owner/repo"),
+    prNumber: toPRNumber(1),
     language: "typescript",
-    ruleId: "llm/reviewer",
+    ruleId: toRuleId("llm/reviewer"),
     category: "clean",
-    filePath: "src/index.ts",
-    line: 10,
+    filePath: toFilePath("src/index.ts"),
+    line: toLineNumber(10),
     evidence: "function processOrder",
     recommendation: "Extract side effects into a separate function.",
-    confidence: 0.9,
+    confidence: toConfidence(0.9),
     status: "posted",
     ...overrides,
   };
@@ -85,9 +93,9 @@ describe("parseCriticResponse", () => {
 
 describe("splitByVerdicts", () => {
   const findings = [
-    makeFinding({ findingId: "f1", line: 10 }),
-    makeFinding({ findingId: "f2", line: 20 }),
-    makeFinding({ findingId: "f3", line: 30 }),
+    makeFinding({ findingId: "f1", line: toLineNumber(10) }),
+    makeFinding({ findingId: "f2", line: toLineNumber(20) }),
+    makeFinding({ findingId: "f3", line: toLineNumber(30) }),
   ];
 
   test("keeps all findings when all verdicts say keep", () => {

@@ -1,4 +1,4 @@
-import type { Finding } from "@mergewise/shared-types";
+import type { FilePath, Finding, RepoFullName } from "@mergewise/shared-types";
 import type { CompletionUsage } from "./client";
 
 /**
@@ -55,7 +55,7 @@ export type TriagePriority = "high" | "medium" | "low" | "skip";
  * Classification output from the triage pass for a single file.
  */
 export interface TriageResult {
-  readonly filePath: string;
+  readonly filePath: FilePath;
   readonly classifications: readonly string[];
   readonly priority: TriagePriority;
   readonly reasoning: string;
@@ -81,8 +81,8 @@ export interface CriticResult {
  * Graph context for a single file from the debt scanner.
  */
 export interface FileGraphContext {
-  readonly filePath: string;
-  readonly callers: readonly string[];
+  readonly filePath: FilePath;
+  readonly callers: readonly FilePath[];
   readonly centrality: number;
   readonly isHotspot: boolean;
 }
@@ -101,10 +101,10 @@ export interface ReviewLearnings {
  * When a tool is undefined, the corresponding prompt section is omitted.
  */
 export interface ReviewToolkit {
-  readonly getCallers?: ((filePath: string) => FileGraphContext) | undefined;
+  readonly getCallers?: ((filePath: FilePath) => FileGraphContext) | undefined;
   readonly getRepoLearnings?: ((
-    repoName: string,
-    filePaths: readonly string[],
+    repoName: RepoFullName,
+    filePaths: readonly FilePath[],
   ) => ReviewLearnings) | undefined;
 }
 
@@ -137,7 +137,7 @@ export interface ReviewPipelineConfig {
  * A file that failed during the review stage.
  */
 export interface FileReviewFailure {
-  readonly filePath: string;
+  readonly filePath: FilePath;
   readonly error: string;
 }
 
