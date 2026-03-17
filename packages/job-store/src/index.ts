@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import type { AnalyzePullRequestJob, CollectFeedbackJob, IndexRepoJob, QueueJob } from "@mergewise/shared-types";
@@ -337,8 +337,14 @@ export function readAllQueueJobs(
     return { jobs: [], byteOffset: safeOffset };
   }
 
-  const fileBuffer = readFileSync(filePath);
-  const slice = safeOffset > 0 ? fileBuffer.subarray(safeOffset) : fileBuffer;
+  const bytesToRead = fileSize - safeOffset;
+  const slice = Buffer.alloc(bytesToRead);
+  const fd = openSync(filePath, "r");
+  try {
+    readSync(fd, slice, 0, bytesToRead, safeOffset);
+  } finally {
+    closeSync(fd);
+  }
   const content = slice.toString("utf8");
   const lines = content.split("\n");
 
