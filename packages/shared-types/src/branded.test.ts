@@ -53,6 +53,29 @@ describe("FilePath", () => {
     const result: string | null = tryParseFilePath("src/index.ts");
     expect(result).toBe("src/index.ts");
   });
+
+  test("rejects parent directory traversal", () => {
+    expect(() => toFilePath("../escape.ts")).toThrow(TypeError);
+    expect(() => toFilePath("src/../escape.ts")).toThrow(TypeError);
+    expect(() => toFilePath("..")).toThrow(TypeError);
+    expect(() => toFilePath("src/..")).toThrow(TypeError);
+  });
+
+  test("rejects backslashes", () => {
+    expect(() => toFilePath("src\\escape.ts")).toThrow(TypeError);
+    expect(() => toFilePath("..\\escape.ts")).toThrow(TypeError);
+  });
+
+  test("rejects Windows absolute path", () => {
+    expect(() => toFilePath("C:\\temp\\file.ts")).toThrow(TypeError);
+    expect(() => toFilePath("D:file.ts")).toThrow(TypeError);
+  });
+
+  test("tryParse returns null for traversal and backslash paths", () => {
+    expect(tryParseFilePath("../escape.ts")).toBeNull();
+    expect(tryParseFilePath("..\\escape.ts")).toBeNull();
+    expect(tryParseFilePath("C:\\temp\\file.ts")).toBeNull();
+  });
 });
 
 describe("RepoFullName", () => {
@@ -365,6 +388,14 @@ describe("PRNumber", () => {
     const result: number | null = tryParsePRNumber(42);
     expect(result).toBe(42);
   });
+
+  test("rejects beyond MAX_SAFE_INTEGER", () => {
+    expect(() => toPRNumber(Number.MAX_SAFE_INTEGER + 1)).toThrow(TypeError);
+  });
+
+  test("tryParse returns null beyond MAX_SAFE_INTEGER", () => {
+    expect(tryParsePRNumber(Number.MAX_SAFE_INTEGER + 1)).toBeNull();
+  });
 });
 
 describe("InstallationId", () => {
@@ -400,5 +431,13 @@ describe("InstallationId", () => {
   test("tryParse returns branded value for valid id", () => {
     const result: number | null = tryParseInstallationId(12345);
     expect(result).toBe(12345);
+  });
+
+  test("rejects beyond MAX_SAFE_INTEGER", () => {
+    expect(() => toInstallationId(Number.MAX_SAFE_INTEGER + 1)).toThrow(TypeError);
+  });
+
+  test("tryParse returns null beyond MAX_SAFE_INTEGER", () => {
+    expect(tryParseInstallationId(Number.MAX_SAFE_INTEGER + 1)).toBeNull();
   });
 });

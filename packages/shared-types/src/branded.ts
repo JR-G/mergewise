@@ -90,6 +90,10 @@ function isPositiveInteger(value: number): boolean {
   return Number.isInteger(value) && value > 0 && value <= Number.MAX_SAFE_INTEGER;
 }
 
+function containsParentTraversal(value: string): boolean {
+  return value === ".." || value.startsWith("../") || value.includes("/../") || value.endsWith("/..");
+}
+
 /**
  * Creates a {@link FilePath} from a raw string.
  *
@@ -102,6 +106,15 @@ export function toFilePath(value: string): FilePath {
   if (value.startsWith("/")) {
     throw new TypeError("FilePath must be relative (no leading '/')");
   }
+  if (value.includes("\\")) {
+    throw new TypeError("FilePath must not contain backslashes");
+  }
+  if (containsParentTraversal(value)) {
+    throw new TypeError("FilePath must not contain parent directory traversal");
+  }
+  if (/^[A-Za-z]:/.test(value)) {
+    throw new TypeError("FilePath must not be a Windows absolute path");
+  }
   return value as FilePath;
 }
 
@@ -112,6 +125,9 @@ export function toFilePath(value: string): FilePath {
  */
 export function tryParseFilePath(value: string): FilePath | null {
   if (value.length === 0 || value.startsWith("/")) return null;
+  if (value.includes("\\")) return null;
+  if (containsParentTraversal(value)) return null;
+  if (/^[A-Za-z]:/.test(value)) return null;
   return value as FilePath;
 }
 
