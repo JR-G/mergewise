@@ -3,60 +3,61 @@ import { toFilePath } from "@mergewise/shared-types";
 import type { EvalFixture, EvalVariant } from "./types";
 import { runFixture } from "./runner";
 
+function makeFixture(overrides?: Partial<EvalFixture>): EvalFixture {
+  return {
+    fixtureId: "test-fixture",
+    fileDiff: {
+      filePath: toFilePath("src/test.ts"),
+      previousPath: null,
+      hunks: [{ header: "@@ -1,1 +1,2 @@", lines: ["+const x = 1"] }],
+    },
+    fullFileContent: "const x = 1",
+    expectations: [],
+    ...overrides,
+  };
+}
+
+function makeVariant(overrides?: Partial<EvalVariant>): EvalVariant {
+  return {
+    label: "default",
+    clientConfig: { model: "gpt-4o-mini", apiKey: "test-key" },
+    confidenceThreshold: 0.5,
+    ...overrides,
+  };
+}
+
 describe("runFixture", () => {
-  test("accepts valid fixture and variant arguments", async () => {
-    const fixture: EvalFixture = {
-      fixtureId: "test-fixture",
-      fileDiff: {
-        filePath: toFilePath("src/test.ts"),
-        previousPath: null,
-        hunks: [{ header: "@@ -1,1 +1,2 @@", lines: ["+const x = 1"] }],
-      },
-      fullFileContent: "const x = 1",
-      expectations: [],
-    };
-
-    const variant: EvalVariant = {
-      label: "default",
-      clientConfig: {
-        model: "gpt-4o-mini",
-        apiKey: "test-key",
-      },
-      confidenceThreshold: 0.5,
-    };
-
+  test("wraps LLM failure with fixture and variant context", async () => {
+    let thrownError: unknown;
     try {
-      await runFixture(fixture, variant);
+      await runFixture(makeFixture(), makeVariant());
     } catch (error) {
-      expect(error).toBeDefined();
+      thrownError = error;
     }
+
+    expect(thrownError).toBeInstanceOf(Error);
+    expect((thrownError as Error).message).toMatch(
+      /LLM completion failed for fixture "test-fixture" variant "default"/,
+    );
   });
 
-  test("handles fixture with empty hunks", async () => {
-    const fixture: EvalFixture = {
-      fixtureId: "empty",
-      fileDiff: {
-        filePath: toFilePath("empty.ts"),
-        previousPath: null,
-        hunks: [],
-      },
+  test("includes fixture ID and variant label in error for empty hunks", async () => {
+    const fixture = makeFixture({
+      fixtureId: "empty-hunks",
+      fileDiff: { filePath: toFilePath("empty.ts"), previousPath: null, hunks: [] },
       fullFileContent: "",
-      expectations: [],
-    };
+    });
 
-    const variant: EvalVariant = {
-      label: "empty",
-      clientConfig: {
-        model: "gpt-4o-mini",
-        apiKey: "test-key",
-      },
-      confidenceThreshold: 0,
-    };
-
+    let thrownError: unknown;
     try {
-      await runFixture(fixture, variant);
+      await runFixture(fixture, makeVariant({ label: "empty" }));
     } catch (error) {
-      expect(error).toBeDefined();
+      thrownError = error;
     }
+
+    expect(thrownError).toBeInstanceOf(Error);
+    expect((thrownError as Error).message).toMatch(
+      /LLM completion failed for fixture "empty-hunks" variant "empty"/,
+    );
   });
 });

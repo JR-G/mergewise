@@ -167,6 +167,19 @@ describe("buildAnalyzePullRequestJob", () => {
     expect(job.pr_body).toHaveLength(1000);
   });
 
+  test("truncates pr_title at 200 characters", () => {
+    const longTitle = "t".repeat(300);
+    const withLongTitle: GitHubPullRequestWebhookEvent = {
+      ...payload,
+      pull_request: {
+        ...payload.pull_request,
+        title: longTitle,
+      },
+    };
+    const job = buildAnalyzePullRequestJob(withLongTitle);
+    expect(job.pr_title).toHaveLength(200);
+  });
+
   test("handles null pr_body gracefully", () => {
     const withNullBody: GitHubPullRequestWebhookEvent = {
       ...payload,
