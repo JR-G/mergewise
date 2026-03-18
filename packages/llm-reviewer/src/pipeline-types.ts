@@ -112,7 +112,7 @@ export interface ReviewToolkit {
  * Per-file token usage from the review stage.
  */
 export interface FileTokenUsage {
-  readonly filePath: string;
+  readonly filePath: FilePath;
   readonly promptTokens: number;
   readonly completionTokens: number;
 }
