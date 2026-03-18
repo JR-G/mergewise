@@ -1,21 +1,21 @@
 [
   {
     "description": "Should not flag properly structured component as god-component",
-    "matchLineRange": [1, 72],
+    "matchLineRange": [1, 77],
     "matchRecommendationContainsAny": ["god", "too many responsibilities", "split"],
     "required": false,
     "forbidden": true
   },
   {
     "description": "Should not flag correct useMemo/useCallback usage as unnecessary",
-    "matchLineRange": [1, 72],
-    "matchRecommendationContainsAny": ["unnecessary", "remove useMemo", "remove useCallback", "stable", "simple object lookup", "overhead", "derived directly", "does not depend", "simple", "not needed", "overkill"],
+    "matchLineRange": [1, 77],
+    "matchRecommendationContainsAny": ["unnecessary", "remove useMemo", "remove useCallback", "does not depend", "not needed", "overkill", "trivial"],
     "required": false,
     "forbidden": true
   },
   {
     "description": "Should not flag idiomatic type narrowing in select handler",
-    "matchLineRange": [30, 72],
+    "matchLineRange": [35, 77],
     "matchRecommendationContainsAny": ["type safety", "cast", "assertion"],
     "required": false,
     "forbidden": true

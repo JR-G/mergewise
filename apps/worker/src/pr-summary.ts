@@ -367,8 +367,6 @@ function buildTruncatedFindingsSection(
 }
 
 function buildReviewDetailsSection(
-  rulesPassed: number,
-  rulesRan: number,
   filePaths: readonly string[],
 ): string[] {
   const lines: string[] = [
@@ -376,8 +374,6 @@ function buildReviewDetailsSection(
     "<details>",
     "<summary>\u2699\uFE0F Review details</summary>",
     "<br>",
-    "",
-    `**Rules:** ${String(rulesPassed)}/${String(rulesRan)} passed`,
   ];
 
   if (filePaths.length > 0) {
@@ -404,7 +400,7 @@ function buildReviewDetailsSection(
  * section at the bottom.
  */
 export function buildPrSummaryComment(input: PrSummaryInput): string {
-  const { filePaths, findings, repositoryFullName, headSha, rulesRan, rulesPassed } = input;
+  const { filePaths, findings, repositoryFullName, headSha } = input;
   const fileCount = filePaths.length;
   const headerLines: string[] = [PR_SUMMARY_COMMENT_MARKER];
 
@@ -421,7 +417,7 @@ export function buildPrSummaryComment(input: PrSummaryInput): string {
     );
   }
 
-  const reviewDetailsLines = buildReviewDetailsSection(rulesPassed, rulesRan, filePaths);
+  const reviewDetailsLines = buildReviewDetailsSection(filePaths);
   const baseContent = [...headerLines, ...reviewDetailsLines].join("\n");
 
   if (findings.length === 0) {
