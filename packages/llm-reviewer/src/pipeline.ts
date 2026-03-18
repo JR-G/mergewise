@@ -153,6 +153,8 @@ async function runReviewStage(
         knowledge,
         graphContext,
         learnings,
+        prTitle: pullRequest.prTitle,
+        prDescription: pullRequest.prDescription,
       });
 
       const { content, usage } = await client.complete(systemPrompt, userPrompt, MAX_REVIEW_RESPONSE_TOKENS);

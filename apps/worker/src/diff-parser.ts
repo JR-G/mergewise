@@ -25,6 +25,8 @@ export function buildAnalysisContext(
       prNumber: job.pr_number,
       headSha: job.head_sha,
       installationId: job.installation_id,
+      prTitle: job.pr_title,
+      prDescription: job.pr_body,
     },
   };
 }

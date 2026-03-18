@@ -6,7 +6,7 @@ import type {
   ReviewLearnings,
 } from "./pipeline-types";
 import { formatKnowledgeSection } from "./knowledge/format";
-import { computeContextWindows } from "./prompt";
+import { buildPrContextSection, computeContextWindows } from "./prompt";
 
 const MAX_FULL_FILE_LINES = 2000;
 const WINDOWED_COVERAGE_THRESHOLD = 0.9;
@@ -154,6 +154,8 @@ export interface DynamicPromptInput {
   readonly knowledge: readonly KnowledgeDocument[];
   readonly graphContext?: FileGraphContext | undefined;
   readonly learnings?: ReviewLearnings | undefined;
+  readonly prTitle?: string | undefined;
+  readonly prDescription?: string | undefined;
 }
 
 /**
@@ -168,6 +170,8 @@ export function buildDynamicFilePrompt(input: DynamicPromptInput): string {
   const parts: string[] = [];
 
   parts.push(`## File: ${input.fileDiff.filePath}`);
+  parts.push(...buildPrContextSection(input.prTitle, input.prDescription));
+
   parts.push("");
   parts.push("## Diff");
   parts.push("```diff");

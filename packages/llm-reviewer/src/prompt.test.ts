@@ -194,7 +194,7 @@ describe("buildFileReviewPrompt context windowing", () => {
       previousPath: null,
       hunks: [makeHunk("@@ -500,3 +500,5 @@", ["+added line"])],
     };
-    const prompt = buildFileReviewPrompt(diff, fileContent, emptySignals);
+    const prompt = buildFileReviewPrompt({ fileDiff: diff, fullContent: fileContent, signals: emptySignals });
 
     expect(prompt).toContain("File context (lines 450");
     expect(prompt).not.toContain("Full file content");
@@ -208,7 +208,7 @@ describe("buildFileReviewPrompt context windowing", () => {
       previousPath: null,
       hunks: [makeHunk("@@ -1,80 +1,82 @@", ["+added"])],
     };
-    const prompt = buildFileReviewPrompt(diff, fileContent, emptySignals);
+    const prompt = buildFileReviewPrompt({ fileDiff: diff, fullContent: fileContent, signals: emptySignals });
 
     expect(prompt).toContain("Full file content");
     expect(prompt).not.toContain("File context (lines");
@@ -222,7 +222,7 @@ describe("buildFileReviewPrompt context windowing", () => {
       previousPath: null,
       hunks: [makeHunk("@@ -1,3 +1,3 @@", ["+x"])],
     };
-    const prompt = buildFileReviewPrompt(diff, null, emptySignals);
+    const prompt = buildFileReviewPrompt({ fileDiff: diff, fullContent: null, signals: emptySignals });
 
     expect(prompt).not.toContain("File context");
     expect(prompt).not.toContain("Full file content");
@@ -235,7 +235,7 @@ describe("buildFileReviewPrompt context windowing", () => {
       previousPath: null,
       hunks: [makeHunk("INVALID HEADER", ["+added"])],
     };
-    const prompt = buildFileReviewPrompt(diff, fileContent, emptySignals);
+    const prompt = buildFileReviewPrompt({ fileDiff: diff, fullContent: fileContent, signals: emptySignals });
 
     expect(prompt).toContain("Full file content");
     expect(prompt).not.toContain("File context (lines");
@@ -248,7 +248,7 @@ describe("buildFileReviewPrompt context windowing", () => {
       previousPath: null,
       hunks: [makeHunk("@@ -1,3 +1,5 @@", ["+added"])],
     };
-    const prompt = buildFileReviewPrompt(diff, fileContent, emptySignals);
+    const prompt = buildFileReviewPrompt({ fileDiff: diff, fullContent: fileContent, signals: emptySignals });
 
     expect(prompt).toContain("Full file content");
     expect(prompt).not.toContain("File context (lines");
@@ -264,9 +264,78 @@ describe("buildFileReviewPrompt context windowing", () => {
         makeHunk("@@ -300,3 +300,5 @@", ["+added"]),
       ],
     };
-    const prompt = buildFileReviewPrompt(diff, fileContent, emptySignals);
+    const prompt = buildFileReviewPrompt({ fileDiff: diff, fullContent: fileContent, signals: emptySignals });
 
     expect(prompt).toContain("File context (lines");
     expect(prompt).not.toContain("Full file content");
+  });
+});
+
+describe("buildFileReviewPrompt PR context", () => {
+  const emptySignals = {
+    componentLineCount: 0,
+    hookCount: 0,
+    importCount: 0,
+    maxNestingDepth: 0,
+    functionCount: 0,
+    maxFunctionLineCount: 0,
+    maxParameterCount: 0,
+    classCount: 0,
+    typeAssertionCount: 0,
+  };
+
+  const diff: FileDiff = {
+    filePath: toFilePath("src/index.ts"),
+    previousPath: null,
+    hunks: [{ header: "@@ -1,3 +1,5 @@", lines: ["+added"] }],
+  };
+
+  test("includes PR context section when title is provided", () => {
+    const prompt = buildFileReviewPrompt({
+      fileDiff: diff, fullContent: null, signals: emptySignals,
+      prTitle: "fix: replace streams with sync reads",
+      prDescription: "Streams hang in Bun, switched to readFileSync.",
+    });
+    expect(prompt).toContain("## Pull Request Context");
+    expect(prompt).toContain("Title: fix: replace streams with sync reads");
+    expect(prompt).toContain("Description: Streams hang in Bun");
+    expect(prompt).toContain("do not suggest reverting");
+  });
+
+  test("omits PR context section when title is absent", () => {
+    const prompt = buildFileReviewPrompt({ fileDiff: diff, fullContent: null, signals: emptySignals });
+    expect(prompt).not.toContain("## Pull Request Context");
+  });
+
+  test("omits description line when prDescription is absent", () => {
+    const prompt = buildFileReviewPrompt({
+      fileDiff: diff, fullContent: null, signals: emptySignals,
+      prTitle: "fix: something",
+    });
+    expect(prompt).toContain("## Pull Request Context");
+    expect(prompt).toContain("Title: fix: something");
+    expect(prompt).not.toContain("Description:");
+  });
+
+  test("truncates prDescription at 500 characters", () => {
+    const longDescription = "y".repeat(800);
+    const prompt = buildFileReviewPrompt({
+      fileDiff: diff, fullContent: null, signals: emptySignals,
+      prTitle: "chore: long desc",
+      prDescription: longDescription,
+    });
+    expect(prompt).toContain("Description: " + "y".repeat(500));
+    expect(prompt).not.toContain("y".repeat(501));
+  });
+
+  test("PR context appears before the diff section", () => {
+    const prompt = buildFileReviewPrompt({
+      fileDiff: diff, fullContent: null, signals: emptySignals,
+      prTitle: "feat: new feature",
+      prDescription: "Details here.",
+    });
+    const contextIndex = prompt.indexOf("## Pull Request Context");
+    const diffIndex = prompt.indexOf("## Diff");
+    expect(contextIndex).toBeLessThan(diffIndex);
   });
 });
