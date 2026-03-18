@@ -3,7 +3,7 @@ import type { FileDiff } from "@mergewise/shared-types";
 import { toFilePath } from "@mergewise/shared-types";
 import type { StructuralSignals } from "./signals";
 import type { KnowledgeDocument, FileGraphContext, ReviewLearnings } from "./pipeline-types";
-import { buildSlimSystemPrompt, buildDynamicFilePrompt } from "./prompt-slim";
+import { buildSlimSystemPrompt, buildDynamicFilePrompt, buildToolUseFilePrompt } from "./prompt-slim";
 
 function makeSignals(overrides: Partial<StructuralSignals> = {}): StructuralSignals {
   return {
@@ -406,5 +406,134 @@ describe("buildDynamicFilePrompt", () => {
     const contextIndex = result.indexOf("## Pull Request Context");
     const diffIndex = result.indexOf("## Diff");
     expect(contextIndex).toBeLessThan(diffIndex);
+  });
+});
+
+describe("buildSlimSystemPrompt with toolUse option", () => {
+  test("includes available tools section when toolUse is true", () => {
+    const prompt = buildSlimSystemPrompt({ toolUse: true });
+    expect(prompt).toContain("## Available tools");
+    expect(prompt).toContain("read_file_section");
+    expect(prompt).toContain("get_callers");
+    expect(prompt).toContain("lookup_pattern");
+    expect(prompt).toContain("get_repo_preferences");
+  });
+
+  test("omits available tools section when toolUse is false", () => {
+    const prompt = buildSlimSystemPrompt({ toolUse: false });
+    expect(prompt).not.toContain("## Available tools");
+  });
+
+  test("omits available tools section when toolUse is omitted", () => {
+    const prompt = buildSlimSystemPrompt();
+    expect(prompt).not.toContain("## Available tools");
+  });
+
+  test("combines agentFriendliness and toolUse addenda", () => {
+    const prompt = buildSlimSystemPrompt({ agentFriendliness: true, toolUse: true });
+    expect(prompt).toContain("AI agent compatibility");
+    expect(prompt).toContain("## Available tools");
+  });
+});
+
+describe("buildToolUseFilePrompt", () => {
+  test("includes diff content", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      signals: makeSignals(),
+      availablePatterns: "Available patterns for lookup_pattern tool:\n- srp: SRP Violations",
+    });
+    expect(result).toContain("```diff");
+    expect(result).toContain("+const b = 2;");
+  });
+
+  test("includes file path header", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff("src/components/App.tsx"),
+      signals: makeSignals(),
+      availablePatterns: "",
+    });
+    expect(result).toContain("## File: src/components/App.tsx");
+  });
+
+  test("includes structural signals when non-zero", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      signals: makeSignals({ hookCount: 5, functionCount: 3 }),
+      availablePatterns: "",
+    });
+    expect(result).toContain("## Structural signals");
+    expect(result).toContain("Hook calls");
+    expect(result).toContain("Function/method count: 3");
+  });
+
+  test("includes available patterns summary", () => {
+    const patterns = "Available patterns for lookup_pattern tool:\n- srp: SRP Violations\n- god-function: God Functions";
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      signals: makeSignals(),
+      availablePatterns: patterns,
+    });
+    expect(result).toContain("srp: SRP Violations");
+    expect(result).toContain("god-function: God Functions");
+  });
+
+  test("excludes full file content", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      signals: makeSignals(),
+      availablePatterns: "",
+    });
+    expect(result).not.toContain("## Full file content");
+    expect(result).not.toContain("## File context");
+  });
+
+  test("excludes knowledge section", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      signals: makeSignals(),
+      availablePatterns: "",
+    });
+    expect(result).not.toContain("## Relevant patterns and principles");
+  });
+
+  test("excludes graph context", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      signals: makeSignals(),
+      availablePatterns: "",
+    });
+    expect(result).not.toContain("## Codebase context");
+  });
+
+  test("excludes repository preferences", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      signals: makeSignals(),
+      availablePatterns: "",
+    });
+    expect(result).not.toContain("## Repository preferences");
+  });
+
+  test("includes PR context when provided", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      signals: makeSignals(),
+      availablePatterns: "",
+      prTitle: "fix: memory leak in worker",
+      prDescription: "Worker process hangs after 100 jobs.",
+    });
+    expect(result).toContain("## Pull Request Context");
+    expect(result).toContain("fix: memory leak in worker");
+  });
+
+  test("includes instruction to use tools and return JSON", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      signals: makeSignals(),
+      availablePatterns: "",
+    });
+    expect(result).toContain("Use tools if you need more context");
+    expect(result).toContain("Return findings as JSON");
   });
 });
