@@ -29,6 +29,35 @@ export interface CompletionResult {
 }
 
 /**
+ * Options for a multi-turn tool-calling completion.
+ */
+export interface CompleteWithToolsOptions {
+  readonly systemPrompt: string;
+  readonly userPrompt: string;
+  readonly tools: OpenAI.ChatCompletionTool[];
+  readonly onToolCall: (toolName: string, args: string) => string;
+  readonly maxTokens: number;
+  readonly toolTokenBudget: number;
+  readonly temperature?: number | undefined;
+}
+
+const MAX_TOOL_ROUNDS = 5;
+
+/**
+ * Extracts token usage from an OpenAI response into our internal format.
+ */
+function extractUsage(
+  response: OpenAI.ChatCompletion,
+): CompletionUsage | undefined {
+  if (!response.usage) return undefined;
+  return {
+    promptTokens: response.usage.prompt_tokens,
+    completionTokens: response.usage.completion_tokens,
+    totalTokens: response.usage.total_tokens,
+  };
+}
+
+/**
  * Thin wrapper over an OpenAI-compatible API client.
  *
  * @remarks
@@ -81,15 +110,94 @@ export class ReviewClient {
       throw new Error("LLM returned empty response");
     }
 
-    const usage: CompletionUsage | undefined = response.usage
-      ? {
-          promptTokens: response.usage.prompt_tokens,
-          completionTokens: response.usage.completion_tokens,
-          totalTokens: response.usage.total_tokens,
-        }
-      : undefined;
+    return { content, usage: extractUsage(response) };
+  }
 
-    return { content, usage };
+  /**
+   * Sends a multi-turn chat completion with tool calling, then forces a
+   * final JSON response once tools are exhausted.
+   *
+   * @remarks
+   * Tool rounds omit `response_format` to avoid conflicts with providers
+   * that reject structured output when tools are active. A final call with
+   * `response_format: { type: "json_object" }` and no tools forces the
+   * model to produce JSON findings.
+   *
+   * The loop terminates when any of:
+   * - The model returns no tool_calls (done voluntarily)
+   * - `MAX_TOOL_ROUNDS` (5) reached
+   * - `toolTokenBudget` exceeded
+   */
+  async completeWithTools(options: CompleteWithToolsOptions): Promise<CompletionResult> {
+    const {
+      systemPrompt, userPrompt, tools, onToolCall,
+      maxTokens, toolTokenBudget, temperature = 0.2,
+    } = options;
+    const messages: OpenAI.ChatCompletionMessageParam[] = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ];
+
+    let cumulativeUsage: CompletionUsage | undefined;
+    let cumulativeTokens = 0;
+
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages,
+        tools,
+        max_completion_tokens: maxTokens,
+        temperature,
+      });
+
+      cumulativeUsage = mergeUsage(cumulativeUsage, extractUsage(response));
+      cumulativeTokens += response.usage?.total_tokens ?? 0;
+
+      const assistantMessage = response.choices[0]?.message;
+      if (!assistantMessage) {
+        throw new Error("LLM returned empty response during tool round");
+      }
+
+      const toolCalls = assistantMessage.tool_calls;
+      if (!toolCalls || toolCalls.length === 0) {
+        break;
+      }
+
+      if (cumulativeTokens >= toolTokenBudget) {
+        break;
+      }
+
+      messages.push(assistantMessage);
+      for (const toolCall of toolCalls) {
+        if (toolCall.type !== "function") continue;
+        const result = onToolCall(
+          toolCall.function.name,
+          toolCall.function.arguments,
+        );
+        messages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: result,
+        });
+      }
+    }
+
+    const finalResponse = await this.client.chat.completions.create({
+      model: this.model,
+      messages,
+      max_completion_tokens: maxTokens,
+      temperature,
+      response_format: { type: "json_object" },
+    });
+
+    cumulativeUsage = mergeUsage(cumulativeUsage, extractUsage(finalResponse));
+
+    const content = finalResponse.choices[0]?.message.content;
+    if (!content) {
+      throw new Error("LLM returned empty response in final JSON call");
+    }
+
+    return { content, usage: cumulativeUsage };
   }
 }
 

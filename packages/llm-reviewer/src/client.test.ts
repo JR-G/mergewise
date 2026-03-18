@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect } from "bun:test";
 import { ReviewClient, createReviewClient, mergeUsage } from "./client";
-import type { CompletionUsage, ReviewClientConfig } from "./client";
+import type { CompletionUsage, ReviewClientConfig, CompleteWithToolsOptions } from "./client";
 
 describe("ReviewClient", () => {
   it("defaults to gpt-4.1 when no model is specified", () => {
@@ -126,5 +126,208 @@ describe("createReviewClient", () => {
   it("returns a ReviewClient instance", () => {
     const client = createReviewClient({ apiKey: "test-key" });
     expect(client).toBeInstanceOf(ReviewClient);
+  });
+});
+
+describe("completeWithTools", () => {
+  let originalFetch: typeof globalThis.fetch;
+  let callIndex: number;
+  let responses: string[];
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    callIndex = 0;
+    responses = [];
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  function mockFetchSequence(responseSequence: string[]): void {
+    responses = responseSequence;
+    globalThis.fetch = (async () => {
+      const body = responses[callIndex] ?? responses[responses.length - 1]!;
+      callIndex++;
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof globalThis.fetch;
+  }
+
+  const FINDINGS_JSON = '{"findings": []}';
+  const TOOL_CALL_RESPONSE = JSON.stringify({
+    choices: [{
+      message: {
+        role: "assistant",
+        content: null,
+        tool_calls: [{
+          id: "call_1",
+          type: "function",
+          function: { name: "get_callers", arguments: "{}" },
+        }],
+      },
+      finish_reason: "tool_calls",
+    }],
+    usage: { prompt_tokens: 200, completion_tokens: 30, total_tokens: 230 },
+  });
+
+  const FINAL_RESPONSE = JSON.stringify({
+    choices: [{ message: { role: "assistant", content: FINDINGS_JSON } }],
+    usage: { prompt_tokens: 300, completion_tokens: 50, total_tokens: 350 },
+  });
+
+  const NO_TOOL_CALL_RESPONSE = JSON.stringify({
+    choices: [{ message: { role: "assistant", content: null } }],
+    usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 },
+  });
+
+  const TOOLS: CompleteWithToolsOptions["tools"] = [{
+    type: "function",
+    function: {
+      name: "get_callers",
+      description: "test tool",
+      parameters: { type: "object", properties: {} },
+    },
+  }];
+
+  function noopToolCall(): string {
+    return "tool result";
+  }
+
+  it("makes a final JSON call even when model calls no tools", async () => {
+    mockFetchSequence([NO_TOOL_CALL_RESPONSE, FINAL_RESPONSE]);
+    const client = createReviewClient({ apiKey: "test-key", maxRetries: 0 });
+
+    const result = await client.completeWithTools({
+      systemPrompt: "system", userPrompt: "user", tools: TOOLS,
+      onToolCall: noopToolCall, maxTokens: 4096, toolTokenBudget: 15_000,
+    });
+
+    expect(result.content).toBe(FINDINGS_JSON);
+    expect(callIndex).toBe(2);
+  });
+
+  it("executes one round of tool calls then returns final content", async () => {
+    mockFetchSequence([TOOL_CALL_RESPONSE, FINAL_RESPONSE]);
+    const client = createReviewClient({ apiKey: "test-key", maxRetries: 0 });
+
+    const toolCallNames: string[] = [];
+    const result = await client.completeWithTools({
+      systemPrompt: "system", userPrompt: "user", tools: TOOLS,
+      onToolCall: (name) => { toolCallNames.push(name); return `result for ${name}`; },
+      maxTokens: 4096, toolTokenBudget: 15_000,
+    });
+
+    expect(toolCallNames).toEqual(["get_callers"]);
+    expect(result.content).toBe(FINDINGS_JSON);
+  });
+
+  it("handles multiple tool calls in a single round", async () => {
+    const multiToolResponse = JSON.stringify({
+      choices: [{
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            { id: "call_1", type: "function", function: { name: "get_callers", arguments: "{}" } },
+            { id: "call_2", type: "function", function: { name: "get_callers", arguments: "{}" } },
+          ],
+        },
+        finish_reason: "tool_calls",
+      }],
+      usage: { prompt_tokens: 200, completion_tokens: 30, total_tokens: 230 },
+    });
+
+    mockFetchSequence([multiToolResponse, FINAL_RESPONSE]);
+    const client = createReviewClient({ apiKey: "test-key", maxRetries: 0 });
+
+    let toolCallCount = 0;
+    await client.completeWithTools({
+      systemPrompt: "system", userPrompt: "user", tools: TOOLS,
+      onToolCall: () => { toolCallCount++; return "result"; },
+      maxTokens: 4096, toolTokenBudget: 15_000,
+    });
+
+    expect(toolCallCount).toBe(2);
+  });
+
+  it("stops at 5 rounds and forces final call", async () => {
+    const fiveToolCalls = Array.from({ length: 5 }, () => TOOL_CALL_RESPONSE);
+    mockFetchSequence([...fiveToolCalls, FINAL_RESPONSE]);
+    const client = createReviewClient({ apiKey: "test-key", maxRetries: 0 });
+
+    const result = await client.completeWithTools({
+      systemPrompt: "system", userPrompt: "user", tools: TOOLS,
+      onToolCall: noopToolCall, maxTokens: 4096, toolTokenBudget: 100_000,
+    });
+
+    expect(result.content).toBe(FINDINGS_JSON);
+    expect(callIndex).toBe(6);
+  });
+
+  it("stops when token budget is exceeded mid-loop", async () => {
+    const highTokenResponse = JSON.stringify({
+      choices: [{
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: [{
+            id: "call_1",
+            type: "function",
+            function: { name: "get_callers", arguments: "{}" },
+          }],
+        },
+        finish_reason: "tool_calls",
+      }],
+      usage: { prompt_tokens: 5000, completion_tokens: 5000, total_tokens: 10000 },
+    });
+
+    mockFetchSequence([highTokenResponse, FINAL_RESPONSE]);
+    const client = createReviewClient({ apiKey: "test-key", maxRetries: 0 });
+
+    const result = await client.completeWithTools({
+      systemPrompt: "system", userPrompt: "user", tools: TOOLS,
+      onToolCall: noopToolCall, maxTokens: 4096, toolTokenBudget: 5000,
+    });
+
+    expect(result.content).toBe(FINDINGS_JSON);
+    expect(callIndex).toBe(2);
+  });
+
+  it("skips tool rounds entirely when budget is zero", async () => {
+    mockFetchSequence([TOOL_CALL_RESPONSE, FINAL_RESPONSE]);
+    const client = createReviewClient({ apiKey: "test-key", maxRetries: 0 });
+
+    let toolCalled = false;
+    const result = await client.completeWithTools({
+      systemPrompt: "system", userPrompt: "user", tools: TOOLS,
+      onToolCall: () => { toolCalled = true; return "result"; },
+      maxTokens: 4096, toolTokenBudget: 0,
+    });
+
+    expect(toolCalled).toBe(false);
+    expect(result.content).toBe(FINDINGS_JSON);
+  });
+
+  it("aggregates usage across all rounds including final call", async () => {
+    const noToolCallBreak = JSON.stringify({
+      choices: [{ message: { role: "assistant", content: null } }],
+      usage: { prompt_tokens: 150, completion_tokens: 20, total_tokens: 170 },
+    });
+
+    mockFetchSequence([TOOL_CALL_RESPONSE, noToolCallBreak, FINAL_RESPONSE]);
+    const client = createReviewClient({ apiKey: "test-key", maxRetries: 0 });
+
+    const result = await client.completeWithTools({
+      systemPrompt: "system", userPrompt: "user", tools: TOOLS,
+      onToolCall: noopToolCall, maxTokens: 4096, toolTokenBudget: 15_000,
+    });
+
+    expect(result.usage).toBeDefined();
+    expect(result.usage!.promptTokens).toBe(200 + 150 + 300);
+    expect(result.usage!.completionTokens).toBe(30 + 20 + 50);
+    expect(result.usage!.totalTokens).toBe(230 + 170 + 350);
   });
 });

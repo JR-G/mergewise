@@ -75,3 +75,40 @@ export function buildCompletionResponse(content: string): string {
     usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
   });
 }
+
+interface ToolCallSpec {
+  readonly id: string;
+  readonly name: string;
+  readonly arguments: string;
+}
+
+/**
+ * Builds an OpenAI chat completion response that requests tool calls.
+ */
+export function buildToolCallResponse(
+  toolCalls: readonly ToolCallSpec[],
+  usage = { prompt_tokens: 200, completion_tokens: 30, total_tokens: 230 },
+): string {
+  return JSON.stringify({
+    id: "chatcmpl-tool",
+    object: "chat.completion",
+    created: 1700000000,
+    model: "test-model",
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: toolCalls.map((tc) => ({
+            id: tc.id,
+            type: "function",
+            function: { name: tc.name, arguments: tc.arguments },
+          })),
+        },
+        finish_reason: "tool_calls",
+      },
+    ],
+    usage,
+  });
+}
