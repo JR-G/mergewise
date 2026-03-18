@@ -144,9 +144,14 @@ describe("completeWithTools", () => {
     globalThis.fetch = originalFetch;
   });
 
+  let capturedBodies: unknown[];
+
   function mockFetchSequence(responseSequence: string[]): void {
     responses = responseSequence;
-    globalThis.fetch = (async () => {
+    capturedBodies = [];
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const bodyText = typeof init?.body === "string" ? init.body : "{}";
+      capturedBodies.push(JSON.parse(bodyText) as unknown);
       const body = responses[callIndex] ?? responses[responses.length - 1]!;
       callIndex++;
       return new Response(body, {
@@ -349,5 +354,65 @@ describe("completeWithTools", () => {
     expect(result.usage!.promptTokens).toBe(200 + 150 + 300);
     expect(result.usage!.completionTokens).toBe(30 + 20 + 50);
     expect(result.usage!.totalTokens).toBe(230 + 170 + 350);
+  });
+
+  it("truncates tool output that exceeds MAX_TOOL_OUTPUT_CHARS", async () => {
+    mockFetchSequence([TOOL_CALL_RESPONSE, FINAL_RESPONSE]);
+    const client = createReviewClient({ apiKey: "test-key", maxRetries: 0 });
+
+    await client.completeWithTools({
+      systemPrompt: "system", userPrompt: "user", tools: TOOLS,
+      onToolCall: () => "x".repeat(100_000),
+      maxTokens: 4096, toolTokenBudget: 15_000,
+    });
+
+    const secondCall = capturedBodies[1] as { messages: { role: string; content: string }[] };
+    const toolMessage = secondCall.messages.find(
+      (message: { role: string }) => message.role === "tool",
+    );
+    expect(toolMessage?.content.length).toBeLessThan(70_000);
+    expect(toolMessage?.content).toContain("…[truncated]");
+  });
+
+  it("sends synthetic responses for tool calls beyond the per-round cap", async () => {
+    const manyToolCalls = Array.from({ length: 15 }, (_, index) => ({
+      id: `call_${index}`,
+      type: "function" as const,
+      function: { name: "get_callers", arguments: "{}" },
+    }));
+    const overflowResponse = JSON.stringify({
+      choices: [{
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: manyToolCalls,
+        },
+        finish_reason: "tool_calls",
+      }],
+      usage: { prompt_tokens: 200, completion_tokens: 30, total_tokens: 230 },
+    });
+
+    mockFetchSequence([overflowResponse, FINAL_RESPONSE]);
+    const client = createReviewClient({ apiKey: "test-key", maxRetries: 0 });
+
+    let toolCallCount = 0;
+    await client.completeWithTools({
+      systemPrompt: "system", userPrompt: "user", tools: TOOLS,
+      onToolCall: () => { toolCallCount++; return "result"; },
+      maxTokens: 4096, toolTokenBudget: 15_000,
+    });
+
+    expect(toolCallCount).toBe(10);
+
+    const secondCall = capturedBodies[1] as { messages: { role: string; content: string; tool_call_id?: string }[] };
+    const toolMessages = secondCall.messages.filter(
+      (message: { role: string }) => message.role === "tool",
+    );
+    expect(toolMessages.length).toBe(15);
+
+    const skippedMessages = toolMessages.filter(
+      (message: { content: string }) => message.content.includes("Skipped"),
+    );
+    expect(skippedMessages.length).toBe(5);
   });
 });

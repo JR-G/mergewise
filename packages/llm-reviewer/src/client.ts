@@ -43,6 +43,7 @@ export interface CompleteWithToolsOptions {
 
 const MAX_TOOL_ROUNDS = 5;
 const MAX_TOOL_CALLS_PER_ROUND = 10;
+const MAX_TOOL_OUTPUT_CHARS = 60_000;
 
 /**
  * Extracts token usage from an OpenAI response into our internal format.
@@ -178,14 +179,24 @@ export class ReviewClient {
       const cappedToolCalls = toolCalls.slice(0, MAX_TOOL_CALLS_PER_ROUND);
       for (const toolCall of cappedToolCalls) {
         if (toolCall.type !== "function") continue;
-        const result = onToolCall(
+        let result = onToolCall(
           toolCall.function.name,
           toolCall.function.arguments,
         );
+        if (result.length > MAX_TOOL_OUTPUT_CHARS) {
+          result = result.slice(0, MAX_TOOL_OUTPUT_CHARS) + "…[truncated]";
+        }
         messages.push({
           role: "tool",
           tool_call_id: toolCall.id,
           content: result,
+        });
+      }
+      for (const toolCall of toolCalls.slice(MAX_TOOL_CALLS_PER_ROUND)) {
+        messages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: "Skipped: tool call cap exceeded",
         });
       }
     }
