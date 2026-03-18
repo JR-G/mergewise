@@ -111,6 +111,25 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("Orchestration is one responsibility");
   });
 
+  test("output format requires principle field", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain('"principle"');
+    expect(prompt).toContain("named anti-pattern or design principle");
+  });
+
+  test("few-shot examples include principle field", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain('"principle": "SRP"');
+    expect(prompt).toContain('"principle": "DIP"');
+    expect(prompt).toContain('"principle": "LSP"');
+    expect(prompt).toContain('"principle": "derive-dont-sync"');
+  });
+
+  test("includes principle-to-category mapping guidance", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("category MUST match the principle");
+  });
+
 });
 
 function makeHunk(header: string, lines: string[] = []): DiffHunk {
