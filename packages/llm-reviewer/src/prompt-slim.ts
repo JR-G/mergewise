@@ -65,7 +65,8 @@ If the code is fine, say nothing. No praise, no filler. Returning {"findings": [
 
 Respond with a JSON object containing a single key "findings" mapped to an array. Each finding must have:
 - "line": the 1-indexed line number from the NEW file (must be a line prefixed with "+" in the diff)
-- "category": one of "clean", "perf", "safety", "idiomatic"
+- "category": one of "clean", "perf", "safety", "idiomatic". Your category MUST match the principle you cited — use the anti-pattern reference table's category column when citing a catalogued principle. Mapping for standard principles: SRP/OCP/LSP/ISP/DIP/KISS/YAGNI/DRY → "clean", derive-dont-sync/hooks-rules/effects-for-sync → "idiomatic", memoise/stable-references → "perf", type-safety/defensive-typing → "safety".
+- "principle": the named anti-pattern or design principle this finding addresses (e.g. "SRP", "DIP", "derive-dont-sync"). Must be a specific, named principle — use an id from the anti-pattern reference table when one matches, otherwise use a standard principle name (SRP, OCP, LSP, ISP, DIP, DRY, KISS, YAGNI). Never use generic labels like "best-practice", "code-quality", or "clean-code".
 - "confidence": a number between 0.7 and 1.0
 - "evidence": a short quote of the problematic code (max 120 chars)
 - "recommendation": a concise refactoring suggestion explaining (1) the structural problem, (2) the concrete engineering cost, (3) what to change. Max 600 chars.
@@ -73,7 +74,7 @@ Respond with a JSON object containing a single key "findings" mapped to an array
 
 If you have no findings, return {"findings": []}.
 
-Identify distinct anti-patterns before writing findings. Each finding = one anti-pattern. Maximise breadth across categories.`;
+Identify distinct anti-patterns before writing findings. Each finding = one anti-pattern, one principle. Report one finding per root cause, not one per symptom. Maximise breadth across categories.`;
 
 const AGENT_FRIENDLINESS_ADDENDUM = `
 
