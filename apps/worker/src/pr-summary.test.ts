@@ -412,7 +412,7 @@ describe("buildPrSummaryComment", () => {
       rulesPassed: 8,
     });
     expect(body).toContain("<!-- mergewise-summary -->");
-    expect(body).toContain("8/10 passed");
+    expect(body).not.toContain("passed");
   });
 
   test("does not truncate when output is within character limit", () => {

@@ -9,6 +9,7 @@ interface User {
 
 interface UserProfileProps {
   readonly user: User;
+  readonly peers: readonly User[];
   readonly onRoleChange: (userId: string, newRole: User["role"]) => void;
 }
 
@@ -18,10 +19,15 @@ const ROLE_LABELS: Record<User["role"], string> = {
   viewer: "Viewer",
 };
 
-export function UserProfile({ user, onRoleChange }: UserProfileProps) {
+export function UserProfile({ user, peers, onRoleChange }: UserProfileProps) {
   const [isEditing, setIsEditing] = useState(false);
 
-  const roleLabel = useMemo(() => ROLE_LABELS[user.role], [user.role]);
+  const roleLabel = ROLE_LABELS[user.role];
+
+  const sortedPeers = useMemo(
+    () => peers.filter((peer) => peer.role === user.role).sort((a, b) => a.name.localeCompare(b.name)),
+    [peers, user.role],
+  );
 
   const handleRoleChange = useCallback(
     (newRole: User["role"]) => {
@@ -39,7 +45,7 @@ export function UserProfile({ user, onRoleChange }: UserProfileProps) {
     <div>
       <h2>{user.name}</h2>
       <p>{user.email}</p>
-      <span>{roleLabel}</span>
+      <span>{roleLabel} ({sortedPeers.length} peers)</span>
       {isEditing ? (
         <RoleSelector currentRole={user.role} onSelect={handleRoleChange} />
       ) : (
