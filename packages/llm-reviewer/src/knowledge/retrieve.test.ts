@@ -1,23 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import type { StructuralSignals } from "../signals";
 import type { KnowledgeDocument } from "../pipeline-types";
 import { retrieveKnowledge } from "./retrieve";
 import { KNOWLEDGE_REGISTRY } from "./registry";
-
-function makeSignals(overrides: Partial<StructuralSignals> = {}): StructuralSignals {
-  return {
-    componentLineCount: 0,
-    hookCount: 0,
-    importCount: 0,
-    maxNestingDepth: 0,
-    functionCount: 0,
-    maxFunctionLineCount: 0,
-    maxParameterCount: 0,
-    classCount: 0,
-    typeAssertionCount: 0,
-    ...overrides,
-  };
-}
+import { makeSignals } from "./test-helpers";
 
 function makeDocument(overrides: Partial<KnowledgeDocument> = {}): KnowledgeDocument {
   return {

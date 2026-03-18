@@ -1,22 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { retrieveKnowledge } from "./retrieve";
 import { INTERFACE_SEGREGATION_KNOWLEDGE } from "./interface-segregation";
-import type { StructuralSignals } from "../signals";
-
-function makeSignals(overrides: Partial<StructuralSignals> = {}): StructuralSignals {
-  return {
-    componentLineCount: 0,
-    hookCount: 0,
-    importCount: 0,
-    maxNestingDepth: 0,
-    functionCount: 0,
-    maxFunctionLineCount: 0,
-    maxParameterCount: 0,
-    classCount: 0,
-    typeAssertionCount: 0,
-    ...overrides,
-  };
-}
+import { makeSignals } from "./test-helpers";
 
 describe("interface-segregation knowledge document", () => {
   test("retrieves interface-segregation doc for has_classes signal", () => {
@@ -95,5 +80,36 @@ describe("interface-segregation knowledge document", () => {
     expect(INTERFACE_SEGREGATION_KNOWLEDGE.triggerSignals).toContain("has_classes");
     expect(INTERFACE_SEGREGATION_KNOWLEDGE.triggerSignals).toContain("has_type_assertions");
     expect(INTERFACE_SEGREGATION_KNOWLEDGE.examples.length).toBeGreaterThan(0);
+  });
+
+  test("duplicate classifications return the doc exactly once", () => {
+    const result = retrieveKnowledge({
+      signals: makeSignals(),
+      fileExtension: ".ts",
+      classifications: ["interface-change", "interface-change"],
+    });
+
+    const matching = result.filter((doc) => doc.id === INTERFACE_SEGREGATION_KNOWLEDGE.id);
+    expect(matching.length).toBe(1);
+  });
+
+  test("malformed classification values do not cause errors", () => {
+    const result = retrieveKnowledge({
+      signals: makeSignals(),
+      fileExtension: ".ts",
+      classifications: ["", "   ", "unknown-gibberish-xyz"] as readonly string[],
+    });
+
+    expect(result.some((doc) => doc.id === INTERFACE_SEGREGATION_KNOWLEDGE.id)).toBe(false);
+  });
+
+  test("malformed classifications alongside valid signal still returns the doc", () => {
+    const result = retrieveKnowledge({
+      signals: makeSignals({ classCount: 3 }),
+      fileExtension: ".ts",
+      classifications: ["", "   "] as readonly string[],
+    });
+
+    expect(result.some((doc) => doc.id === INTERFACE_SEGREGATION_KNOWLEDGE.id)).toBe(true);
   });
 });

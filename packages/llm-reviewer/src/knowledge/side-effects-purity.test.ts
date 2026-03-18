@@ -1,22 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { retrieveKnowledge } from "./retrieve";
 import { SIDE_EFFECTS_PURITY_KNOWLEDGE } from "./side-effects-purity";
-import type { StructuralSignals } from "../signals";
-
-function makeSignals(overrides: Partial<StructuralSignals> = {}): StructuralSignals {
-  return {
-    componentLineCount: 0,
-    hookCount: 0,
-    importCount: 0,
-    maxNestingDepth: 0,
-    functionCount: 0,
-    maxFunctionLineCount: 0,
-    maxParameterCount: 0,
-    classCount: 0,
-    typeAssertionCount: 0,
-    ...overrides,
-  };
-}
+import { makeSignals } from "./test-helpers";
 
 describe("side-effects-purity knowledge document", () => {
   test("retrieves side-effects-purity doc for high_function_count signal", () => {

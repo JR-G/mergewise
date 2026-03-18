@@ -85,4 +85,41 @@ describe("filterPatternsByClassifications", () => {
       expect(ANTI_PATTERNS.includes(pattern)).toBe(true);
     }
   });
+
+  test("long-parameter-list classification maps to expected pattern IDs", () => {
+    const result = filterPatternsByClassifications(["long-parameter-list"], ANTI_PATTERNS);
+
+    expect(result.length).toBeGreaterThan(0);
+    expect(result.some((pattern) => pattern.id === "long-parameter-list")).toBe(true);
+  });
+
+  test("normalised variant long_parameter_list resolves to same patterns", () => {
+    const canonical = filterPatternsByClassifications(["long-parameter-list"], ANTI_PATTERNS);
+    const underscored = filterPatternsByClassifications(["long_parameter_list"], ANTI_PATTERNS);
+
+    const canonicalIds = canonical.map((pattern) => pattern.id).sort();
+    const underscoredIds = underscored.map((pattern) => pattern.id).sort();
+    expect(underscoredIds).toEqual(canonicalIds);
+  });
+
+  test("duplicate classifications produce deduplicated pattern IDs", () => {
+    const result = filterPatternsByClassifications(
+      ["long-parameter-list", "long-parameter-list", "long-parameter-list"],
+      ANTI_PATTERNS,
+    );
+
+    const ids = result.map((pattern) => pattern.id);
+    expect(ids.length).toBe(new Set(ids).size);
+  });
+
+  test("mixed known and unknown classifications filters to the known subset", () => {
+    const result = filterPatternsByClassifications(
+      ["long-parameter-list", "totally-unknown-thing"],
+      ANTI_PATTERNS,
+    );
+
+    expect(result.length).toBeGreaterThan(0);
+    expect(result.length).toBeLessThan(ANTI_PATTERNS.length);
+    expect(result.some((pattern) => pattern.id === "long-parameter-list")).toBe(true);
+  });
 });

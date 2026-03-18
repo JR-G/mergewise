@@ -1,22 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { retrieveKnowledge } from "./retrieve";
 import { STRATEGY_DISPATCH_KNOWLEDGE } from "./strategy-dispatch";
-import type { StructuralSignals } from "../signals";
-
-function makeSignals(overrides: Partial<StructuralSignals> = {}): StructuralSignals {
-  return {
-    componentLineCount: 0,
-    hookCount: 0,
-    importCount: 0,
-    maxNestingDepth: 0,
-    functionCount: 0,
-    maxFunctionLineCount: 0,
-    maxParameterCount: 0,
-    classCount: 0,
-    typeAssertionCount: 0,
-    ...overrides,
-  };
-}
+import { makeSignals } from "./test-helpers";
 
 describe("strategy-dispatch knowledge document", () => {
   test("retrieves strategy-dispatch doc for high_nesting signal", () => {
@@ -85,5 +70,36 @@ describe("strategy-dispatch knowledge document", () => {
     expect(STRATEGY_DISPATCH_KNOWLEDGE.triggerSignals).toContain("high_nesting");
     expect(STRATEGY_DISPATCH_KNOWLEDGE.triggerSignals).toContain("large_function");
     expect(STRATEGY_DISPATCH_KNOWLEDGE.examples.length).toBeGreaterThan(0);
+  });
+
+  test("duplicate classifications return the doc exactly once", () => {
+    const result = retrieveKnowledge({
+      signals: makeSignals(),
+      fileExtension: ".ts",
+      classifications: ["strategy-pattern", "strategy-pattern"],
+    });
+
+    expect(result.some((doc) => doc.id === STRATEGY_DISPATCH_KNOWLEDGE.id)).toBe(true);
+    expect(result.filter((doc) => doc.id === STRATEGY_DISPATCH_KNOWLEDGE.id).length).toBe(1);
+  });
+
+  test("malformed classification values do not cause errors", () => {
+    const result = retrieveKnowledge({
+      signals: makeSignals(),
+      fileExtension: ".ts",
+      classifications: ["", "   ", "unknown-gibberish-xyz"] as readonly string[],
+    });
+
+    expect(result.some((doc) => doc.id === STRATEGY_DISPATCH_KNOWLEDGE.id)).toBe(false);
+  });
+
+  test("malformed classifications alongside valid trigger still returns the doc", () => {
+    const result = retrieveKnowledge({
+      signals: makeSignals({ maxNestingDepth: 5 }),
+      fileExtension: ".ts",
+      classifications: ["", "   "] as readonly string[],
+    });
+
+    expect(result.some((doc) => doc.id === STRATEGY_DISPATCH_KNOWLEDGE.id)).toBe(true);
   });
 });

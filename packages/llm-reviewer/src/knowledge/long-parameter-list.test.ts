@@ -1,22 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { retrieveKnowledge } from "./retrieve";
 import { LONG_PARAMETER_LIST_KNOWLEDGE } from "./long-parameter-list";
-import type { StructuralSignals } from "../signals";
-
-function makeSignals(overrides: Partial<StructuralSignals> = {}): StructuralSignals {
-  return {
-    componentLineCount: 0,
-    hookCount: 0,
-    importCount: 0,
-    maxNestingDepth: 0,
-    functionCount: 0,
-    maxFunctionLineCount: 0,
-    maxParameterCount: 0,
-    classCount: 0,
-    typeAssertionCount: 0,
-    ...overrides,
-  };
-}
+import { makeSignals } from "./test-helpers";
 
 describe("long-parameter-list knowledge document", () => {
   test("retrieves long-parameter-list doc for high_param_count signal", () => {
@@ -57,6 +42,26 @@ describe("long-parameter-list knowledge document", () => {
     });
 
     expect(result.some((doc) => doc.id === "long-parameter-list")).toBe(false);
+  });
+
+  test("does not retrieve doc when maxParameterCount is at threshold boundary (3)", () => {
+    const result = retrieveKnowledge({
+      signals: makeSignals({ maxParameterCount: 3 }),
+      fileExtension: ".ts",
+      classifications: [],
+    });
+
+    expect(result.some((doc) => doc.id === "long-parameter-list")).toBe(false);
+  });
+
+  test("retrieves doc when maxParameterCount crosses threshold (4)", () => {
+    const result = retrieveKnowledge({
+      signals: makeSignals({ maxParameterCount: 4 }),
+      fileExtension: ".ts",
+      classifications: [],
+    });
+
+    expect(result.some((doc) => doc.id === "long-parameter-list")).toBe(true);
   });
 
   test("long-parameter-list document is properly structured", () => {

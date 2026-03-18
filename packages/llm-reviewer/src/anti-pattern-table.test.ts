@@ -54,4 +54,16 @@ describe("buildAntiPatternReferenceTable", () => {
     expect(result).toContain("Look for x \\| y patterns");
     expect(result).not.toContain("| Pattern | With Pipes |");
   });
+
+  test("output is bounded for large inputs", () => {
+    const largeArray = Array.from({ length: 100 }, (_, index) =>
+      makePattern({ id: `pattern-${index}`, title: `Pattern ${index}` }),
+    );
+
+    const result = buildAntiPatternReferenceTable(largeArray);
+    const lineCount = result.split("\n").length;
+
+    expect(typeof result).toBe("string");
+    expect(lineCount).toBeLessThanOrEqual(110);
+  });
 });

@@ -122,7 +122,23 @@ const CLASSIFICATION_TO_PATTERN_IDS: ReadonlyMap<string, readonly string[]> = ne
   ["type-assertion-misuse", [
     "overly-wide-generic",
   ]],
+  ["long-parameter-list", [
+    "long-parameter-list",
+    "boolean-flag-parameter",
+  ]],
 ]);
+
+/**
+ * Normalises a triage classification label to its canonical form.
+ *
+ * @remarks
+ * Lowercases, trims whitespace, and replaces spaces/underscores with hyphens
+ * so that variants like "Long Parameter List" and "long_parameter_list" resolve
+ * to the canonical "long-parameter-list" key.
+ */
+function normaliseClassification(label: string): string {
+  return label.trim().toLowerCase().replace(/[\s_]+/g, "-");
+}
 
 /**
  * Filters anti-patterns to those relevant to the given triage classifications.
@@ -140,7 +156,9 @@ export function filterPatternsByClassifications(
 
   const matchedIds = new Set<string>();
   for (const classification of classifications) {
-    const patternIds = CLASSIFICATION_TO_PATTERN_IDS.get(classification);
+    const patternIds =
+      CLASSIFICATION_TO_PATTERN_IDS.get(classification) ??
+      CLASSIFICATION_TO_PATTERN_IDS.get(normaliseClassification(classification));
     if (patternIds) {
       for (const id of patternIds) {
         matchedIds.add(id);

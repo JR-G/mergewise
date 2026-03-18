@@ -73,7 +73,7 @@ function Sidebar({ theme, onThemeChange }: { theme: Theme; onThemeChange: (t: Th
 
 function NavItem({ theme, onThemeChange, label, href }: NavItemProps) {
   return (
-    <a href={href} style={{ colour: theme.primaryColour }}>
+    <a href={href} style={{ color: theme.primaryColour }}>
       {label}
       <button onClick={() => onThemeChange(nextTheme(theme))}>Toggle</button>
     </a>
@@ -122,7 +122,7 @@ function Sidebar() {
 function NavItem({ label, href }: { label: string; href: string }) {
   const { theme, setTheme } = useTheme();
   return (
-    <a href={href} style={{ colour: theme.primaryColour }}>
+    <a href={href} style={{ color: theme.primaryColour }}>
       {label}
       <button onClick={() => setTheme(nextTheme(theme))}>Toggle</button>
     </a>
