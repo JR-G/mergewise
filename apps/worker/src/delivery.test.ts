@@ -41,7 +41,7 @@ describe("applyFindingGates", () => {
         include: [],
         exclude: [],
       },
-      review: { skipPatterns: [] },
+      review: { skipPatterns: [], agentFriendliness: false },
       llm: {
         enabled: false,
         model: "gpt-4o",
@@ -78,7 +78,7 @@ describe("applyFindingGates", () => {
         include: [],
         exclude: [],
       },
-      review: { skipPatterns: [] },
+      review: { skipPatterns: [], agentFriendliness: false },
       llm: {
         enabled: false,
         model: "gpt-4o",
@@ -116,7 +116,7 @@ describe("applyFindingGates", () => {
         include: [],
         exclude: [],
       },
-      review: { skipPatterns: [] },
+      review: { skipPatterns: [], agentFriendliness: false },
       llm: {
         enabled: false,
         model: "gpt-4o",
@@ -945,7 +945,9 @@ describe("finding delivery", () => {
     );
 
     expect(checkOutput.title).toBe("Review completed");
-    expect(checkOutput.summary).toContain("Rules=3/3");
+    expect(checkOutput.summary).toContain("findings=2");
+    expect(checkOutput.summary).toContain("posted=0");
+    expect(checkOutput.summary).not.toContain("Rules=");
     expect(checkOutput.text).toContain("**Reviewer Summary**");
     expect(checkOutput.text).toContain("- `safety` (1)");
     expect(checkOutput.text).toContain("- `perf` (1)");

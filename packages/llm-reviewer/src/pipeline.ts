@@ -129,7 +129,7 @@ async function runReviewStage(
 ): Promise<{ findings: Finding[]; failedFiles: FileReviewFailure[]; usage: CompletionUsage | undefined }> {
   const { diffs, triageResults, pullRequest, codebaseContext, client, config } = input;
   const triageMap = new Map(triageResults.map((result) => [result.filePath, result]));
-  const systemPrompt = buildSlimSystemPrompt();
+  const systemPrompt = buildSlimSystemPrompt({ agentFriendliness: config.agentFriendliness });
   const allFindings: Finding[] = [];
   const failedFiles: FileReviewFailure[] = [];
   let combinedUsage: CompletionUsage | undefined;
@@ -153,6 +153,7 @@ async function runReviewStage(
         knowledge,
         graphContext,
         learnings,
+        agentFriendliness: config.agentFriendliness,
       });
 
       const { content, usage } = await client.complete(systemPrompt, userPrompt, MAX_REVIEW_RESPONSE_TOKENS);

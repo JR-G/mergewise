@@ -99,6 +99,7 @@ function buildLlmRules(options: BuildLlmRulesOptions): readonly Rule[] {
         ? mergewiseConfig.review.skipPatterns
         : undefined,
       confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
+      agentFriendliness: mergewiseConfig.review.agentFriendliness,
       repoLearnings,
       toolkit,
       onFileReviewError: (filePath, error) => {

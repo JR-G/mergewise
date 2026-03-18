@@ -112,6 +112,11 @@ export interface LlmReviewerConfig {
    * Only used when `usePipeline` is true.
    */
   readonly toolkit?: ReviewToolkit | undefined;
+  /**
+   * When enabled, the review prompt gains agent-specific detection criteria
+   * and frames suggestions with AI agent impact reasoning.
+   */
+  readonly agentFriendliness?: boolean | undefined;
   readonly onFileReviewError?: ((filePath: string, error: unknown) => void) | undefined;
   readonly onFileReviewComplete?: ((filePath: string, findingCount: number, promptTokens: number, completionTokens: number) => void) | undefined;
 }
@@ -189,6 +194,7 @@ async function analysePipeline(
       confidenceThreshold: config.confidenceThreshold,
       apiKey: config.clientConfig.apiKey,
       baseUrl: config.clientConfig.baseUrl,
+      agentFriendliness: config.agentFriendliness,
     });
 
     if (onError) {
