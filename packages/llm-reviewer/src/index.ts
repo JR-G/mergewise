@@ -4,12 +4,10 @@ import type {
   CodebaseContext,
   FileDiff,
   Finding,
-  RepoLearnings,
 } from "@mergewise/shared-types";
 import { toRuleId } from "@mergewise/shared-types";
-import { createReviewClient, type ReviewClientConfig, type ReviewClient } from "./client";
+import type { ReviewClientConfig } from "./client";
 import { selectFilesForReview } from "./file-selection";
-import { reviewFile } from "./review-file";
 import { runReviewPipeline } from "./pipeline";
 import type { ReviewToolkit } from "./pipeline-types";
 
@@ -31,7 +29,10 @@ export { triageFiles } from "./triage";
 export { criticFindings } from "./critic";
 export { retrieveKnowledge } from "./knowledge/retrieve";
 export { deriveSignalTags } from "./knowledge/signal-tags";
-export { buildSlimSystemPrompt, buildDynamicFilePrompt } from "./prompt-slim";
+export { buildSlimSystemPrompt, buildDynamicFilePrompt, buildToolUseFilePrompt } from "./prompt-slim";
+export type { ToolUsePromptInput } from "./prompt-slim";
+export { REVIEW_TOOLS, toOpenAiTools, executeToolCall, buildAvailablePatternsSummary } from "./review-tools";
+export type { ReviewTool, ToolContext } from "./review-tools";
 export { formatKnowledgeSection } from "./knowledge/format";
 export { KNOWLEDGE_REGISTRY } from "./knowledge/registry";
 
@@ -54,10 +55,6 @@ export type {
 
 const DEFAULT_TOKEN_BUDGET = 30_000;
 
-function noop(): void {
-  /* intentional no-op */
-}
-
 /**
  * Configuration for the LLM reviewer rule.
  */
@@ -74,42 +71,21 @@ export interface LlmReviewerConfig {
   readonly userSkipPatterns?: readonly string[] | undefined;
   readonly confidenceThreshold?: number | undefined;
   /**
-   * Number of independent LLM samples for self-consistency filtering.
-   *
-   * @remarks
-   * When greater than 1, each file is reviewed N times with elevated
-   * temperature and only findings appearing in the majority of runs
-   * are kept. Defaults to 1 (single-shot).
-   */
-  readonly consistencySamples?: number | undefined;
-  /**
-   * Repository-level learnings to inject as review preferences.
-   */
-  readonly repoLearnings?: RepoLearnings | undefined;
-  /**
-   * When true, uses the three-stage pipeline (triage → review → critic)
-   * instead of the single-shot per-file review.
-   */
-  readonly usePipeline?: boolean | undefined;
-  /**
    * Model identifier for the triage and critic stages.
    *
    * @remarks
-   * Should be a fast, cheap model. Only used when `usePipeline` is true.
+   * Should be a fast, cheap model.
    */
   readonly triageModel?: string | undefined;
   /**
    * Model identifier for the critic stage.
    *
    * @remarks
-   * Defaults to `triageModel` if omitted. Only used when `usePipeline` is true.
+   * Defaults to `triageModel` if omitted.
    */
   readonly criticModel?: string | undefined;
   /**
    * Optional tools for enriching review context (graph, learnings).
-   *
-   * @remarks
-   * Only used when `usePipeline` is true.
    */
   readonly toolkit?: ReviewToolkit | undefined;
   /**
@@ -137,10 +113,8 @@ export interface LlmReviewerConfig {
 export function createLlmReviewerRule(
   config: LlmReviewerConfig,
 ): CodebaseAwareRule {
-  const client = createReviewClient(config.clientConfig);
   const tokenBudget = config.tokenBudget ?? DEFAULT_TOKEN_BUDGET;
   const userSkipPatterns = config.userSkipPatterns;
-  const onFileReviewError = config.onFileReviewError ?? noop;
 
   return {
     kind: "codebase-aware",
@@ -162,15 +136,7 @@ export function createLlmReviewerRule(
         return [];
       }
 
-      if (config.usePipeline && config.consistencySamples !== undefined && config.consistencySamples > 1) {
-        throw new Error("consistencySamples is not supported with usePipeline");
-      }
-
-      if (config.usePipeline) {
-        return analysePipeline(config, selectedFiles, context, codebaseContext);
-      }
-
-      return analysePerFile({ selectedFiles, context, codebaseContext, client, config, onFileReviewError });
+      return analysePipeline(config, selectedFiles, context, codebaseContext);
     },
   };
 }
@@ -194,6 +160,7 @@ async function analysePipeline(
       confidenceThreshold: config.confidenceThreshold,
       apiKey: config.clientConfig.apiKey,
       baseUrl: config.clientConfig.baseUrl,
+      maxRetries: config.clientConfig.maxRetries,
       agentFriendliness: config.agentFriendliness,
     });
 
@@ -234,42 +201,3 @@ async function analysePipeline(
   }
 }
 
-interface PerFileAnalysisOptions {
-  readonly selectedFiles: readonly FileDiff[];
-  readonly context: AnalysisContext;
-  readonly codebaseContext: CodebaseContext;
-  readonly client: ReviewClient;
-  readonly config: LlmReviewerConfig;
-  readonly onFileReviewError: (filePath: string, error: unknown) => void;
-}
-
-async function analysePerFile(options: PerFileAnalysisOptions): Promise<readonly Finding[]> {
-  const { selectedFiles, context, codebaseContext, client, config, onFileReviewError } = options;
-  const allFindings: Finding[] = [];
-
-  for (const fileDiff of selectedFiles) {
-    try {
-      const result = await reviewFile({
-        fileDiff,
-        pullRequest: context.pullRequest,
-        codebaseContext,
-        client,
-        confidenceThreshold: config.confidenceThreshold,
-        consistencySamples: config.consistencySamples,
-        repoLearnings: config.repoLearnings,
-      });
-      allFindings.push(...result.findings);
-      config.onFileReviewComplete?.(
-        fileDiff.filePath,
-        result.findings.length,
-        result.usage?.promptTokens ?? 0,
-        result.usage?.completionTokens ?? 0,
-      );
-    } catch (error) {
-      onFileReviewError(fileDiff.filePath, error);
-      continue;
-    }
-  }
-
-  return allFindings;
-}

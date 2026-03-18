@@ -65,12 +65,11 @@ interface BuildLlmRulesOptions {
   readonly mergewiseConfig: MergewiseConfig;
   readonly traceId: string;
   readonly loggers: ResolvedLoggers;
-  readonly repoLearnings?: RepoLearnings;
   readonly toolkit?: ReviewToolkit;
 }
 
 function buildLlmRules(options: BuildLlmRulesOptions): readonly Rule[] {
-  const { mergewiseConfig, traceId, loggers, repoLearnings, toolkit } = options;
+  const { mergewiseConfig, traceId, loggers, toolkit } = options;
   const llmConfig = mergewiseConfig.llm;
   const llmApiKey = process.env["LLM_API_KEY"];
 
@@ -91,8 +90,6 @@ function buildLlmRules(options: BuildLlmRulesOptions): readonly Rule[] {
         model: llmConfig.model,
       },
       tokenBudget: llmConfig.tokenBudget,
-      consistencySamples: llmConfig.consistencySamples,
-      usePipeline: llmConfig.usePipeline,
       triageModel: llmConfig.triageModel,
       criticModel: llmConfig.criticModel,
       userSkipPatterns: mergewiseConfig.review.skipPatterns.length > 0
@@ -100,7 +97,6 @@ function buildLlmRules(options: BuildLlmRulesOptions): readonly Rule[] {
         : undefined,
       confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
       agentFriendliness: mergewiseConfig.review.agentFriendliness,
-      repoLearnings,
       toolkit,
       onFileReviewError: (filePath, error) => {
         loggers.warnLogger(
@@ -145,6 +141,39 @@ function loadReviewToolkit(
   }
 }
 
+function buildLearningPreferences(learnings: RepoLearnings): readonly string[] {
+  const preferences: string[] = [];
+
+  for (const instruction of learnings.instructions) {
+    preferences.push(instruction);
+  }
+
+  for (const category of learnings.preferredCategories) {
+    preferences.push(`Prefer findings in category: ${category}`);
+  }
+
+  for (const category of learnings.dislikedCategories) {
+    preferences.push(`Avoid findings in category: ${category}`);
+  }
+
+  return preferences;
+}
+
+function augmentToolkitWithLearnings(
+  baseToolkit: ReviewToolkit | undefined,
+  repoLearnings: RepoLearnings | undefined,
+): ReviewToolkit | undefined {
+  const preferences = repoLearnings ? buildLearningPreferences(repoLearnings) : [];
+  if (preferences.length === 0) {
+    return baseToolkit;
+  }
+
+  return {
+    ...baseToolkit,
+    getRepoLearnings: () => ({ preferences }),
+  };
+}
+
 function resolveProcessingConfig(
   job: AnalyzePullRequestJob,
   dependencies: WorkerProcessingDependencies,
@@ -171,11 +200,12 @@ function resolveProcessingConfig(
     }
   }
 
-  const toolkit = loadReviewToolkit(dependencies, job.repo_full_name, traceId, loggers);
+  const baseToolkit = loadReviewToolkit(dependencies, job.repo_full_name, traceId, loggers);
+
+  const toolkit = augmentToolkitWithLearnings(baseToolkit, repoLearnings);
 
   const baseLlmRules = buildLlmRules({
     mergewiseConfig, traceId, loggers,
-    ...(repoLearnings ? { repoLearnings } : {}),
     ...(toolkit ? { toolkit } : {}),
   });
   const rules = dependencies.rules ?? [...baseLlmRules];

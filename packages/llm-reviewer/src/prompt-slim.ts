@@ -14,7 +14,9 @@ const MAX_FULL_FILE_LINES = 2000;
 const WINDOWED_COVERAGE_THRESHOLD = 0.9;
 const MAX_CALLERS_IN_PROMPT = 10;
 const MAX_LEARNINGS_IN_PROMPT = 5;
-const MAX_DIFF_CHARS = 50_000;
+
+/** @internal Exported for testing only. */
+export const MAX_DIFF_CHARS = 50_000;
 
 const SLIM_SYSTEM_PROMPT = `You are a principal-level engineer reviewing a pull request for structural quality. You give the kind of feedback that makes engineers better — not linting, not bug hunting, not defensive coding advice, but the refactoring guidance that comes from years of maintaining large systems.
 
@@ -99,21 +101,52 @@ When reviewing, also look for patterns that make this code difficult for AI codi
 
 For every suggestion (including standard refactoring findings), explain the AI agent impact alongside the engineering cost. If codebase context is provided (callers, centrality, hotspot status), cite those metrics as evidence of the impact radius.`;
 
+const TOOL_USE_ADDENDUM = `
+
+## Available tools
+
+You have tools to retrieve additional context about the file under review. Use them when the diff alone is insufficient to make a confident judgement. Do not call tools speculatively — only when you need specific information.
+
+- read_file_section: Read a range of lines from the current file to understand surrounding context
+- get_callers: See which files depend on this file and its centrality/hotspot status
+- lookup_pattern: Retrieve detailed guidance for a specific anti-pattern by ID
+- get_repo_preferences: Get repository-specific review preferences from prior feedback
+
+Most files need 0–2 tool calls. Simple diffs need none.`;
+
 /**
  * Options for building the slim system prompt.
  */
 export interface SlimSystemPromptOptions {
   readonly agentFriendliness?: boolean | undefined;
+  readonly toolUse?: boolean | undefined;
 }
 
 /**
  * Returns the language-agnostic slim system prompt for the pipeline review stage.
  */
 export function buildSlimSystemPrompt(options?: SlimSystemPromptOptions): string {
+  let prompt = SLIM_SYSTEM_PROMPT;
   if (options?.agentFriendliness) {
-    return SLIM_SYSTEM_PROMPT + AGENT_FRIENDLINESS_ADDENDUM;
+    prompt += AGENT_FRIENDLINESS_ADDENDUM;
   }
-  return SLIM_SYSTEM_PROMPT;
+  if (options?.toolUse) {
+    prompt += TOOL_USE_ADDENDUM;
+  }
+  return prompt;
+}
+
+/**
+ * Formats diff hunks into a fenced diff section, truncating at MAX_DIFF_CHARS.
+ */
+function formatDiffSection(hunks: readonly DiffHunk[]): string[] {
+  let diffContent = hunks
+    .map((hunk) => `${hunk.header}\n${hunk.lines.join("\n")}`)
+    .join("\n\n");
+  if (diffContent.length > MAX_DIFF_CHARS) {
+    diffContent = `${diffContent.slice(0, MAX_DIFF_CHARS)}\n...(truncated)`;
+  }
+  return ["", "## Diff", "```diff", diffContent, "```"];
 }
 
 /**
@@ -210,17 +243,7 @@ export function buildDynamicFilePrompt(input: DynamicPromptInput): string {
   parts.push(`## File: ${input.fileDiff.filePath}`);
   parts.push(...buildPrContextSection(input.prTitle, input.prDescription));
 
-  parts.push("");
-  parts.push("## Diff");
-  parts.push("```diff");
-  let diffContent = input.fileDiff.hunks
-    .map((hunk) => `${hunk.header}\n${hunk.lines.join("\n")}`)
-    .join("\n\n");
-  if (diffContent.length > MAX_DIFF_CHARS) {
-    diffContent = `${diffContent.slice(0, MAX_DIFF_CHARS)}\n...(truncated)`;
-  }
-  parts.push(diffContent);
-  parts.push("```");
+  parts.push(...formatDiffSection(input.fileDiff.hunks));
 
   if (input.fullContent) {
     parts.push(...buildFileContextSection(input.fullContent, input.fileDiff.hunks));
@@ -269,6 +292,48 @@ export function buildDynamicFilePrompt(input: DynamicPromptInput): string {
 
   parts.push("");
   parts.push("Review the diff above. Only produce findings for added lines (prefixed with +). Return findings as JSON.");
+
+  return parts.join("\n");
+}
+
+/**
+ * Configuration for building a tool-use file review prompt.
+ *
+ * @remarks
+ * Unlike {@link DynamicPromptInput}, this excludes all context that is
+ * now available via tool calls (file content, knowledge, graph, learnings).
+ */
+export interface ToolUsePromptInput {
+  readonly fileDiff: FileDiff;
+  readonly signals: StructuralSignals;
+  readonly prTitle?: string | undefined;
+  readonly prDescription?: string | undefined;
+  readonly availablePatterns: string;
+}
+
+/**
+ * Builds a lean user prompt for tool-use review.
+ *
+ * @remarks
+ * Includes only the diff, structural signals, and available patterns summary.
+ * Full file content, knowledge docs, graph context, and learnings are
+ * available via tool calls — not stuffed into the prompt.
+ */
+export function buildToolUseFilePrompt(input: ToolUsePromptInput): string {
+  const parts: string[] = [];
+
+  parts.push(`## File: ${input.fileDiff.filePath}`);
+  parts.push(...buildPrContextSection(input.prTitle, input.prDescription));
+
+  parts.push(...formatDiffSection(input.fileDiff.hunks));
+
+  parts.push(...buildSignalsSection(input.signals));
+
+  parts.push("");
+  parts.push(input.availablePatterns);
+
+  parts.push("");
+  parts.push("Review the diff above. Use tools if you need more context about the file, its callers, or relevant anti-patterns. Only produce findings for added lines (prefixed with +). Return findings as JSON.");
 
   return parts.join("\n");
 }
