@@ -141,6 +141,39 @@ function loadReviewToolkit(
   }
 }
 
+function buildLearningPreferences(learnings: RepoLearnings): readonly string[] {
+  const preferences: string[] = [];
+
+  for (const instruction of learnings.instructions) {
+    preferences.push(instruction);
+  }
+
+  for (const category of learnings.preferredCategories) {
+    preferences.push(`Prefer findings in category: ${category}`);
+  }
+
+  for (const category of learnings.dislikedCategories) {
+    preferences.push(`Avoid findings in category: ${category}`);
+  }
+
+  return preferences;
+}
+
+function augmentToolkitWithLearnings(
+  baseToolkit: ReviewToolkit | undefined,
+  repoLearnings: RepoLearnings | undefined,
+): ReviewToolkit | undefined {
+  const preferences = repoLearnings ? buildLearningPreferences(repoLearnings) : [];
+  if (preferences.length === 0) {
+    return baseToolkit;
+  }
+
+  return {
+    ...baseToolkit,
+    getRepoLearnings: () => ({ preferences }),
+  };
+}
+
 function resolveProcessingConfig(
   job: AnalyzePullRequestJob,
   dependencies: WorkerProcessingDependencies,
@@ -167,7 +200,9 @@ function resolveProcessingConfig(
     }
   }
 
-  const toolkit = loadReviewToolkit(dependencies, job.repo_full_name, traceId, loggers);
+  const baseToolkit = loadReviewToolkit(dependencies, job.repo_full_name, traceId, loggers);
+
+  const toolkit = augmentToolkitWithLearnings(baseToolkit, repoLearnings);
 
   const baseLlmRules = buildLlmRules({
     mergewiseConfig, traceId, loggers,

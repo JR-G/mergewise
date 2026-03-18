@@ -311,6 +311,26 @@ describe("completeWithTools", () => {
     expect(result.content).toBe(FINDINGS_JSON);
   });
 
+  it("propagates network errors from the first tool round", async () => {
+    globalThis.fetch = (() => {
+      return Promise.reject(new Error("network failure"));
+    }) as unknown as typeof globalThis.fetch;
+
+    const client = createReviewClient({ apiKey: "test-key", maxRetries: 0 });
+
+    const promise = client.completeWithTools({
+      systemPrompt: "system",
+      userPrompt: "user",
+      tools: TOOLS,
+      onToolCall: noopToolCall,
+      maxTokens: 4096,
+      toolTokenBudget: 15_000,
+    });
+
+    expect(promise).rejects.toThrow();
+    await promise.catch(() => {});
+  });
+
   it("aggregates usage across all rounds including final call", async () => {
     const noToolCallBreak = JSON.stringify({
       choices: [{ message: { role: "assistant", content: null } }],

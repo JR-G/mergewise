@@ -14,7 +14,9 @@ const MAX_FULL_FILE_LINES = 2000;
 const WINDOWED_COVERAGE_THRESHOLD = 0.9;
 const MAX_CALLERS_IN_PROMPT = 10;
 const MAX_LEARNINGS_IN_PROMPT = 5;
-const MAX_DIFF_CHARS = 50_000;
+
+/** @internal Exported for testing only. */
+export const MAX_DIFF_CHARS = 50_000;
 
 const SLIM_SYSTEM_PROMPT = `You are a principal-level engineer reviewing a pull request for structural quality. You give the kind of feedback that makes engineers better — not linting, not bug hunting, not defensive coding advice, but the refactoring guidance that comes from years of maintaining large systems.
 
@@ -134,6 +136,19 @@ export function buildSlimSystemPrompt(options?: SlimSystemPromptOptions): string
 }
 
 /**
+ * Formats diff hunks into a fenced diff section, truncating at MAX_DIFF_CHARS.
+ */
+function formatDiffSection(hunks: readonly DiffHunk[]): string[] {
+  let diffContent = hunks
+    .map((hunk) => `${hunk.header}\n${hunk.lines.join("\n")}`)
+    .join("\n\n");
+  if (diffContent.length > MAX_DIFF_CHARS) {
+    diffContent = `${diffContent.slice(0, MAX_DIFF_CHARS)}\n...(truncated)`;
+  }
+  return ["", "## Diff", "```diff", diffContent, "```"];
+}
+
+/**
  * Builds a numbered file context section using windowed or full file content.
  */
 function buildFileContextSection(
@@ -227,17 +242,7 @@ export function buildDynamicFilePrompt(input: DynamicPromptInput): string {
   parts.push(`## File: ${input.fileDiff.filePath}`);
   parts.push(...buildPrContextSection(input.prTitle, input.prDescription));
 
-  parts.push("");
-  parts.push("## Diff");
-  parts.push("```diff");
-  let diffContent = input.fileDiff.hunks
-    .map((hunk) => `${hunk.header}\n${hunk.lines.join("\n")}`)
-    .join("\n\n");
-  if (diffContent.length > MAX_DIFF_CHARS) {
-    diffContent = `${diffContent.slice(0, MAX_DIFF_CHARS)}\n...(truncated)`;
-  }
-  parts.push(diffContent);
-  parts.push("```");
+  parts.push(...formatDiffSection(input.fileDiff.hunks));
 
   if (input.fullContent) {
     parts.push(...buildFileContextSection(input.fullContent, input.fileDiff.hunks));
@@ -319,17 +324,7 @@ export function buildToolUseFilePrompt(input: ToolUsePromptInput): string {
   parts.push(`## File: ${input.fileDiff.filePath}`);
   parts.push(...buildPrContextSection(input.prTitle, input.prDescription));
 
-  parts.push("");
-  parts.push("## Diff");
-  parts.push("```diff");
-  let diffContent = input.fileDiff.hunks
-    .map((hunk) => `${hunk.header}\n${hunk.lines.join("\n")}`)
-    .join("\n\n");
-  if (diffContent.length > MAX_DIFF_CHARS) {
-    diffContent = `${diffContent.slice(0, MAX_DIFF_CHARS)}\n...(truncated)`;
-  }
-  parts.push(diffContent);
-  parts.push("```");
+  parts.push(...formatDiffSection(input.fileDiff.hunks));
 
   parts.push(...buildSignalsSection(input.signals));
 

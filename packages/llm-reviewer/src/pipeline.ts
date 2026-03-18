@@ -30,7 +30,8 @@ const PRIORITY_ORDER: Readonly<Record<string, number>> = {
 
 const DEFAULT_MAX_FILES = 20;
 const MAX_REVIEW_RESPONSE_TOKENS = 4096;
-const TOOL_TOKEN_BUDGET = 15_000;
+const DEFAULT_TOKEN_BUDGET = 30_000;
+const MIN_PER_FILE_TOOL_BUDGET = 5_000;
 
 interface PipelineClients {
   readonly triageClient: ReviewClient;
@@ -128,9 +129,20 @@ async function runReviewStage(
   const failedFiles: FileReviewFailure[] = [];
   let combinedUsage: CompletionUsage | undefined;
 
+  const perFileToolBudget = Math.max(
+    MIN_PER_FILE_TOOL_BUDGET,
+    Math.floor((config.tokenBudget ?? DEFAULT_TOKEN_BUDGET) / diffs.length),
+  );
+
   for (const diff of diffs) {
+    let fullContent: string | null;
     try {
-      const fullContent = await codebaseContext.readFile(diff.filePath);
+      fullContent = await codebaseContext.readFile(diff.filePath);
+    } catch {
+      fullContent = null;
+    }
+
+    try {
       const signals = extractStructuralSignals(diff);
 
       const toolContext: ToolContext = {
@@ -154,7 +166,7 @@ async function runReviewStage(
         tools: openAiTools,
         onToolCall: (toolName, rawArgs) => executeToolCall(REVIEW_TOOLS, toolContext, toolName, rawArgs),
         maxTokens: MAX_REVIEW_RESPONSE_TOKENS,
-        toolTokenBudget: TOOL_TOKEN_BUDGET,
+        toolTokenBudget: perFileToolBudget,
       });
       const findings = parseLlmResponse(content, diff, pullRequest);
       allFindings.push(...findings);

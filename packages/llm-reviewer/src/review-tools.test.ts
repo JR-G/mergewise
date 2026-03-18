@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
 import { toFilePath, toRepoFullName } from "@mergewise/shared-types";
-import type { ToolContext } from "./review-tools";
+import type { ToolContext, ReviewTool } from "./review-tools";
 import {
   readFileSection,
   getCallers,
@@ -84,6 +85,27 @@ describe("readFileSection", () => {
     const result = readFileSection.execute({ startLine: 1, endLine: 1 }, context);
 
     expect(result).toBe("1: only line");
+  });
+
+  test("returns exceeds-file-length error for very large startLine", () => {
+    const result = readFileSection.execute(
+      { startLine: 1_000_000_000, endLine: 1_000_000_005 },
+      makeContext(),
+    );
+
+    expect(result).toContain("Error");
+    expect(result).toContain("exceeds file length");
+  });
+
+  test("truncates output when lines exceed MAX_READ_CHARS", () => {
+    const longLine = "x".repeat(10_000);
+    const lines = Array.from({ length: 20 }, () => longLine);
+    const context = makeContext({ fullContent: lines.join("\n") });
+
+    const result = readFileSection.execute({ startLine: 1, endLine: 20 }, context);
+
+    expect(result.length).toBeLessThanOrEqual(60_000);
+    expect(result).toContain("...[truncated]");
   });
 });
 
@@ -281,6 +303,51 @@ describe("executeToolCall", () => {
     );
 
     expect(result).toContain("Invalid arguments");
+  });
+
+  test("returns Zod validation error when startLine is 0", () => {
+    const result = executeToolCall(
+      REVIEW_TOOLS,
+      makeContext(),
+      "read_file_section",
+      JSON.stringify({ startLine: 0, endLine: 5 }),
+    );
+
+    expect(result).toContain("Invalid arguments");
+  });
+
+  test("returns bounded error string when tool.execute throws", () => {
+    const throwingTool: ReviewTool<z.ZodObject> = {
+      name: "exploding_tool",
+      description: "A tool that always throws",
+      schema: z.object({}),
+      execute: () => {
+        throw new Error("Something went terribly wrong");
+      },
+    };
+
+    const result = executeToolCall([throwingTool], makeContext(), "exploding_tool", "{}");
+
+    expect(result).toContain('Tool "exploding_tool" failed');
+    expect(result).toContain("Something went terribly wrong");
+    expect(result.length).toBeLessThan(600);
+  });
+
+  test("truncates long error messages from tool.execute failures", () => {
+    const longMessage = "e".repeat(1000);
+    const throwingTool: ReviewTool<z.ZodObject> = {
+      name: "long_error_tool",
+      description: "A tool that throws a long error",
+      schema: z.object({}),
+      execute: () => {
+        throw new Error(longMessage);
+      },
+    };
+
+    const result = executeToolCall([throwingTool], makeContext(), "long_error_tool", "{}");
+
+    expect(result).toContain('Tool "long_error_tool" failed');
+    expect(result.length).toBeLessThan(600);
   });
 });
 

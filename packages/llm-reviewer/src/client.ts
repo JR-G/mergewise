@@ -42,6 +42,7 @@ export interface CompleteWithToolsOptions {
 }
 
 const MAX_TOOL_ROUNDS = 5;
+const MAX_TOOL_CALLS_PER_ROUND = 10;
 
 /**
  * Extracts token usage from an OpenAI response into our internal format.
@@ -127,6 +128,12 @@ export class ReviewClient {
    * - The model returns no tool_calls (done voluntarily)
    * - `MAX_TOOL_ROUNDS` (5) reached
    * - `toolTokenBudget` exceeded
+   *
+   * `toolTokenBudget` is a soft per-round limit: the budget check runs
+   * after each round completes, so one round's tool calls may push
+   * cumulative usage past the budget before the loop breaks. At most
+   * `MAX_TOOL_CALLS_PER_ROUND` (10) tool calls are processed per round;
+   * any excess calls from the model are silently dropped.
    */
   async completeWithTools(options: CompleteWithToolsOptions): Promise<CompletionResult> {
     const {
@@ -168,7 +175,8 @@ export class ReviewClient {
       }
 
       messages.push(assistantMessage);
-      for (const toolCall of toolCalls) {
+      const cappedToolCalls = toolCalls.slice(0, MAX_TOOL_CALLS_PER_ROUND);
+      for (const toolCall of cappedToolCalls) {
         if (toolCall.type !== "function") continue;
         const result = onToolCall(
           toolCall.function.name,

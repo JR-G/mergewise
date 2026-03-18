@@ -6,6 +6,7 @@ import { formatKnowledgeSection } from "./knowledge/format";
 import type OpenAI from "openai";
 
 const MAX_READ_LINES = 500;
+const MAX_READ_CHARS = 50_000;
 const MAX_CALLERS_IN_RESULT = 10;
 const MAX_LEARNINGS_IN_RESULT = 5;
 
@@ -69,9 +70,18 @@ export const readFileSection: ReviewTool<typeof readFileSectionSchema> = {
     }
 
     const slice = fileLines.slice(startLine - 1, clampedEnd);
-    return slice
-      .map((line, index) => `${startLine + index}: ${line}`)
-      .join("\n");
+    let charCount = 0;
+    const outputLines: string[] = [];
+    for (let index = 0; index < slice.length; index++) {
+      const formatted = `${startLine + index}: ${slice[index]}`;
+      if (charCount + formatted.length + (index > 0 ? 1 : 0) > MAX_READ_CHARS) {
+        outputLines.push("...[truncated]");
+        break;
+      }
+      charCount += formatted.length + (index > 0 ? 1 : 0);
+      outputLines.push(formatted);
+    }
+    return outputLines.join("\n");
   },
 };
 
@@ -200,7 +210,12 @@ export function executeToolCall(
     return `Invalid arguments: ${result.error.message.slice(0, 500)}`;
   }
 
-  return tool.execute(result.data, context);
+  try {
+    return tool.execute(result.data, context);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return `Tool "${toolName}" failed: ${errorMessage.slice(0, 500)}`;
+  }
 }
 
 /**
