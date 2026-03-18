@@ -117,18 +117,4 @@ export default [
       "max-params": "off",
     },
   },
-  {
-    // TODO: Split these pre-existing oversized test files.
-    files: [
-      "packages/llm-reviewer/src/index.test.ts",
-      "apps/worker/src/process-job.test.ts",
-      "apps/worker/src/delivery.test.ts",
-      "packages/github-client/src/index.test.ts",
-      "apps/worker/src/pr-comments.test.ts",
-      "apps/worker/src/index.test.ts",
-    ],
-    rules: {
-      "max-lines": "off",
-    },
-  },
 ];

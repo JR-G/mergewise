@@ -6,20 +6,8 @@ import {
   fetchPullRequest,
   fetchPullRequestFiles,
 } from "./pull-requests";
-
-type FetchMock = (input: string | URL, init?: RequestInit) => Promise<Response>;
-
-interface FetchCall {
-  input: string | URL;
-  init?: RequestInit | undefined;
-}
-
-function makeJsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
+import type { FetchCall, FetchMock } from "./test-helpers";
+import { makeJsonResponse } from "./test-helpers";
 
 describe("pull-requests", () => {
   let originalFetch: typeof globalThis.fetch;

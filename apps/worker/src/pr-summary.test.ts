@@ -1,14 +1,16 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, test } from "bun:test";
 
 import type { Finding } from "@mergewise/shared-types";
 import { toConfidence, toFilePath, toInstallationId, toLineNumber, toPRNumber, toRepoFullName, toRuleId } from "@mergewise/shared-types";
 
 import {
-  PR_SUMMARY_COMMENT_MARKER,
+  buildPrSummaryComment,
   PR_SUMMARY_CHAR_LIMIT,
+  upsertPrSummaryComment,
+} from "./index";
+import {
   buildBlobUrl,
   buildCategoryBadges,
-  buildPrSummaryComment,
   compareFindings,
   escapeTableCell,
   extractSuggestionBody,
@@ -16,6 +18,7 @@ import {
   groupFindingsIntoSuggestions,
   truncateRecommendation,
 } from "./pr-summary";
+import { createFinding, workerFetchOptions } from "./test-helpers";
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
   return {
@@ -186,64 +189,348 @@ describe("extractSuggestionBody", () => {
 });
 
 describe("buildPrSummaryComment", () => {
-  it("includes the summary marker in the output", () => {
-    const result = buildPrSummaryComment({
-      filePaths: ["src/index.ts"],
-      findings: [],
-      repositoryFullName: "acme/widget",
-      headSha: "abc123",
-      rulesRan: 5,
-      rulesPassed: 5,
-    });
+  const defaultInput = {
+    filePaths: ["src/index.ts", "src/app.ts"],
+    findings: [] as Finding[],
+    repositoryFullName: "acme/widget",
+    headSha: "abc123",
+    rulesRan: 5,
+    rulesPassed: 5,
+  };
 
-    expect(result).toContain(PR_SUMMARY_COMMENT_MARKER);
+  test("includes hidden marker in output", () => {
+    const body = buildPrSummaryComment({ ...defaultInput, filePaths: [] });
+    expect(body).toContain("<!-- mergewise-summary -->");
   });
 
-  it("shows no-issues message when findings are empty", () => {
-    const result = buildPrSummaryComment({
+  test("header counts themed groups not individual findings", () => {
+    const findings: Finding[] = [
+      { ...createFinding("f1", 0.9, "safety"), ruleId: toRuleId("test/no-bang"), filePath: toFilePath("a.ts"), line: toLineNumber(10), recommendation: "Avoid non-null" },
+      { ...createFinding("f2", 0.9, "safety"), ruleId: toRuleId("test/no-bang"), filePath: toFilePath("a.ts"), line: toLineNumber(20), recommendation: "Avoid non-null" },
+      { ...createFinding("f3", 0.85, "perf"), ruleId: toRuleId("test/cache"), filePath: toFilePath("b.ts"), line: toLineNumber(5), recommendation: "Cache result" },
+    ];
+    const body = buildPrSummaryComment({
+      ...defaultInput,
+      filePaths: ["a.ts", "b.ts", "c.ts"],
+      findings,
+    });
+    expect(body).toContain("**Mergewise**");
+    expect(body).toContain("Reviewed 3 files");
+    expect(body).toContain("2 suggestions");
+  });
+
+  test("renders each suggestion group as a collapsible details block", () => {
+    const findings: Finding[] = [
+      { ...createFinding("f1", 0.9, "safety"), ruleId: toRuleId("test/r1"), filePath: toFilePath("src/app.ts"), line: toLineNumber(10), recommendation: "Fix null. Use a type guard instead." },
+      { ...createFinding("f2", 0.85, "perf"), ruleId: toRuleId("test/r2"), filePath: toFilePath("src/utils.ts"), line: toLineNumber(25), recommendation: "Cache result. Avoid recomputing on each render." },
+    ];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body).toContain("<details>");
+    expect(body).toContain("<strong>Fix null</strong>");
+    expect(body).toContain("<strong>Cache result</strong>");
+    expect(body).toContain("\u{1F534}");
+    expect(body).toContain("\u{1F7E1}");
+    expect(body).toContain("src/app.ts");
+    expect(body).toContain("src/utils.ts");
+    expect(body).toContain("https://github.com/acme/widget/blob/abc123/src/app.ts#L10");
+  });
+
+  test("groups findings with same ruleId and recommendation into one suggestion", () => {
+    const findings: Finding[] = [
+      { ...createFinding("f1", 0.9, "safety"), ruleId: toRuleId("test/no-bang"), filePath: toFilePath("a.ts"), line: toLineNumber(10), recommendation: "Avoid non-null" },
+      { ...createFinding("f2", 0.9, "safety"), ruleId: toRuleId("test/no-bang"), filePath: toFilePath("a.ts"), line: toLineNumber(20), recommendation: "Avoid non-null" },
+      { ...createFinding("f3", 0.9, "safety"), ruleId: toRuleId("test/no-bang"), filePath: toFilePath("b.ts"), line: toLineNumber(5), recommendation: "Avoid non-null" },
+    ];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body).toContain("1 suggestion");
+    expect(body).toContain("3 locations");
+    expect(body).toContain("| `a.ts` | [10]");
+    expect(body).toContain("[20]");
+    expect(body).toContain("| `b.ts` | [5]");
+  });
+
+  test("renders recommendation as a blockquote", () => {
+    const findings: Finding[] = [
+      { ...createFinding("f1", 0.9, "safety"), recommendation: "Avoid non-null assertions. Use a type guard instead." },
+    ];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body).toContain("> Avoid non-null assertions.");
+    expect(body).toContain("> Use a type guard instead.");
+  });
+
+  test("overflows locations beyond file limit with sub-text", () => {
+    const findings: Finding[] = Array.from({ length: 7 }, (_, index) => ({
+      ...createFinding(`f${String(index)}`, 0.9, "safety"),
+      ruleId: toRuleId("test/no-bang"),
+      filePath: toFilePath(`src/file${String(index)}.ts`),
+      line: toLineNumber((index + 1) * 10),
+      recommendation: "Avoid non-null assertions",
+    }));
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body).toContain("7 locations");
+    expect(body).toContain("src/file0.ts");
+    expect(body).toContain("src/file4.ts");
+    expect(body).toMatch(/<sub>and \d+ more location/);
+  });
+
+  test("sorts suggestion groups by severity", () => {
+    const findings: Finding[] = [
+      { ...createFinding("f1", 0.8, "clean"), ruleId: toRuleId("test/r-clean"), filePath: toFilePath("src/z.ts"), line: toLineNumber(1), recommendation: "Clean up" },
+      { ...createFinding("f2", 0.9, "safety"), ruleId: toRuleId("test/r-safety"), filePath: toFilePath("src/a.ts"), line: toLineNumber(5), recommendation: "Fix null" },
+      { ...createFinding("f3", 0.85, "perf"), ruleId: toRuleId("test/r-perf"), filePath: toFilePath("src/b.ts"), line: toLineNumber(3), recommendation: "Cache it" },
+    ];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    const safetyIdx = body.indexOf("Fix null");
+    const perfIdx = body.indexOf("Cache it");
+    const cleanIdx = body.indexOf("Clean up");
+    expect(safetyIdx).toBeLessThan(perfIdx);
+    expect(perfIdx).toBeLessThan(cleanIdx);
+  });
+
+  test("shows no-issues message when no findings exist", () => {
+    const body = buildPrSummaryComment(defaultInput);
+    expect(body).toContain("No issues found");
+    expect(body).not.toContain("<strong>");
+  });
+
+  test("renders files reviewed inside collapsed review details section", () => {
+    const body = buildPrSummaryComment(defaultInput);
+    expect(body).toContain("<details>");
+    expect(body).toContain("Review details");
+    expect(body).toContain("`src/app.ts`");
+    expect(body).toContain("`src/index.ts`");
+  });
+
+  test("uses singular for one file and one suggestion group", () => {
+    const findings: Finding[] = [createFinding("f1", 0.9, "clean")];
+    const body = buildPrSummaryComment({
+      ...defaultInput,
+      filePaths: ["src/a.ts"],
+      findings,
+    });
+    expect(body).toContain("1 file");
+    expect(body).toContain("1 suggestion");
+    expect(body).not.toContain("files");
+    expect(body).not.toContain("suggestions");
+  });
+
+  test("escapes pipes and newlines in recommendation blockquote", () => {
+    const findings: Finding[] = [
+      {
+        ...createFinding("f1", 0.9, "safety"),
+        recommendation: "Use A | B instead\nof C",
+      },
+    ];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body).toContain("Use A \\| B instead of C");
+  });
+
+  test("does not render delivery counters in review details", () => {
+    const body = buildPrSummaryComment({
+      ...defaultInput,
+      deliveryCounters: {
+        skippedByConfidence: 3,
+        skippedByDeduplication: 1,
+        skippedByPolicy: 0,
+        skippedByGrouping: 2,
+        skippedBySimilarity: 0,
+        skippedByCap: 0,
+      },
+    });
+    expect(body).toContain("Review details");
+    expect(body).not.toContain("Skipped by confidence");
+    expect(body).not.toContain("Delivery");
+  });
+
+  test("does not use markdown headers", () => {
+    const findings: Finding[] = [createFinding("f1", 0.9, "safety")];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body).not.toMatch(/^##+ /m);
+  });
+
+  test("uses inline format for single-location suggestions", () => {
+    const findings: Finding[] = [
+      { ...createFinding("f1", 0.9, "safety"), filePath: toFilePath("src/app.ts"), line: toLineNumber(10), recommendation: "Fix null" },
+    ];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body).toContain("`src/app.ts`");
+    expect(body).toContain("[10]");
+    expect(body).toContain("1 location");
+    expect(body).not.toContain("| File | Lines |");
+  });
+
+  test("uses table format for multi-location suggestions", () => {
+    const findings: Finding[] = [
+      { ...createFinding("f1", 0.9, "safety"), ruleId: toRuleId("test/no-bang"), filePath: toFilePath("a.ts"), line: toLineNumber(10), recommendation: "Avoid" },
+      { ...createFinding("f2", 0.9, "safety"), ruleId: toRuleId("test/no-bang"), filePath: toFilePath("b.ts"), line: toLineNumber(20), recommendation: "Avoid" },
+    ];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body).toContain("| File | Lines |");
+    expect(body).toContain("| `a.ts` |");
+    expect(body).toContain("| `b.ts` |");
+  });
+
+  test("splits findings with different recommendations into separate groups", () => {
+    const findings: Finding[] = [
+      { ...createFinding("f1", 0.9, "idiomatic"), ruleId: toRuleId("llm/reviewer"), filePath: toFilePath("a.ts"), line: toLineNumber(10), recommendation: "God component detected" },
+      { ...createFinding("f2", 0.9, "idiomatic"), ruleId: toRuleId("llm/reviewer"), filePath: toFilePath("b.ts"), line: toLineNumber(20), recommendation: "Prop drilling detected" },
+    ];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body).toContain("2 suggestions");
+    expect(body).toContain("God component detected");
+    expect(body).toContain("Prop drilling detected");
+  });
+
+  test("truncates suggestion blocks when output exceeds character limit", () => {
+    const findings: Finding[] = Array.from({ length: 50 }, (_, index) => ({
+      ...createFinding(`f${String(index)}`, 0.9 - index * 0.001, "safety"),
+      ruleId: toRuleId(`test/r-safety-${String(index)}`),
+      filePath: toFilePath(`src/components/very-long-directory-name/deeply-nested-file-${String(index)}.ts`),
+      line: toLineNumber((index + 1) * 10),
+      recommendation: "This is a long recommendation that describes the issue in great detail and adds to the total character count of the summary comment body",
+    }));
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body.length).toBeLessThanOrEqual(PR_SUMMARY_CHAR_LIMIT);
+    expect(body).toContain("**Mergewise**");
+    expect(body).toContain("Review details");
+    expect(body).toMatch(/<sub>and \d+ more suggestion/);
+  });
+
+  test("preserves header and review details when truncating", () => {
+    const findings: Finding[] = Array.from({ length: 40 }, (_, index) => ({
+      ...createFinding(`f${String(index)}`, 0.9, "safety"),
+      ruleId: toRuleId(`test/r-safety-${String(index)}`),
+      filePath: toFilePath(`src/components/deep-nested-directory/module-${String(index)}.ts`),
+      line: toLineNumber((index + 1) * 10),
+      recommendation: "Refactor this function to reduce cyclomatic complexity and improve maintainability of the codebase",
+    }));
+    const body = buildPrSummaryComment({
+      ...defaultInput,
       filePaths: ["src/a.ts", "src/b.ts"],
-      findings: [],
-      repositoryFullName: "acme/widget",
-      headSha: "abc123",
-      rulesRan: 3,
-      rulesPassed: 3,
+      findings,
+      rulesRan: 10,
+      rulesPassed: 8,
     });
-
-    expect(result).toContain("No issues found");
-    expect(result).toContain("2 files");
+    expect(body).toContain("<!-- mergewise-summary -->");
+    expect(body).toContain("8/10 passed");
   });
 
-  it("includes suggestion count when findings are present", () => {
-    const result = buildPrSummaryComment({
-      filePaths: ["src/index.ts"],
-      findings: [makeFinding()],
-      repositoryFullName: "acme/widget",
-      headSha: "abc123",
-      rulesRan: 5,
-      rulesPassed: 4,
-    });
-
-    expect(result).toContain("1 suggestion");
+  test("does not truncate when output is within character limit", () => {
+    const findings: Finding[] = [
+      { ...createFinding("f1", 0.9, "safety"), recommendation: "Fix null" },
+    ];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body.length).toBeLessThan(PR_SUMMARY_CHAR_LIMIT);
+    expect(body).toContain("Fix null");
+    expect(body).not.toContain("more suggestion");
   });
 
-  it("does not exceed the character limit", () => {
-    const findings = Array.from({ length: 50 }, (_, index) =>
-      makeFinding({
-        findingId: `f${String(index)}`,
-        filePath: toFilePath(`src/file-${String(index)}.ts`),
-        recommendation: "A".repeat(200) + ". " + "B".repeat(200),
-      }),
+  test("renders full recommendation text in blockquote without truncation", () => {
+    const longRecommendation = "Avoid non-null assertions. " + "A".repeat(100) + " end of text.";
+    const findings: Finding[] = [
+      { ...createFinding("f1", 0.9, "safety"), recommendation: longRecommendation },
+    ];
+    const body = buildPrSummaryComment({ ...defaultInput, findings });
+    expect(body).toContain("end of text.");
+  });
+});
+
+describe("upsertPrSummaryComment", () => {
+  test("creates a new comment when no existing summary comment is found", async () => {
+    let postedBody = "";
+    const result = await upsertPrSummaryComment(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 50,
+        installationAccessToken: "ghs_token",
+        body: "<!-- mergewise-summary -->\n## Summary",
+        traceId: "trace-1",
+        githubFetchOptions: workerFetchOptions,
+      },
+      {
+        listPullRequestSummaryCommentsFn: async () => [],
+        postPullRequestSummaryCommentFn: async (opts) => {
+          postedBody = opts.body;
+          return { id: 100, node_id: "IC_100", html_url: "", body: opts.body };
+        },
+        updateIssueCommentFn: async () => {
+          throw new Error("should not be called");
+        },
+        logInfo: () => {},
+      },
     );
 
-    const result = buildPrSummaryComment({
-      filePaths: findings.map((finding) => finding.filePath),
-      findings,
-      repositoryFullName: "acme/widget",
-      headSha: "abc123",
-      rulesRan: 10,
-      rulesPassed: 10,
-    });
+    expect(result.id).toBe(100);
+    expect(postedBody).toContain("<!-- mergewise-summary -->");
+  });
 
-    expect(result.length).toBeLessThanOrEqual(PR_SUMMARY_CHAR_LIMIT);
+  test("updates existing comment when marker is found", async () => {
+    let updatedCommentId: number | undefined;
+    let updatedBody = "";
+    const result = await upsertPrSummaryComment(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 50,
+        installationAccessToken: "ghs_token",
+        body: "<!-- mergewise-summary -->\n## Updated",
+        traceId: "trace-2",
+        githubFetchOptions: workerFetchOptions,
+      },
+      {
+        listPullRequestSummaryCommentsFn: async () => [
+          {
+            id: 200,
+            node_id: "IC_200",
+            html_url: "",
+            body: "<!-- mergewise-summary -->\n## Old summary",
+          },
+        ],
+        postPullRequestSummaryCommentFn: async () => {
+          throw new Error("should not be called");
+        },
+        updateIssueCommentFn: async (opts) => {
+          updatedCommentId = opts.commentId;
+          updatedBody = opts.body;
+          return { id: opts.commentId, node_id: "IC_200", html_url: "", body: opts.body };
+        },
+        logInfo: () => {},
+      },
+    );
+
+    expect(result.id).toBe(200);
+    expect(updatedCommentId).toBe(200);
+    expect(updatedBody).toContain("## Updated");
+  });
+
+  test("ignores comments without the marker", async () => {
+    let postedBody = "";
+    await upsertPrSummaryComment(
+      {
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 50,
+        installationAccessToken: "ghs_token",
+        body: "<!-- mergewise-summary -->\n## Summary",
+        traceId: "trace-3",
+        githubFetchOptions: workerFetchOptions,
+      },
+      {
+        listPullRequestSummaryCommentsFn: async () => [
+          { id: 300, node_id: "IC_300", html_url: "", body: "Just a normal comment" },
+        ],
+        postPullRequestSummaryCommentFn: async (opts) => {
+          postedBody = opts.body;
+          return { id: 301, node_id: "IC_301", html_url: "", body: opts.body };
+        },
+        updateIssueCommentFn: async () => {
+          throw new Error("should not be called");
+        },
+        logInfo: () => {},
+      },
+    );
+
+    expect(postedBody).toContain("<!-- mergewise-summary -->");
   });
 });

@@ -4,23 +4,11 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { createGitHubAppJwt, exchangeInstallationAccessToken } from "./auth";
 import { GitHubApiError } from "./http";
-
-type FetchMock = (input: string | URL, init?: RequestInit) => Promise<Response>;
-
-interface FetchCall {
-  input: string | URL;
-  init?: RequestInit | undefined;
-}
+import type { FetchCall, FetchMock } from "./test-helpers";
+import { makeJsonResponse } from "./test-helpers";
 
 function decodeJwtPart(value: string): unknown {
   return JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as unknown;
-}
-
-function makeJsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
 }
 
 describe("auth", () => {
