@@ -35,7 +35,6 @@ function formatNumberedHunk(hunk: DiffHunk): string {
     }
 
     numberedLines.push(line);
-    currentLine++;
   }
 
   return `${hunk.header}\n${numberedLines.join("\n")}`;

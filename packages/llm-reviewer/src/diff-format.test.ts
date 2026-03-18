@@ -55,6 +55,24 @@ describe("formatNumberedDiff", () => {
     expect(result).toContain("+  22 third");
   });
 
+  test("clamps non-positive start line to 1", () => {
+    const hunk = makeHunk({
+      header: "@@ -0,0 +0,1 @@",
+      lines: ["+line"],
+    });
+    const result = formatNumberedDiff([hunk]);
+    expect(result).toContain("+   1 line");
+  });
+
+  test("preserves large line numbers with wider padding", () => {
+    const hunk = makeHunk({
+      header: "@@ -0,0 +99999,1 @@",
+      lines: ["+line"],
+    });
+    const result = formatNumberedDiff([hunk]);
+    expect(result).toContain("+99999 line");
+  });
+
   test("handles multiple hunks with separate numbering", () => {
     const hunks: DiffHunk[] = [
       { header: "@@ -0,0 +1,2 @@", lines: ["+line one", "+line two"] },
