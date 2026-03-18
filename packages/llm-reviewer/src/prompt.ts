@@ -159,7 +159,7 @@ function buildCoreFewShotExamples(): string {
 +  logAnalytics("order_processed", order.id);
 +}
 \`\`\`
-Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.92, "evidence": "function processOrder", "recommendation": "\`processOrder\` tangles the tax/discount computation with side effects (email, inventory, analytics). You cannot unit test the pricing logic without stubbing an email service and an inventory API. Extract side effects into \`dispatchOrderSideEffects\` so the computation is pure and testable — this is the Single Responsibility Principle: each function has one reason to change."}]}\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "principle": "SRP", "confidence": 0.92, "evidence": "function processOrder", "recommendation": "\`processOrder\` tangles the tax/discount computation with side effects (email, inventory, analytics). You cannot unit test the pricing logic without stubbing an email service and an inventory API. Extract side effects into \`dispatchOrderSideEffects\` so the computation is pure and testable — this is the Single Responsibility Principle: each function has one reason to change."}]}\`
 
 ### Example B — correct finding (React)
 \`\`\`typescript
@@ -168,7 +168,7 @@ Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0
 +  setFullName(\`\${firstName} \${lastName}\`);
 +}, [firstName, lastName]);
 \`\`\`
-Correct output: \`{"findings": [{"line": 1, "category": "idiomatic", "confidence": 0.95, "evidence": "useState + useEffect to derive fullName", "recommendation": "\`fullName\` is derived from \`firstName\` and \`lastName\` but stored as separate state synchronised via an effect. This adds an unnecessary render cycle and a stale-value window between the dependency change and the effect firing. Compute it directly as \`const fullName = \\u0060\${firstName} \${lastName}\\u0060\`."}]}\`
+Correct output: \`{"findings": [{"line": 1, "category": "idiomatic", "principle": "derive-dont-sync", "confidence": 0.95, "evidence": "useState + useEffect to derive fullName", "recommendation": "\`fullName\` is derived from \`firstName\` and \`lastName\` but stored as separate state synchronised via an effect. This adds an unnecessary render cycle and a stale-value window between the dependency change and the effect firing. Compute it directly as \`const fullName = \\u0060\${firstName} \${lastName}\\u0060\`."}]}\`
 
 ### Example C — imperative loop that should be functional
 \`\`\`typescript
@@ -182,7 +182,7 @@ Correct output: \`{"findings": [{"line": 1, "category": "idiomatic", "confidence
 +  return emails;
 +}
 \`\`\`
-Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.88, "evidence": "imperative loop with push", "recommendation": "The mutable \`emails\` array and imperative loop obscure the intent — a reader must trace the loop body to understand this is a filter-then-map. Replace with \`users.filter(u => u.active).map(u => u.email)\` so the data flow is declarative and the intermediate mutation is eliminated.", "suggestedRewrite": "function getActiveEmails(users: User[]): string[] {\\n  return users.filter(u => u.active).map(u => u.email);\\n}"}]}\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "principle": "prefer-declarative-transforms", "confidence": 0.88, "evidence": "imperative loop with push", "recommendation": "The mutable \`emails\` array and imperative loop obscure the intent — a reader must trace the loop body to understand this is a filter-then-map. Replace with \`users.filter(u => u.active).map(u => u.email)\` so the data flow is declarative and the intermediate mutation is eliminated.", "suggestedRewrite": "function getActiveEmails(users: User[]): string[] {\\n  return users.filter(u => u.active).map(u => u.email);\\n}"}]}\`
 
 ### Example D — god component with mixed concerns
 \`\`\`typescript
@@ -194,7 +194,7 @@ Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0
 +  return <div>{sorted.map(u => <div key={u.id} onClick={() => { setUsers(prev => prev.filter(p => p.id !== u.id)); fetch(\`/api/users/\${u.id}\`, {method:"DELETE"}); }}>{u.name}</div>)}</div>;
 +}
 \`\`\`
-Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.95, "evidence": "Dashboard component", "recommendation": "\`Dashboard\` mixes data fetching, sorting, deletion, and rendering into one component. You cannot test the fetch/delete logic without rendering JSX, and adding a second view over the same data means duplicating the fetch and sort. Extract data fetching into a \`useUsers\` hook, move the delete handler into a named function, and split the list into a \`UserList\` component — this is SRP applied at the component level."}]}\``;
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "principle": "SRP", "confidence": 0.95, "evidence": "Dashboard component", "recommendation": "\`Dashboard\` mixes data fetching, sorting, deletion, and rendering into one component. You cannot test the fetch/delete logic without rendering JSX, and adding a second view over the same data means duplicating the fetch and sort. Extract data fetching into a \`useUsers\` hook, move the delete handler into a named function, and split the list into a \`UserList\` component — this is SRP applied at the component level."}]}\``;
 }
 
 function buildAdvancedFewShotExamples(): string {
@@ -207,7 +207,7 @@ function buildAdvancedFewShotExamples(): string {
 +  await s3.send(new PutObjectCommand({ Bucket: "reports", Key: reportId, Body: report }));
 +}
 \`\`\`
-Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.92, "evidence": "new PrismaClient() and new S3Client() inside sendReport", "recommendation": "\`sendReport\` constructs \`PrismaClient\` and \`S3Client\` internally. You cannot test the report logic without a live database and S3 bucket, and swapping to a different storage backend requires editing this function. Accept these as parameters behind abstractions — this is the Dependency Inversion Principle: depend on interfaces, not concretions."}]}\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "principle": "DIP", "confidence": 0.92, "evidence": "new PrismaClient() and new S3Client() inside sendReport", "recommendation": "\`sendReport\` constructs \`PrismaClient\` and \`S3Client\` internally. You cannot test the report logic without a live database and S3 bucket, and swapping to a different storage backend requires editing this function. Accept these as parameters behind abstractions — this is the Dependency Inversion Principle: depend on interfaces, not concretions."}]}\`
 
 ### Example F — LSP violation (throws on inherited method)
 \`\`\`typescript
@@ -222,7 +222,7 @@ Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0
 +  delete(id: string) { throw new Error("Not supported"); }
 +}
 \`\`\`
-Correct output: \`{"findings": [{"line": 8, "category": "clean", "confidence": 0.93, "evidence": "save and delete throw 'Not supported'", "recommendation": "\`ReadOnlyRepo\` throws on \`save\` and \`delete\`, so any caller holding a \`Repository\` reference will crash at runtime if it tries to write. The type system promises write support but the implementation rejects it. Split the interface into \`Readable\` and \`Writable\` so \`ReadOnlyRepo\` only implements what it supports — this is the Liskov Substitution Principle: subtypes must honour the parent contract."}]}\`
+Correct output: \`{"findings": [{"line": 8, "category": "clean", "principle": "LSP", "confidence": 0.93, "evidence": "save and delete throw 'Not supported'", "recommendation": "\`ReadOnlyRepo\` throws on \`save\` and \`delete\`, so any caller holding a \`Repository\` reference will crash at runtime if it tries to write. The type system promises write support but the implementation rejects it. Split the interface into \`Readable\` and \`Writable\` so \`ReadOnlyRepo\` only implements what it supports — this is the Liskov Substitution Principle: subtypes must honour the parent contract."}]}\`
 
 ### Example G — two distinct anti-patterns in the same diff
 \`\`\`typescript
@@ -243,7 +243,7 @@ Correct output: \`{"findings": [{"line": 8, "category": "clean", "confidence": 0
 +  );
 +}
 \`\`\`
-Correct output: \`{"findings": [{"line": 1, "category": "clean", "confidence": 0.88, "evidence": "email: string | null; phone?: string; address: string | undefined", "recommendation": "\`UserProfile\` uses three different absent-value conventions (\`| null\`, \`?\`, \`| undefined\`). Every consumer must handle all three representations, tripling the branching logic for optional fields. Pick one convention — preferably \`?\` — and apply it consistently."}, {"line": 14, "category": "perf", "confidence": 0.92, "evidence": "value={{ user, login }}", "recommendation": "The inline object \`{{ user, login }}\` creates a new reference every render, so every \`useContext(AuthContext)\` consumer re-renders even when \`user\` and \`login\` have not changed. Wrap the value in \`useMemo\` and stabilise \`login\` with \`useCallback\` to prevent cascading re-renders."}]}\`
+Correct output: \`{"findings": [{"line": 1, "category": "clean", "principle": "Consistency", "confidence": 0.88, "evidence": "email: string | null; phone?: string; address: string | undefined", "recommendation": "\`UserProfile\` uses three different absent-value conventions (\`| null\`, \`?\`, \`| undefined\`). Every consumer must handle all three representations, tripling the branching logic for optional fields. Pick one convention — preferably \`?\` — and apply it consistently."}, {"line": 14, "category": "perf", "principle": "Stable context values", "confidence": 0.92, "evidence": "value={{ user, login }}", "recommendation": "The inline object \`{{ user, login }}\` creates a new reference every render, so every \`useContext(AuthContext)\` consumer re-renders even when \`user\` and \`login\` have not changed. Wrap the value in \`useMemo\` and stabilise \`login\` with \`useCallback\` to prevent cascading re-renders."}]}\`
 
 Note: clean utility functions, static data objects, and configuration arrays should return \`{"findings": []}\`. Only flag code with genuine structural issues.
 
@@ -258,7 +258,7 @@ Note: clean utility functions, static data objects, and configuration arrays sho
 +  return <ul>{sorted.map(t => <li key={t.id}>{t.title} (P{t.priority})</li>)}</ul>;
 +}
 \`\`\`
-Correct output: \`{"findings": [{"line": 1, "category": "idiomatic", "confidence": 0.95, "evidence": "useState + useEffect to derive resolved", "recommendation": "\`resolved\` is derived from \`tickets\` — replace the state + effect pair with \`const resolved = useMemo(() => tickets.filter(t => t.status === \\"resolved\\"), [tickets])\`."}, {"line": 6, "category": "perf", "confidence": 0.88, "evidence": ".sort() on every render", "recommendation": "The \`.sort()\` runs on every render. Wrap it in \`useMemo\` with \`[resolved]\` as dependency to avoid re-sorting unchanged data."}]}\``;
+Correct output: \`{"findings": [{"line": 1, "category": "idiomatic", "principle": "derive-dont-sync", "confidence": 0.95, "evidence": "useState + useEffect to derive resolved", "recommendation": "\`resolved\` is derived from \`tickets\` — replace the state + effect pair with \`const resolved = useMemo(() => tickets.filter(t => t.status === \\"resolved\\"), [tickets])\`."}, {"line": 6, "category": "perf", "principle": "Memoise expensive derived values", "confidence": 0.88, "evidence": ".sort() on every render", "recommendation": "The \`.sort()\` runs on every render. Wrap it in \`useMemo\` with \`[resolved]\` as dependency to avoid re-sorting unchanged data."}]}\``;
 }
 
 function buildNegativeFewShotExamples(): string {
@@ -313,7 +313,8 @@ function buildOutputFormatSection(confidenceThreshold: number): string {
 
 Respond with a JSON object containing a single key "findings" mapped to an array. Each finding must have:
 - "line": the 1-indexed line number from the NEW file (the line the comment should appear on — must be a line prefixed with "+" in the diff)
-- "category": one of "clean" (clean-code principle violations: responsibility separation, DRY, KISS, naming, structure), "perf", "safety", "idiomatic". Note: "clean" does NOT mean the code is clean — it means the finding relates to a clean-code principle.
+- "category": one of "clean" (clean-code principle violations: responsibility separation, DRY, KISS, naming, structure), "perf", "safety", "idiomatic". Note: "clean" does NOT mean the code is clean — it means the finding relates to a clean-code principle. Your category MUST match the principle you cited — use the anti-pattern reference table's category column when citing a catalogued principle. Mapping for standard principles: SRP/OCP/LSP/ISP/DIP/KISS/YAGNI/DRY → "clean", derive-dont-sync/hooks-rules/effects-for-sync → "idiomatic", memoise/stable-references → "perf", type-safety/defensive-typing → "safety".
+- "principle": the named anti-pattern or design principle this finding addresses (e.g. "SRP", "DIP", "derive-dont-sync"). Must be a specific, named principle — use the principle column from the anti-pattern reference table when one matches, otherwise use a standard principle name (SRP, OCP, LSP, ISP, DIP, DRY, KISS, YAGNI). Never use generic labels like "best-practice", "code-quality", or "clean-code".
 - "confidence": a number between ${confidenceThreshold} and 1.0 reflecting how certain you are this is a genuine, actionable issue worth changing. Err on the side of higher confidence — a wrong high-confidence finding is worse than a missed low-confidence one.
   - 0.9–1.0: Clear anti-pattern from the reference table that a staff engineer would flag immediately, or an unambiguous violation of a named principle (DRY, DIP, etc.) with a concrete fix
   - 0.8–0.89: Strong refactoring suggestion backed by engineering judgement — you are confident it improves the code and can name a specific change
@@ -389,10 +390,10 @@ function buildQualityBarSection(): string {
 
 ## Finding deduplication
 
-Each finding must address a **distinct anti-pattern or concept**. Two findings are duplicates if fixing one would fix the other.
+Each finding must address a **distinct anti-pattern or concept**. Two findings are duplicates if fixing one would fix the other. Report one finding per root cause, not one per symptom.
 
 - If the same issue appears on multiple lines (e.g. three validation rules that should all be extracted, or three nested callbacks that should all be flattened), emit ONE finding anchored at the first occurrence. Reference the other lines in the recommendation.
-- If the same conceptual violation repeats across multiple functions in a file (e.g. three getters that each return mutable internals, or three query functions that each perform side effects), emit ONE finding naming the pattern and listing all affected functions — not one finding per function.
+- If the same conceptual violation repeats across multiple functions in a file (e.g. three getters that each return mutable internals, or three query functions that each perform side effects), emit ONE finding naming the pattern and listing all affected functions — not one finding per function. If query-with-side-effect appears in three functions, that is ONE finding with principle "Separate Query from Modifier", not three.
 - If a function is a pointless abstraction, flag the function — do not separately flag its type annotations, return statements, or variable assignments.
 - If a try/catch block should be removed, flag the block once — do not separately flag the inner and outer catch.
 - Never emit two findings where one is a subset of the other (e.g. "extract validation" and "extract username validation").

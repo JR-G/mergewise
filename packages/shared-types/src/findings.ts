@@ -61,6 +61,8 @@ export interface Finding {
   readonly ruleId: RuleId;
   /** Review focus category. */
   readonly category: FindingCategory;
+  /** Named anti-pattern or design principle this finding addresses. */
+  readonly principle?: string | undefined;
   /** Path to the file containing the finding, relative to repo root. */
   readonly filePath: FilePath;
   /** One-indexed line number where the finding applies. */

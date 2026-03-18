@@ -55,6 +55,7 @@ describe("createLlmReviewerRule", () => {
                 {
                   line: 1,
                   category: "clean",
+                  principle: "SRP",
                   confidence: 0.88,
                   evidence: "const result = processData()",
                   recommendation: "Rename 'result' to describe the processed output.",
@@ -104,8 +105,8 @@ describe("createLlmReviewerRule", () => {
         const userMessage = body.messages?.find((message) => message.content?.includes("## File:"))?.content ?? "";
         const isFileA = userMessage.includes("## File: src/a.ts");
         const findingsForFile = isFileA
-          ? [{ line: 1, category: "idiomatic", confidence: 0.8, evidence: "const aa", recommendation: "fix a" }]
-          : [{ line: 1, category: "safety", confidence: 0.9, evidence: "const bb", recommendation: "fix b" }];
+          ? [{ line: 1, category: "idiomatic", principle: "derive-dont-sync", confidence: 0.8, evidence: "const aa", recommendation: "fix a" }]
+          : [{ line: 1, category: "safety", principle: "type-safety", confidence: 0.9, evidence: "const bb", recommendation: "fix b" }];
         return new Response(buildCompletionResponse(JSON.stringify({ findings: findingsForFile })), {
           headers: { "Content-Type": "application/json" },
         });
@@ -170,7 +171,7 @@ describe("createLlmReviewerRule", () => {
           buildCompletionResponse(
             JSON.stringify({
               findings: [
-                { line: 1, category: "clean", confidence: 0.9, evidence: "const y", recommendation: "keep" },
+                { line: 1, category: "clean", principle: "SRP", confidence: 0.9, evidence: "const y", recommendation: "keep" },
               ],
             }),
           ),

@@ -68,6 +68,7 @@ describe("buildSlimSystemPrompt", () => {
     expect(prompt).toContain('"findings"');
     expect(prompt).toContain('"line"');
     expect(prompt).toContain('"category"');
+    expect(prompt).toContain('"principle"');
     expect(prompt).toContain('"confidence"');
   });
 

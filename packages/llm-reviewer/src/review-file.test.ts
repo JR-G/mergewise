@@ -58,6 +58,7 @@ describe("reviewFile", () => {
         {
           line: 1,
           category: "clean",
+          principle: "SRP",
           confidence: 0.9,
           evidence: "fetchData call",
           recommendation: "Extract into a helper function",
@@ -130,6 +131,7 @@ describe("reviewFile", () => {
         {
           line: 1,
           category: "clean",
+          principle: "SRP",
           confidence: 0.9,
           evidence: "fetchData call",
           recommendation: "Extract into a helper function",

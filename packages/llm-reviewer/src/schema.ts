@@ -6,6 +6,7 @@ import type {
   PullRequestMetadata,
 } from "@mergewise/shared-types";
 import { toConfidence, toLineNumber, toRuleId } from "@mergewise/shared-types";
+import { ANTI_PATTERNS } from "./anti-patterns";
 
 const VALID_CATEGORIES = new Set<FindingCategory>([
   "clean",
@@ -15,11 +16,41 @@ const VALID_CATEGORIES = new Set<FindingCategory>([
 ]) satisfies ReadonlySet<FindingCategory>;
 
 /**
+ * Maps known principle strings to their correct finding category.
+ *
+ * @remarks
+ * Built from the anti-pattern catalogue at module load. Standard design
+ * principles not in the catalogue (SOLID, DRY, KISS, YAGNI) are mapped
+ * to their conventional category as fallbacks.
+ */
+export const PRINCIPLE_CATEGORY_MAP: ReadonlyMap<string, FindingCategory> = buildPrincipleCategoryMap();
+
+function buildPrincipleCategoryMap(): Map<string, FindingCategory> {
+  const map = new Map<string, FindingCategory>();
+
+  for (const pattern of ANTI_PATTERNS) {
+    map.set(pattern.principle, pattern.category);
+  }
+
+  const solidFallbacks: readonly string[] = [
+    "SRP", "OCP", "LSP", "ISP", "DIP", "KISS", "YAGNI", "DRY",
+  ];
+  for (const principle of solidFallbacks) {
+    if (!map.has(principle)) {
+      map.set(principle, "clean");
+    }
+  }
+
+  return map;
+}
+
+/**
  * Raw finding shape expected from the LLM response.
  */
 export interface RawLlmFinding {
   readonly line: number;
   readonly category: string;
+  readonly principle: string;
   readonly confidence: number;
   readonly evidence: string;
   readonly recommendation: string;
@@ -310,14 +341,20 @@ export function parseLlmResponse(
       lineInfo,
     );
 
+    const trimmedPrinciple = rawFinding.principle.trim();
+    const truncatedPrinciple = trimmedPrinciple.slice(0, 100);
+    const derivedCategory = PRINCIPLE_CATEGORY_MAP.get(trimmedPrinciple)
+      ?? rawFinding.category as FindingCategory;
+
     findings.push({
-      findingId: `llm/reviewer:${pullRequest.repo}:${pullRequest.prNumber}:${diff.filePath}:${rawFinding.line}:${rawFinding.category}`,
+      findingId: `llm/reviewer:${pullRequest.repo}:${pullRequest.prNumber}:${diff.filePath}:${rawFinding.line}:${truncatedPrinciple}`,
       installationId: pullRequest.installationId,
       repo: pullRequest.repo,
       prNumber: pullRequest.prNumber,
       language: "typescript",
       ruleId: toRuleId("llm/reviewer"),
-      category: rawFinding.category as FindingCategory,
+      category: derivedCategory,
+      principle: truncatedPrinciple,
       filePath: diff.filePath,
       line: toLineNumber(rawFinding.line),
       evidence: rawFinding.evidence.slice(0, 200),
@@ -399,14 +436,15 @@ export function deduplicateByProximity(
   const winners: Finding[] = [];
 
   for (const cluster of clusters) {
-    const byCategory = new Map<string, Finding[]>();
+    const byPrinciple = new Map<string, Finding[]>();
     for (const finding of cluster) {
-      const existing = byCategory.get(finding.category) ?? [];
+      const clusterKey = finding.principle ?? finding.category;
+      const existing = byPrinciple.get(clusterKey) ?? [];
       existing.push(finding);
-      byCategory.set(finding.category, existing);
+      byPrinciple.set(clusterKey, existing);
     }
 
-    for (const categoryFindings of byCategory.values()) {
+    for (const categoryFindings of byPrinciple.values()) {
       const best = categoryFindings.reduce((prev, curr) =>
         curr.confidence > prev.confidence ? curr : prev,
       );
@@ -446,6 +484,9 @@ function isValidRawFinding(
     return false;
   }
   if (typeof candidate["category"] !== "string" || !(VALID_CATEGORIES as ReadonlySet<string>).has(candidate["category"])) {
+    return false;
+  }
+  if (typeof candidate["principle"] !== "string" || candidate["principle"].trim().length === 0) {
     return false;
   }
   if (

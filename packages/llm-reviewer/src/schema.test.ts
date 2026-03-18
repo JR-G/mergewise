@@ -10,6 +10,7 @@ import {
   hasEvidenceLineOverlap,
   deduplicateByProximity,
   isCommentLine,
+  PRINCIPLE_CATEGORY_MAP,
 } from "./schema";
 import type { RawLlmFinding, AddedLineInfo } from "./schema";
 
@@ -79,6 +80,7 @@ describe("parseLlmResponse", () => {
         {
           line: 1,
           category: "clean",
+          principle: "SRP",
           confidence: 0.9,
           evidence: "fetchData call",
           recommendation: "Extract into a helper function",
@@ -88,6 +90,7 @@ describe("parseLlmResponse", () => {
     const findings = parseLlmResponse(raw, diff, STUB_PR);
     expect(findings.some((finding) => finding.line === 1)).toBe(true);
     expect(findings.some((finding) => finding.category === "clean")).toBe(true);
+    expect(findings.some((finding) => finding.principle === "SRP")).toBe(true);
   });
 
   it("returns empty array for malformed JSON", () => {
@@ -102,6 +105,7 @@ describe("parseLlmResponse", () => {
         {
           line: 999,
           category: "clean",
+          principle: "SRP",
           confidence: 0.9,
           evidence: "phantom line",
           recommendation: "does not exist",
@@ -118,6 +122,7 @@ describe("parseLlmResponse", () => {
         {
           line: 1,
           category: "made-up-category",
+          principle: "SRP",
           confidence: 0.9,
           evidence: "code",
           recommendation: "fix it",
@@ -127,6 +132,116 @@ describe("parseLlmResponse", () => {
     expect(parseLlmResponse(raw, diff, STUB_PR)).toEqual([]);
   });
 
+  it("discards findings with missing principle", () => {
+    const diff = makeDiff(["+const x = 1;"]);
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 1,
+          category: "clean",
+          confidence: 0.9,
+          evidence: "code",
+          recommendation: "fix it",
+        },
+      ],
+    });
+    expect(parseLlmResponse(raw, diff, STUB_PR)).toEqual([]);
+  });
+
+  it("discards findings with empty principle", () => {
+    const diff = makeDiff(["+const x = 1;"]);
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 1,
+          category: "clean",
+          principle: "",
+          confidence: 0.9,
+          evidence: "code",
+          recommendation: "fix it",
+        },
+      ],
+    });
+    expect(parseLlmResponse(raw, diff, STUB_PR)).toEqual([]);
+  });
+
+  it("discards findings with whitespace-only principle", () => {
+    const diff = makeDiff(["+const x = 1;"]);
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 1,
+          category: "clean",
+          principle: "   ",
+          confidence: 0.9,
+          evidence: "code",
+          recommendation: "fix it",
+        },
+      ],
+    });
+    expect(parseLlmResponse(raw, diff, STUB_PR)).toEqual([]);
+  });
+
+  it("overrides category when principle maps to a known category", () => {
+    const diff = makeDiff(["+const x = fetchData();"]);
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 1,
+          category: "clean",
+          principle: "Derive, don't sync",
+          confidence: 0.9,
+          evidence: "fetchData call",
+          recommendation: "Derive the value directly",
+        },
+      ],
+    });
+    const findings = parseLlmResponse(raw, diff, STUB_PR);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.category).toBe("idiomatic");
+    expect(findings[0]?.principle).toBe("Derive, don't sync");
+  });
+
+  it("trims whitespace from principle before category lookup", () => {
+    const diff = makeDiff(["+const x = fetchData();"]);
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 1,
+          category: "clean",
+          principle: "  SRP  ",
+          confidence: 0.9,
+          evidence: "fetchData call",
+          recommendation: "Extract responsibility",
+        },
+      ],
+    });
+    const findings = parseLlmResponse(raw, diff, STUB_PR);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.principle).toBe("SRP");
+    expect(findings[0]?.category).toBe("clean");
+  });
+
+  it("preserves model category when principle is unknown", () => {
+    const diff = makeDiff(["+const x = fetchData();"]);
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 1,
+          category: "perf",
+          principle: "some-novel-principle",
+          confidence: 0.9,
+          evidence: "fetchData call",
+          recommendation: "Optimise this",
+        },
+      ],
+    });
+    const findings = parseLlmResponse(raw, diff, STUB_PR);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.category).toBe("perf");
+    expect(findings[0]?.principle).toBe("some-novel-principle");
+  });
+
   it("discards findings with out-of-range confidence", () => {
     const diff = makeDiff(["+const x = 1;"]);
     const raw = JSON.stringify({
@@ -134,6 +249,7 @@ describe("parseLlmResponse", () => {
         {
           line: 1,
           category: "clean",
+          principle: "SRP",
           confidence: 1.5,
           evidence: "code",
           recommendation: "fix it",
@@ -150,6 +266,7 @@ describe("parseLlmResponse", () => {
         {
           line: 1,
           category: "clean",
+          principle: "SRP",
           confidence: NaN,
           evidence: "code",
           recommendation: "fix it",
@@ -167,6 +284,7 @@ describe("parseLlmResponse", () => {
         {
           line: 1,
           category: "clean",
+          principle: "SRP",
           confidence: Infinity,
           evidence: "code",
           recommendation: "fix it",
@@ -175,6 +293,29 @@ describe("parseLlmResponse", () => {
     };
     const raw = JSON.stringify(rawObject);
     expect(parseLlmResponse(raw, diff, STUB_PR)).toEqual([]);
+  });
+});
+
+describe("PRINCIPLE_CATEGORY_MAP", () => {
+  it("maps SRP to clean", () => {
+    expect(PRINCIPLE_CATEGORY_MAP.get("SRP")).toBe("clean");
+  });
+
+  it("maps standard SOLID principles to clean", () => {
+    for (const principle of ["DIP", "LSP", "ISP", "OCP"]) {
+      expect(PRINCIPLE_CATEGORY_MAP.get(principle)).toBe("clean");
+    }
+  });
+
+  it("maps catalogue principles to their registered category", () => {
+    expect(PRINCIPLE_CATEGORY_MAP.get("Derive, don't sync")).toBe("idiomatic");
+    expect(PRINCIPLE_CATEGORY_MAP.get("Memoise expensive derived values")).toBe("perf");
+  });
+
+  it("maps safety catalogue principles to safety", () => {
+    expect(PRINCIPLE_CATEGORY_MAP.has("Type safety — constrain generics to the narrowest useful bound")).toBe(true);
+    expect(PRINCIPLE_CATEGORY_MAP.get("Type safety — constrain generics to the narrowest useful bound")).toBe("safety");
+    expect(PRINCIPLE_CATEGORY_MAP.get("Defensive typing — unknown over any in catch")).toBe("safety");
   });
 });
 
@@ -210,6 +351,7 @@ describe("sanitiseSuggestedRewrite", () => {
     const finding: RawLlmFinding = {
       line: 1,
       category: "clean",
+      principle: "SRP",
       confidence: 0.9,
       evidence: "test",
       recommendation: "fix",
@@ -227,6 +369,7 @@ describe("sanitiseSuggestedRewrite", () => {
     const finding: RawLlmFinding = {
       line: 99,
       category: "clean",
+      principle: "SRP",
       confidence: 0.9,
       evidence: "test",
       recommendation: "fix",
@@ -241,6 +384,7 @@ describe("sanitiseSuggestedRewrite", () => {
     const finding: RawLlmFinding = {
       line: 1,
       category: "clean",
+      principle: "SRP",
       confidence: 0.9,
       evidence: "test",
       recommendation: "fix",
@@ -274,7 +418,54 @@ describe("deduplicateByProximity", () => {
     expect(deduplicateByProximity([])).toEqual([]);
   });
 
-  it("keeps the highest-confidence finding from a proximity cluster", () => {
+  it("keeps the highest-confidence finding from a proximity cluster with same principle", () => {
+    const base = {
+      findingId: "test",
+      installationId: null,
+      repo: toRepoFullName("test/repo"),
+      prNumber: toPRNumber(1),
+      language: "typescript" as const,
+      ruleId: toRuleId("llm/reviewer"),
+      category: "clean" as const,
+      principle: "SRP",
+      filePath: toFilePath("src/index.ts"),
+      evidence: "test",
+      recommendation: "fix",
+      status: "posted" as const,
+    };
+    const findings = [
+      { ...base, line: toLineNumber(10), confidence: toConfidence(0.7) },
+      { ...base, line: toLineNumber(12), confidence: toConfidence(0.95) },
+      { ...base, line: toLineNumber(14), confidence: toConfidence(0.8) },
+    ];
+    const result = deduplicateByProximity(findings);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.confidence as number).toBe(0.95);
+  });
+
+  it("preserves nearby findings with different principles", () => {
+    const base = {
+      findingId: "test",
+      installationId: null,
+      repo: toRepoFullName("test/repo"),
+      prNumber: toPRNumber(1),
+      language: "typescript" as const,
+      ruleId: toRuleId("llm/reviewer"),
+      category: "clean" as const,
+      filePath: toFilePath("src/index.ts"),
+      evidence: "test",
+      recommendation: "fix",
+      status: "posted" as const,
+    };
+    const findings = [
+      { ...base, principle: "SRP", line: toLineNumber(10), confidence: toConfidence(0.9) },
+      { ...base, principle: "DIP", line: toLineNumber(12), confidence: toConfidence(0.85) },
+    ];
+    const result = deduplicateByProximity(findings);
+    expect(result).toHaveLength(2);
+  });
+
+  it("falls back to category clustering when principle is absent", () => {
     const base = {
       findingId: "test",
       installationId: null,
@@ -291,7 +482,6 @@ describe("deduplicateByProximity", () => {
     const findings = [
       { ...base, line: toLineNumber(10), confidence: toConfidence(0.7) },
       { ...base, line: toLineNumber(12), confidence: toConfidence(0.95) },
-      { ...base, line: toLineNumber(14), confidence: toConfidence(0.8) },
     ];
     const result = deduplicateByProximity(findings);
     expect(result).toHaveLength(1);
@@ -307,6 +497,7 @@ describe("deduplicateByProximity", () => {
       language: "typescript" as const,
       ruleId: toRuleId("llm/reviewer"),
       category: "clean" as const,
+      principle: "SRP",
       filePath: toFilePath("src/index.ts"),
       evidence: "test",
       recommendation: "fix",
