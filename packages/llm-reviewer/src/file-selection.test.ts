@@ -103,4 +103,49 @@ describe("selectFilesForReview", () => {
     const result = selectFilesForReview(diffs, 100_000, []);
     expect(result).toHaveLength(1);
   });
+
+  test("returns empty array for empty diffs", () => {
+    const result = selectFilesForReview([], 100_000);
+    expect(result).toHaveLength(0);
+  });
+
+  test("NaN tokenBudget selects all files", () => {
+    const diffs: FileDiff[] = [
+      makeDiff("src/a.ts", [makeHunk("@@ -0,0 +1,2 @@", ["+a", "+b"])]),
+      makeDiff("src/b.ts", [makeHunk("@@ -0,0 +1,2 @@", ["+a", "+b"])]),
+    ];
+
+    const result = selectFilesForReview(diffs, NaN);
+    expect(result).toHaveLength(2);
+  });
+
+  test("zero tokenBudget still includes at least one file", () => {
+    const diffs: FileDiff[] = [
+      makeDiff("src/a.ts", [makeHunk("@@ -0,0 +1,2 @@", ["+a", "+b"])]),
+      makeDiff("src/b.ts", [makeHunk("@@ -0,0 +1,2 @@", ["+a", "+b"])]),
+    ];
+
+    const result = selectFilesForReview(diffs, 0);
+    expect(result).toHaveLength(1);
+  });
+
+  test("negative tokenBudget still includes at least one file", () => {
+    const diffs: FileDiff[] = [
+      makeDiff("src/a.ts", [makeHunk("@@ -0,0 +1,2 @@", ["+a", "+b"])]),
+    ];
+
+    const result = selectFilesForReview(diffs, -100);
+    expect(result).toHaveLength(1);
+  });
+
+  test("very large tokenBudget selects all files", () => {
+    const diffs: FileDiff[] = [
+      makeDiff("src/a.ts", [makeHunk("@@ -0,0 +1,5 @@", ["+a", "+b", "+c", "+d", "+e"])]),
+      makeDiff("src/b.ts", [makeHunk("@@ -0,0 +1,5 @@", ["+a", "+b", "+c", "+d", "+e"])]),
+      makeDiff("src/c.ts", [makeHunk("@@ -0,0 +1,5 @@", ["+a", "+b", "+c", "+d", "+e"])]),
+    ];
+
+    const result = selectFilesForReview(diffs, Number.MAX_SAFE_INTEGER);
+    expect(result).toHaveLength(3);
+  });
 });

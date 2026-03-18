@@ -6,20 +6,8 @@ import {
   listPullRequestReviewThreads,
   listPullRequestReviewThreadsWithReplies,
 } from "./index";
-
-type FetchMock = (input: string | URL, init?: RequestInit) => Promise<Response>;
-
-interface FetchCall {
-  input: string | URL;
-  init?: RequestInit | undefined;
-}
-
-function makeJsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
+import type { FetchCall, FetchMock } from "./test-helpers";
+import { makeJsonResponse } from "./test-helpers";
 
 describe("listPullRequestReviewThreads", () => {
   let originalFetch: typeof globalThis.fetch;
@@ -138,6 +126,37 @@ describe("listPullRequestReviewThreads", () => {
     expect(callCount).toBe(2);
   });
 
+  test("stops after maxPages cap", async () => {
+    let callCount = 0;
+    const fetchMock: FetchMock = async () => {
+      callCount += 1;
+      return makeJsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: true, endCursor: `cursor-${callCount}` },
+                nodes: [{ id: `PRT_page${callCount}`, isResolved: false, isOutdated: false, comments: { nodes: [{ body: `page ${callCount}` }] } }],
+              },
+            },
+          },
+        },
+      });
+    };
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const threads = await listPullRequestReviewThreads({
+      owner: "acme",
+      repository: "widget",
+      pullRequestNumber: 7,
+      installationAccessToken: "ghs_token",
+      maxPages: 3,
+    });
+
+    expect(callCount).toBe(3);
+    expect(threads).toHaveLength(3);
+  });
+
   test("throws GitHubApiError on HTTP failure", async () => {
     const fetchMock: FetchMock = async () =>
       new Response(JSON.stringify({ message: "unauthorized" }), { status: 401 });
@@ -157,6 +176,30 @@ describe("listPullRequestReviewThreads", () => {
 
     expect(thrownError).toBeInstanceOf(GitHubApiError);
     expect((thrownError as GitHubApiError).status).toBe(401);
+  });
+
+  test("throws GitHubGraphQlError on GraphQL error payload", async () => {
+    const fetchMock: FetchMock = async () =>
+      makeJsonResponse({
+        data: null,
+        errors: [{ message: "some graphql error", type: "INTERNAL" }],
+      });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    let thrownError: unknown;
+    try {
+      await listPullRequestReviewThreads({
+        owner: "acme",
+        repository: "widget",
+        pullRequestNumber: 1,
+        installationAccessToken: "ghs_token",
+      });
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError).toBeInstanceOf(GitHubGraphQlError);
+    expect((thrownError as GitHubGraphQlError).message).toContain("some graphql error");
   });
 });
 

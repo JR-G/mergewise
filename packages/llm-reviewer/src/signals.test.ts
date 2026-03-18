@@ -122,6 +122,24 @@ describe("extractStructuralSignals", () => {
     expect(signals.classCount).toBe(2);
   });
 
+  test("handles malformed hunk with unmatched closing delimiters", () => {
+    const diff = makeDiff("src/malformed.ts", [
+      makeHunk("@@ -0,0 +1,7 @@", [
+        "+function outer() {",
+        "+  if (true) {",
+        "+    callback(() => {",
+        "+    })",
+        "+  }",
+        "+}",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractStructuralSignals(diff);
+    expect(signals.maxNestingDepth).toBeGreaterThanOrEqual(3);
+    expect(signals.functionCount).toBeGreaterThanOrEqual(1);
+  });
+
   test("returns zero signals for empty diff", () => {
     const diff = makeDiff("src/empty.ts", []);
 
