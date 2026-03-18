@@ -47,7 +47,7 @@ export class ReviewClient {
       maxRetries: config.maxRetries ?? 3,
       timeout: config.timeoutMs ?? 60_000,
     });
-    this.model = config.model ?? "gpt-4o";
+    this.model = config.model ?? "gpt-4.1";
   }
 
   /**
