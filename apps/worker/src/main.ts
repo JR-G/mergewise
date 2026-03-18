@@ -35,6 +35,19 @@ import { processIndexRepoJob } from "./process-index-job";
 const DEFAULT_DEBT_DB_PATH = ".mergewise-runtime/debt.db";
 
 /**
+ * Maximum time a single job may run before being forcefully aborted.
+ */
+const JOB_TIMEOUT_MS = 5 * 60 * 1000;
+
+function rejectAfterTimeout(ms: number): Promise<never> {
+  return new Promise<never>((_resolve, reject) => {
+    setTimeout(() => {
+      reject(new Error(`job timed out after ${ms}ms`));
+    }, ms);
+  });
+}
+
+/**
  * Supported shutdown signals for graceful worker termination.
  */
 export type WorkerShutdownSignal = "SIGTERM" | "SIGINT";
@@ -128,6 +141,10 @@ export interface StartWorkerProcessDependencies {
    * Error logger for runtime failures.
    */
   readonly logError?: (message: string) => void;
+  /**
+   * Per-job timeout in milliseconds. Defaults to JOB_TIMEOUT_MS (5 minutes).
+   */
+  readonly jobTimeoutMs?: number;
 }
 
 /**
@@ -206,6 +223,7 @@ export function startWorkerProcess(
   const config = loadConfigFn();
   const mergewiseConfig = loadMergewiseConfigFn();
   const processIndexRepoJobFn = dependencies.processIndexRepoJobFn ?? processIndexRepoJob;
+  const jobTimeoutMs = dependencies.jobTimeoutMs ?? JOB_TIMEOUT_MS;
   const openFeedbackStoreFn = dependencies.openFeedbackStoreFn ?? openFeedbackStore;
   let feedbackStore: FeedbackStore;
   try {
@@ -269,7 +287,7 @@ export function startWorkerProcess(
           const feedbackOk = await processFeedbackJobEntry(
             queuedJob, processedKeyState, config.maxProcessedKeys,
             processCollectFeedbackJobFn, feedbackStore, githubFetchOptions,
-            infoLogger, errorLogger,
+            infoLogger, errorLogger, jobTimeoutMs,
           );
           batchFailed = batchFailed || !feedbackOk;
           continue;
@@ -279,7 +297,7 @@ export function startWorkerProcess(
           const indexOk = await handleIndexJob(
             queuedJob, debtStore, processedKeyState, config.maxProcessedKeys,
             processIndexRepoJobFn, config.githubApiBaseUrl,
-            infoLogger, errorLogger,
+            infoLogger, errorLogger, jobTimeoutMs,
           );
           batchFailed = batchFailed || !indexOk;
           continue;
@@ -291,14 +309,17 @@ export function startWorkerProcess(
         }
 
         try {
-          await processAnalyzePullRequestJobFn(queuedJob, {
-            deliveryMode: "github",
-            findingDeliveryOptions,
-            mergewiseConfig,
-            githubFetchOptions,
-            feedbackStore,
-            ...(debtStore ? { debtStore } : {}),
-          });
+          await Promise.race([
+            processAnalyzePullRequestJobFn(queuedJob, {
+              deliveryMode: "github",
+              findingDeliveryOptions,
+              mergewiseConfig,
+              githubFetchOptions,
+              feedbackStore,
+              ...(debtStore ? { debtStore } : {}),
+            }),
+            rejectAfterTimeout(jobTimeoutMs),
+          ]);
           trackProcessedKey(idempotencyKey, processedKeyState, config.maxProcessedKeys);
         } catch (error) {
           batchFailed = true;
@@ -411,6 +432,7 @@ async function processFeedbackJobEntry(
   githubFetchOptions: WorkerGitHubFetchOptions,
   infoLogger: (message: string) => void,
   errorLogger: (message: string) => void,
+  timeoutMs: number,
 ): Promise<boolean> {
   const feedbackIdempotencyKey = `feedback:${queuedJob.repo_full_name}#${queuedJob.pr_number}@${queuedJob.queued_at}`;
   if (processedKeyState.keys.has(feedbackIdempotencyKey)) {
@@ -418,12 +440,15 @@ async function processFeedbackJobEntry(
   }
 
   try {
-    await processCollectFeedbackJobFn(queuedJob, {
-      feedbackStore,
-      githubFetchOptions,
-      logInfo: infoLogger,
-      logError: errorLogger,
-    });
+    await Promise.race([
+      processCollectFeedbackJobFn(queuedJob, {
+        feedbackStore,
+        githubFetchOptions,
+        logInfo: infoLogger,
+        logError: errorLogger,
+      }),
+      rejectAfterTimeout(timeoutMs),
+    ]);
     trackProcessedKey(feedbackIdempotencyKey, processedKeyState, maxProcessedKeys);
     return true;
   } catch (error) {
@@ -444,6 +469,7 @@ async function handleIndexJob(
   githubApiBaseUrl: string,
   infoLogger: (message: string) => void,
   errorLogger: (message: string) => void,
+  timeoutMs: number,
 ): Promise<boolean> {
   const indexIdempotencyKey = `index:${queuedJob.repo_full_name}@${queuedJob.head_sha}`;
   if (processedKeyState.keys.has(indexIdempotencyKey)) {
@@ -459,7 +485,7 @@ async function handleIndexJob(
   return processIndexJobEntry(
     queuedJob, processedKeyState, maxProcessedKeys,
     processIndexRepoJobFn, debtStore, githubApiBaseUrl,
-    infoLogger, errorLogger,
+    infoLogger, errorLogger, timeoutMs,
   );
 }
 
@@ -472,16 +498,20 @@ async function processIndexJobEntry(
   githubApiBaseUrl: string,
   infoLogger: (message: string) => void,
   errorLogger: (message: string) => void,
+  timeoutMs: number,
 ): Promise<boolean> {
   const indexIdempotencyKey = `index:${queuedJob.repo_full_name}@${queuedJob.head_sha}`;
 
   try {
-    await processIndexRepoJobFn(queuedJob, {
-      debtStore,
-      githubApiBaseUrl,
-      logInfo: infoLogger,
-      logError: errorLogger,
-    });
+    await Promise.race([
+      processIndexRepoJobFn(queuedJob, {
+        debtStore,
+        githubApiBaseUrl,
+        logInfo: infoLogger,
+        logError: errorLogger,
+      }),
+      rejectAfterTimeout(timeoutMs),
+    ]);
     trackProcessedKey(indexIdempotencyKey, processedKeyState, maxProcessedKeys);
     return true;
   } catch (error) {

@@ -366,8 +366,7 @@ describe("startWorkerProcess", () => {
     runPollCycle?.();
     await Promise.resolve();
     releaseProcessing();
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(
       infoLogs.some((message) => message.includes("poll skipped: previous cycle still in flight")),
@@ -455,6 +454,55 @@ describe("startWorkerProcess", () => {
       process.on = originalProcessOn;
       process.exit = originalProcessExit;
     }
+  });
+
+  test("aborts a hung job after the timeout deadline", async () => {
+    const errorLogs: string[] = [];
+    const intervalCallbacks: (() => void)[] = [];
+    const queuedJob = createAnalyzeJob();
+
+    const workerHandle = startWorkerProcess({
+      loadConfigFn: () => ({
+        pollIntervalMs: 3000, maxProcessedKeys: 1000,
+        githubApiBaseUrl: "https://api.github.com", githubUserAgent: "test",
+        githubRequestTimeoutMs: 1000, githubFetchRetries: 2, githubRetryDelayMs: 10,
+        testFileConfidenceThreshold: 0.9,
+        confidenceThreshold: 0.8, maxComments: 10,
+      }),
+      loadMergewiseConfigFn: () => ({
+        gating: { confidenceThreshold: 0.8, maxComments: 10 },
+        rules: { include: [], exclude: [] },
+        review: { skipPatterns: [], agentFriendliness: false },
+        llm: {
+          enabled: false, model: "gpt-4o", ...DEFAULT_LLM_MODELS,
+          tokenBudget: 30_000, baseUrl: "https://api.openai.com/v1", consistencySamples: 1,
+        },
+      }),
+      readAllQueueJobsFn: () => ({ jobs: [queuedJob], byteOffset: 100 }),
+      processAnalyzePullRequestJobFn: async () => {
+        await new Promise(() => {});
+        return {} as never;
+      },
+      createPollingLoopControllerFn: (_pollIntervalMs, pollCycle) => ({
+        start: () => { intervalCallbacks.push(() => { pollCycle().then(() => undefined, () => undefined); }); },
+        stop: async () => {},
+        isRunning: () => true,
+      }),
+      registerSignalHandlerFn: () => {},
+      logInfo: () => {},
+      logError: (message) => { errorLogs.push(message); },
+      jobTimeoutMs: 100,
+    });
+
+    const [runPollCycle] = intervalCallbacks;
+    runPollCycle?.();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(
+      errorLogs.some((message) => message.includes("job timed out")),
+    ).toBe(true);
+
+    await workerHandle.shutdown();
   });
 
 });
