@@ -165,6 +165,23 @@ describe("parseLlmResponse", () => {
     expect(parseLlmResponse(raw, diff, STUB_PR)).toEqual([]);
   });
 
+  it("discards findings with whitespace-only principle", () => {
+    const diff = makeDiff(["+const x = 1;"]);
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 1,
+          category: "clean",
+          principle: "   ",
+          confidence: 0.9,
+          evidence: "code",
+          recommendation: "fix it",
+        },
+      ],
+    });
+    expect(parseLlmResponse(raw, diff, STUB_PR)).toEqual([]);
+  });
+
   it("overrides category when principle maps to a known category", () => {
     const diff = makeDiff(["+const x = fetchData();"]);
     const raw = JSON.stringify({
@@ -183,6 +200,26 @@ describe("parseLlmResponse", () => {
     expect(findings).toHaveLength(1);
     expect(findings[0]?.category).toBe("idiomatic");
     expect(findings[0]?.principle).toBe("Derive, don't sync");
+  });
+
+  it("trims whitespace from principle before category lookup", () => {
+    const diff = makeDiff(["+const x = fetchData();"]);
+    const raw = JSON.stringify({
+      findings: [
+        {
+          line: 1,
+          category: "clean",
+          principle: "  SRP  ",
+          confidence: 0.9,
+          evidence: "fetchData call",
+          recommendation: "Extract responsibility",
+        },
+      ],
+    });
+    const findings = parseLlmResponse(raw, diff, STUB_PR);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.principle).toBe("SRP");
+    expect(findings[0]?.category).toBe("clean");
   });
 
   it("preserves model category when principle is unknown", () => {
@@ -275,8 +312,10 @@ describe("PRINCIPLE_CATEGORY_MAP", () => {
     expect(PRINCIPLE_CATEGORY_MAP.get("Memoise expensive derived values")).toBe("perf");
   });
 
-  it("contains entries from the anti-pattern catalogue", () => {
-    expect(PRINCIPLE_CATEGORY_MAP.size).toBeGreaterThan(8);
+  it("maps safety catalogue principles to safety", () => {
+    expect(PRINCIPLE_CATEGORY_MAP.has("Type safety — constrain generics to the narrowest useful bound")).toBe(true);
+    expect(PRINCIPLE_CATEGORY_MAP.get("Type safety — constrain generics to the narrowest useful bound")).toBe("safety");
+    expect(PRINCIPLE_CATEGORY_MAP.get("Defensive typing — unknown over any in catch")).toBe("safety");
   });
 });
 

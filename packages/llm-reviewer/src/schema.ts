@@ -341,8 +341,9 @@ export function parseLlmResponse(
       lineInfo,
     );
 
-    const truncatedPrinciple = rawFinding.principle.slice(0, 100);
-    const derivedCategory = PRINCIPLE_CATEGORY_MAP.get(rawFinding.principle)
+    const trimmedPrinciple = rawFinding.principle.trim();
+    const truncatedPrinciple = trimmedPrinciple.slice(0, 100);
+    const derivedCategory = PRINCIPLE_CATEGORY_MAP.get(trimmedPrinciple)
       ?? rawFinding.category as FindingCategory;
 
     findings.push({
@@ -485,7 +486,7 @@ function isValidRawFinding(
   if (typeof candidate["category"] !== "string" || !(VALID_CATEGORIES as ReadonlySet<string>).has(candidate["category"])) {
     return false;
   }
-  if (typeof candidate["principle"] !== "string" || candidate["principle"].length === 0) {
+  if (typeof candidate["principle"] !== "string" || candidate["principle"].trim().length === 0) {
     return false;
   }
   if (
