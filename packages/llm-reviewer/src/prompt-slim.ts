@@ -7,6 +7,7 @@ import type {
   ReviewLearnings,
 } from "./pipeline-types";
 import { buildAntiPatternReferenceTable } from "./anti-pattern-table";
+import { formatNumberedDiff } from "./diff-format";
 import { formatKnowledgeSection } from "./knowledge/format";
 import { buildPrContextSection, computeContextWindows } from "./prompt";
 
@@ -140,9 +141,7 @@ export function buildSlimSystemPrompt(options?: SlimSystemPromptOptions): string
  * Formats diff hunks into a fenced diff section, truncating at MAX_DIFF_CHARS.
  */
 function formatDiffSection(hunks: readonly DiffHunk[]): string[] {
-  let diffContent = hunks
-    .map((hunk) => `${hunk.header}\n${hunk.lines.join("\n")}`)
-    .join("\n\n");
+  let diffContent = formatNumberedDiff(hunks);
   if (diffContent.length > MAX_DIFF_CHARS) {
     diffContent = `${diffContent.slice(0, MAX_DIFF_CHARS)}\n...(truncated)`;
   }

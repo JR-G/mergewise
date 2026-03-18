@@ -61,7 +61,7 @@ describe("buildDynamicFilePrompt", () => {
       knowledge: [],
     });
     expect(result).toContain("```diff");
-    expect(result).toContain("+const b = 2;");
+    expect(result).toContain("+   2 const b = 2;");
   });
 
   test("includes file path header", () => {
