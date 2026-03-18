@@ -50,6 +50,7 @@ export type {
   ReviewToolkit,
   FileGraphContext,
   ReviewLearnings,
+  FileTokenUsage,
   TokenUsageSummary,
 } from "./pipeline-types";
 
@@ -172,21 +173,19 @@ async function analysePipeline(
 
     if (onComplete) {
       const failedPaths = new Set(result.failedFiles.map((failure) => failure.filePath));
-      let tokenUsageReported = false;
+      const usageByFile = new Map(
+        result.tokenUsage.perFileUsage.map((entry) => [entry.filePath, entry]),
+      );
       for (const file of selectedFiles) {
         if (failedPaths.has(file.filePath)) continue;
         const count = result.findings.filter((finding) => finding.filePath === file.filePath).length;
-        if (!tokenUsageReported && result.tokenUsage.totalUsage) {
-          onComplete(
-            file.filePath,
-            count,
-            result.tokenUsage.totalUsage.promptTokens,
-            result.tokenUsage.totalUsage.completionTokens,
-          );
-          tokenUsageReported = true;
-        } else {
-          onComplete(file.filePath, count, 0, 0);
-        }
+        const fileUsage = usageByFile.get(file.filePath);
+        onComplete(
+          file.filePath,
+          count,
+          fileUsage?.promptTokens ?? 0,
+          fileUsage?.completionTokens ?? 0,
+        );
       }
     }
 

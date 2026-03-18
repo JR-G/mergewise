@@ -8,6 +8,7 @@ import { createReviewClient, mergeUsage, type CompletionUsage, type ReviewClient
 import type {
   CriticResult,
   FileReviewFailure,
+  FileTokenUsage,
   ReviewPipelineConfig,
   ReviewPipelineResult,
   TokenUsageSummary,
@@ -59,9 +60,10 @@ function buildTokenUsage(
   triageUsage: CompletionUsage | undefined,
   reviewUsage: CompletionUsage | undefined,
   criticUsage: CompletionUsage | undefined,
+  perFileUsage: readonly FileTokenUsage[],
 ): TokenUsageSummary {
   const totalUsage = mergeUsage(mergeUsage(triageUsage, reviewUsage), criticUsage);
-  return { triageUsage, reviewUsage, criticUsage, totalUsage };
+  return { triageUsage, reviewUsage, criticUsage, totalUsage, perFileUsage };
 }
 
 /**
@@ -120,13 +122,14 @@ interface ReviewStageInput {
  */
 async function runReviewStage(
   input: ReviewStageInput,
-): Promise<{ findings: Finding[]; failedFiles: FileReviewFailure[]; usage: CompletionUsage | undefined }> {
+): Promise<{ findings: Finding[]; failedFiles: FileReviewFailure[]; usage: CompletionUsage | undefined; perFileUsage: FileTokenUsage[] }> {
   const { diffs, pullRequest, codebaseContext, client, config } = input;
   const systemPrompt = buildSlimSystemPrompt({ agentFriendliness: config.agentFriendliness, toolUse: true });
   const openAiTools = toOpenAiTools(REVIEW_TOOLS);
   const availablePatterns = buildAvailablePatternsSummary();
   const allFindings: Finding[] = [];
   const failedFiles: FileReviewFailure[] = [];
+  const perFileUsage: FileTokenUsage[] = [];
   let combinedUsage: CompletionUsage | undefined;
 
   const perFileToolBudget = Math.max(
@@ -171,6 +174,11 @@ async function runReviewStage(
       const findings = parseLlmResponse(content, diff, pullRequest);
       allFindings.push(...findings);
       combinedUsage = mergeUsage(combinedUsage, usage);
+      perFileUsage.push({
+        filePath: diff.filePath,
+        promptTokens: usage?.promptTokens ?? 0,
+        completionTokens: usage?.completionTokens ?? 0,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       failedFiles.push({ filePath: diff.filePath, error: message });
@@ -178,7 +186,7 @@ async function runReviewStage(
     }
   }
 
-  return { findings: allFindings, failedFiles, usage: combinedUsage };
+  return { findings: allFindings, failedFiles, usage: combinedUsage, perFileUsage };
 }
 
 /**
@@ -247,7 +255,7 @@ export async function runReviewPipeline(
     findings: criticOutput.result.findings,
     triageResults: triageOutput.results,
     criticReport: criticOutput.result,
-    tokenUsage: buildTokenUsage(triageOutput.usage, reviewOutput.usage, criticOutput.usage),
+    tokenUsage: buildTokenUsage(triageOutput.usage, reviewOutput.usage, criticOutput.usage, reviewOutput.perFileUsage),
     failedFiles: reviewOutput.failedFiles,
   };
 }
