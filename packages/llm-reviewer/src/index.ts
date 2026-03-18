@@ -182,7 +182,7 @@ async function analysePipeline(
   try {
     const result = await runReviewPipeline(selectedFiles, context.pullRequest, codebaseContext, {
       triageModel: config.triageModel,
-      reviewModel: config.clientConfig.model ?? "gpt-4o",
+      reviewModel: config.clientConfig.model ?? "gpt-4.1",
       criticModel: config.criticModel,
       tokenBudget: config.tokenBudget,
       toolkit: config.toolkit,

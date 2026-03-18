@@ -196,6 +196,42 @@ describe("createPollingLoopController", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(pollCount).toBe(3);
   });
+
+  it("continues polling after the first cycle rejects", async () => {
+    let pollCount = 0;
+    let callIndex = 0;
+    let capturedCallback: (() => void) | undefined;
+
+    const controller = createPollingLoopController(
+      100,
+      async () => {
+        callIndex++;
+        if (callIndex === 1) {
+          throw new Error("first poll failed");
+        }
+        pollCount++;
+      },
+      {
+        setIntervalFn: (callback, _delay) => { capturedCallback = callback; return 1 as unknown as WorkerPollingTimerHandle; },
+        clearIntervalFn: () => {},
+        logError: () => {},
+      },
+    );
+
+    controller.start();
+
+    capturedCallback?.();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(pollCount).toBe(0);
+
+    capturedCallback?.();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(pollCount).toBe(1);
+
+    capturedCallback?.();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(pollCount).toBe(2);
+  });
 });
 
 describe("createProcessedKeyState", () => {

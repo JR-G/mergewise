@@ -30,7 +30,7 @@ if (!apiKey) {
 const rawBaseUrl = process.env["LLM_EVAL_BASE_URL"]?.trim();
 const baseUrl = rawBaseUrl !== undefined && rawBaseUrl.length > 0 ? rawBaseUrl : undefined;
 const rawModel = process.env["LLM_EVAL_MODEL"]?.trim();
-const model = rawModel !== undefined && rawModel.length > 0 ? rawModel : "gpt-4o";
+const model = rawModel !== undefined && rawModel.length > 0 ? rawModel : "gpt-4.1";
 
 const baseClientConfig: ReviewClientConfig = {
   apiKey,

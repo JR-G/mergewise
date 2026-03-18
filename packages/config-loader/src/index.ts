@@ -268,7 +268,7 @@ export const DEFAULT_MERGEWISE_CONFIG: MergewiseConfig = {
   },
   llm: {
     enabled: true,
-    model: "gpt-4o",
+    model: "gpt-4.1",
     tokenBudget: 30_000,
     baseUrl: "https://api.openai.com/v1",
     consistencySamples: 1,

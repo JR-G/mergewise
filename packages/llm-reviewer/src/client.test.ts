@@ -3,7 +3,7 @@ import { ReviewClient, createReviewClient, mergeUsage } from "./client";
 import type { CompletionUsage, ReviewClientConfig } from "./client";
 
 describe("ReviewClient", () => {
-  it("defaults to gpt-4o when no model is specified", () => {
+  it("defaults to gpt-4.1 when no model is specified", () => {
     const config: ReviewClientConfig = { apiKey: "test-key" };
     const client = createReviewClient(config);
     expect(client).toBeInstanceOf(ReviewClient);
