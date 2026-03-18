@@ -33,6 +33,17 @@ export interface MergewiseReviewConfigV1 {
    * Merged with built-in skip patterns — cannot replace them.
    */
   skipPatterns: string[];
+  /**
+   * When enabled, the LLM reviewer actively detects agent-hostile code patterns
+   * and frames refactoring suggestions with AI agent impact reasoning.
+   *
+   * @remarks
+   * Defaults to `false`. When `true`, the review prompt gains additional
+   * detection criteria for patterns that impair autonomous AI tooling
+   * (e.g. files too large for a context window, implicit conventions,
+   * tangled read/write operations).
+   */
+  agentFriendliness: boolean;
 }
 
 /**
@@ -265,10 +276,11 @@ export const DEFAULT_MERGEWISE_CONFIG: MergewiseConfig = {
   },
   review: {
     skipPatterns: [],
+    agentFriendliness: false,
   },
   llm: {
     enabled: true,
-    model: "gpt-4o",
+    model: "gpt-4.1",
     tokenBudget: 30_000,
     baseUrl: "https://api.openai.com/v1",
     consistencySamples: 1,
@@ -289,6 +301,7 @@ interface RawMergewiseConfig {
   };
   review?: {
     skipPatterns?: unknown;
+    agentFriendliness?: unknown;
   };
   llm?: {
     enabled?: unknown;
@@ -315,6 +328,7 @@ function cloneDefaults(): MergewiseConfig {
     },
     review: {
       skipPatterns: [...DEFAULT_MERGEWISE_CONFIG.review.skipPatterns],
+      agentFriendliness: DEFAULT_MERGEWISE_CONFIG.review.agentFriendliness,
     },
     llm: { ...DEFAULT_MERGEWISE_CONFIG.llm },
   };
@@ -435,6 +449,14 @@ function applyReview(
       }
     }
     normalizedConfig.review.skipPatterns = (patterns as string[]).map((entry) => entry.trim());
+  }
+
+  const agentFriendliness = rawConfig.review.agentFriendliness;
+  if (agentFriendliness !== undefined && typeof agentFriendliness !== "boolean") {
+    throw new MergewiseConfigValidationError(filePath, "review.agentFriendliness must be a boolean");
+  }
+  if (typeof agentFriendliness === "boolean") {
+    normalizedConfig.review.agentFriendliness = agentFriendliness;
   }
 }
 

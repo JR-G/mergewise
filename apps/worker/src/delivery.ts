@@ -497,9 +497,7 @@ export function buildWorkerCheckOutput(
 
   return {
     title,
-    summary:
-      `Rules=${executionResult.summary.successfulRules}/${executionResult.summary.totalRules}` +
-      ` findings=${totalFindings} posted=${postedCount}`,
+    summary: `findings=${totalFindings} posted=${postedCount}`,
     text: `${reviewerSummaryMarkdown}\n\n${deliveryCounterMarkdown}`,
   };
 }

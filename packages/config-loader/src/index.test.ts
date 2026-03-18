@@ -186,4 +186,37 @@ describe("config-loader", () => {
     const config = loadMergewiseConfig({ workingDirectory: tempDirectory });
     expect(config.review.skipPatterns).toEqual([]);
   });
+
+  test("parses review.agentFriendliness as true", () => {
+    const filePath = join(tempDirectory, ".mergewise.yml");
+    writeFileSync(filePath, "review:\n  agentFriendliness: true", "utf8");
+
+    const config = loadMergewiseConfig({ workingDirectory: tempDirectory });
+    expect(config.review.agentFriendliness).toBe(true);
+  });
+
+  test("defaults review.agentFriendliness to false when absent", () => {
+    const filePath = join(tempDirectory, ".mergewise.yml");
+    writeFileSync(filePath, "review:\n  skipPatterns: []", "utf8");
+
+    const config = loadMergewiseConfig({ workingDirectory: tempDirectory });
+    expect(config.review.agentFriendliness).toBe(false);
+  });
+
+  test("throws schema error for non-boolean review.agentFriendliness", () => {
+    const filePath = join(tempDirectory, ".mergewise.yml");
+    writeFileSync(filePath, 'review:\n  agentFriendliness: "yes"', "utf8");
+
+    expect(() => loadMergewiseConfig({ workingDirectory: tempDirectory })).toThrow(
+      MergewiseConfigValidationError,
+    );
+
+    try {
+      loadMergewiseConfig({ workingDirectory: tempDirectory });
+      throw new Error("expected loadMergewiseConfig to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(MergewiseConfigValidationError);
+      expect((error as Error).message).toContain("review.agentFriendliness");
+    }
+  });
 });
