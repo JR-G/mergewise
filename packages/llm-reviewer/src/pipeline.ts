@@ -13,6 +13,8 @@ import type {
   TokenUsageSummary,
   TriageResult,
 } from "./pipeline-types";
+import { ANTI_PATTERNS } from "./anti-patterns";
+import { filterPatternsByClassifications } from "./classification-pattern-map";
 import { triageFiles } from "./triage";
 import { criticFindings, collectFileContents } from "./critic";
 import { extractStructuralSignals } from "./signals";
@@ -143,6 +145,7 @@ async function runReviewStage(
       const extension = getFileExtension(diff.filePath);
 
       const knowledge = retrieveKnowledge({ signals, fileExtension: extension, classifications });
+      const filteredPatterns = filterPatternsByClassifications(classifications, ANTI_PATTERNS);
       const graphContext = config.toolkit?.getCallers?.(diff.filePath);
       const learnings = config.toolkit?.getRepoLearnings?.(pullRequest.repo, [diff.filePath]);
 
@@ -151,6 +154,7 @@ async function runReviewStage(
         fullContent,
         signals,
         knowledge,
+        filteredPatterns,
         graphContext,
         learnings,
         agentFriendliness: config.agentFriendliness,
