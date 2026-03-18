@@ -3,7 +3,7 @@
   "previousPath": null,
   "hunks": [
     {
-      "header": "@@ -0,0 +1,38 @@",
+      "header": "@@ -0,0 +1,39 @@",
       "lines": [
         "+import { PrismaClient } from \"@prisma/client\";",
         "+import { S3Client, PutObjectCommand } from \"@aws-sdk/client-s3\";",

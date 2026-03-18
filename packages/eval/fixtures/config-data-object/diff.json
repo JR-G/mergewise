@@ -3,7 +3,7 @@
   "previousPath": null,
   "hunks": [
     {
-      "header": "@@ -0,0 +1,37 @@",
+      "header": "@@ -0,0 +1,35 @@",
       "lines": [
         "+import type { RequestHandler } from \"express\";",
         "+import { handleGetUsers } from \"./handlers/users\";",

@@ -3,7 +3,7 @@
   "previousPath": null,
   "hunks": [
     {
-      "header": "@@ -0,0 +1,44 @@",
+      "header": "@@ -0,0 +1,46 @@",
       "lines": [
         "+import { db } from \"../db\";",
         "+import { analytics } from \"../analytics\";",

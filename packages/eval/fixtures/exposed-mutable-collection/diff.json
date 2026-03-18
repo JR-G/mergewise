@@ -3,7 +3,7 @@
   "previousPath": null,
   "hunks": [
     {
-      "header": "@@ -0,0 +1,42 @@",
+      "header": "@@ -0,0 +1,43 @@",
       "lines": [
         "+interface User {",
         "+  id: string;",

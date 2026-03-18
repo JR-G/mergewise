@@ -3,7 +3,7 @@
   "previousPath": null,
   "hunks": [
     {
-      "header": "@@ -0,0 +1,39 @@",
+      "header": "@@ -0,0 +1,37 @@",
       "lines": [
         "+interface PatternEntry {",
         "+  readonly id: string;",

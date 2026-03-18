@@ -3,7 +3,7 @@
   "previousPath": null,
   "hunks": [
     {
-      "header": "@@ -0,0 +1,30 @@",
+      "header": "@@ -0,0 +1,31 @@",
       "lines": [
         "+interface ShippingQuote {",
         "+  baseCost: number;",

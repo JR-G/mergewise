@@ -3,7 +3,7 @@
   "previousPath": null,
   "hunks": [
     {
-      "header": "@@ -0,0 +1,50 @@",
+      "header": "@@ -0,0 +1,48 @@",
       "lines": [
         "+export interface DocumentService {",
         "+  create(doc: Record<string, unknown>): string;",

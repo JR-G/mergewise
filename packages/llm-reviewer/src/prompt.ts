@@ -2,6 +2,7 @@ import type { DiffHunk, FileDiff, RepoLearnings } from "@mergewise/shared-types"
 import type { AntiPattern } from "./anti-patterns";
 import { ANTI_PATTERNS } from "./anti-patterns";
 import { buildAntiPatternReferenceTable } from "./anti-pattern-table";
+import { formatNumberedDiff } from "./diff-format";
 import type { StructuralSignals } from "./signals";
 
 const CONTEXT_PADDING = 50;
@@ -495,9 +496,7 @@ export interface FileReviewPromptOptions {
  */
 export function buildFileReviewPrompt(options: FileReviewPromptOptions): string {
   const { fileDiff, fullContent, signals, repoLearnings, prTitle, prDescription } = options;
-  const diffLines = fileDiff.hunks
-    .map((hunk) => `${hunk.header}\n${hunk.lines.join("\n")}`)
-    .join("\n\n");
+  const diffLines = formatNumberedDiff(fileDiff.hunks);
 
   const signalLines: string[] = [];
   if (signals.componentLineCount > 0) {

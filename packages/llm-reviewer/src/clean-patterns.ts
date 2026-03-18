@@ -161,7 +161,7 @@ for (const item of items) {
     goodExample: `const total = items.reduce((sum, item) => sum + item.price, 0);`,
     principle: "Prefer reduce/Object.fromEntries over mutable accumulation",
     detectionHint:
-      "let variable declared before a loop and mutated inside it (counter, string concatenation, object building) where a reduce, join, or Object.fromEntries would be clearer.",
+      "A single let variable declared before a loop and mutated inside it (counter, string concatenation, object building) where a reduce, join, or Object.fromEntries would be clearer. Do NOT flag loops with two or more accumulators — reduce with multiple accumulators is harder to read than a for loop.",
   },
 
   {

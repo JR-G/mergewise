@@ -3,7 +3,7 @@
   "previousPath": null,
   "hunks": [
     {
-      "header": "@@ -0,0 +1,40 @@",
+      "header": "@@ -0,0 +1,43 @@",
       "lines": [
         "+export function createCalendarEvent(",
         "+  title: string,",

@@ -125,7 +125,7 @@ describe("buildToolUseFilePrompt", () => {
       availablePatterns: "Available patterns for lookup_pattern tool:\n- srp: SRP Violations",
     });
     expect(result).toContain("```diff");
-    expect(result).toContain("+const b = 2;");
+    expect(result).toContain("+   2 const b = 2;");
   });
 
   test("includes file path header", () => {

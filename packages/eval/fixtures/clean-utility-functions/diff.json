@@ -3,7 +3,7 @@
   "previousPath": null,
   "hunks": [
     {
-      "header": "@@ -0,0 +1,26 @@",
+      "header": "@@ -0,0 +1,27 @@",
       "lines": [
         "+export function capitalize(value: string): string {",
         "+  if (value.length === 0) return value;",
