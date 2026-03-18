@@ -3,7 +3,7 @@
   "previousPath": null,
   "hunks": [
     {
-      "header": "@@ -0,0 +1,48 @@",
+      "header": "@@ -0,0 +1,55 @@",
       "lines": [
         "+export interface DataStore {",
         "+  get(key: string): unknown | undefined;",

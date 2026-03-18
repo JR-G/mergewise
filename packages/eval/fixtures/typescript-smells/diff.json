@@ -3,7 +3,7 @@
   "previousPath": null,
   "hunks": [
     {
-      "header": "@@ -0,0 +1,29 @@",
+      "header": "@@ -0,0 +1,30 @@",
       "lines": [
         "+enum HttpMethod {",
         "+  GET = \"GET\",",
