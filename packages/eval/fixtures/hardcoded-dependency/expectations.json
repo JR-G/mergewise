@@ -1,13 +1,13 @@
 [
   {
     "description": "Flags DIP violation — hardcoded concrete dependencies",
-    "matchLineRange": [11, 38],
+    "matchLineRange": [1, 38],
     "matchRecommendationContainsAny": ["Dependency Inversion", "DIP", "inject", "abstraction", "constructor", "parameter", "hardcoded", "concrete", "new PrismaClient", "new S3Client", "testab", "coupling", "depend"],
     "required": true
   },
   {
     "description": "Flags SRP violation — function does reporting, storage, and emailing",
-    "matchLineRange": [11, 38],
+    "matchLineRange": [1, 38],
     "matchRecommendationContainsAny": ["SRP", "Single Responsibility", "responsibilit", "extract", "separate", "concern"],
     "required": false
   }

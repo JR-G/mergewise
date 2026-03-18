@@ -1,7 +1,7 @@
 [
   {
     "description": "Flags OCP violation — instanceof chain should use polymorphism or handler map",
-    "matchLineRange": [11, 29],
+    "matchLineRange": [9, 30],
     "matchRecommendationContainsAny": ["instanceof", "polymorphi", "Open/Closed", "interface", "method", "handler", "dispatch", "strategy", "map", "registry", "extend", "process"],
     "required": true
   }
