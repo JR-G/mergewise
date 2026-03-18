@@ -132,6 +132,67 @@ describe("buildAnalyzePullRequestJob", () => {
     const job = buildAnalyzePullRequestJob(noInstall, "trace-123");
     expect(job.installation_id).toBeNull();
   });
+
+  test("includes pr_title and pr_body from webhook payload", () => {
+    const withContext: GitHubPullRequestWebhookEvent = {
+      ...payload,
+      pull_request: {
+        ...payload.pull_request,
+        title: "fix: replace stream-based queue reading",
+        body: "Switched to sync buffer approach because streams hang in Bun.",
+      },
+    };
+    const job = buildAnalyzePullRequestJob(withContext);
+    expect(job.pr_title).toBe("fix: replace stream-based queue reading");
+    expect(job.pr_body).toBe("Switched to sync buffer approach because streams hang in Bun.");
+  });
+
+  test("omits pr_title and pr_body for legacy payloads without them", () => {
+    const job = buildAnalyzePullRequestJob(payload);
+    expect(job.pr_title).toBeUndefined();
+    expect(job.pr_body).toBeUndefined();
+  });
+
+  test("truncates pr_body at 1000 characters", () => {
+    const longBody = "x".repeat(1500);
+    const withLongBody: GitHubPullRequestWebhookEvent = {
+      ...payload,
+      pull_request: {
+        ...payload.pull_request,
+        title: "chore: long description",
+        body: longBody,
+      },
+    };
+    const job = buildAnalyzePullRequestJob(withLongBody);
+    expect(job.pr_body).toHaveLength(1000);
+  });
+
+  test("truncates pr_title at 200 characters", () => {
+    const longTitle = "t".repeat(300);
+    const withLongTitle: GitHubPullRequestWebhookEvent = {
+      ...payload,
+      pull_request: {
+        ...payload.pull_request,
+        title: longTitle,
+      },
+    };
+    const job = buildAnalyzePullRequestJob(withLongTitle);
+    expect(job.pr_title).toHaveLength(200);
+  });
+
+  test("handles null pr_body gracefully", () => {
+    const withNullBody: GitHubPullRequestWebhookEvent = {
+      ...payload,
+      pull_request: {
+        ...payload.pull_request,
+        title: "fix: something",
+        body: null,
+      },
+    };
+    const job = buildAnalyzePullRequestJob(withNullBody);
+    expect(job.pr_title).toBe("fix: something");
+    expect(job.pr_body).toBeUndefined();
+  });
 });
 
 describe("buildCollectFeedbackJob", () => {

@@ -113,7 +113,14 @@ export async function reviewFile(options: ReviewFileOptions): Promise<FileReview
   const fullContent = await codebaseContext.readFile(fileDiff.filePath);
   const signals = extractStructuralSignals(fileDiff);
   const systemPrompt = buildSystemPrompt(ANTI_PATTERNS, options.confidenceThreshold);
-  const userPrompt = buildFileReviewPrompt(fileDiff, fullContent, signals, options.repoLearnings);
+  const userPrompt = buildFileReviewPrompt({
+    fileDiff,
+    fullContent,
+    signals,
+    repoLearnings: options.repoLearnings,
+    prTitle: pullRequest.prTitle,
+    prDescription: pullRequest.prDescription,
+  });
 
   if (consistencySamples <= 1) {
     const { content, usage } = await client.complete(

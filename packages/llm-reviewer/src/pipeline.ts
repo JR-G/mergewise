@@ -157,6 +157,8 @@ async function runReviewStage(
         filteredPatterns,
         graphContext,
         learnings,
+        prTitle: pullRequest.prTitle,
+        prDescription: pullRequest.prDescription,
         agentFriendliness: config.agentFriendliness,
       });
 

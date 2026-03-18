@@ -46,6 +46,15 @@ export interface AnalyzePullRequestJob {
    * GitHub check run identifier created at webhook intake for early PR status visibility.
    */
   check_run_id?: number | undefined;
+  /**
+   * Pull request title from the webhook payload. Absent on legacy queued jobs.
+   */
+  pr_title?: string | undefined;
+  /**
+   * Pull request body from the webhook payload, capped at 1000 characters.
+   * Absent on legacy queued jobs.
+   */
+  pr_body?: string | undefined;
 }
 
 /**

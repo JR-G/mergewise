@@ -343,4 +343,68 @@ describe("buildDynamicFilePrompt", () => {
     expect(result).not.toContain("// line 2001:");
     expect(result).toContain("[truncated");
   });
+
+  test("includes PR context section when prTitle is provided", () => {
+    const result = buildDynamicFilePrompt({
+      fileDiff: makeDiff(),
+      fullContent: null,
+      signals: makeSignals(),
+      knowledge: [],
+      prTitle: "fix: replace streams with sync reads",
+      prDescription: "Streams hang in Bun.",
+    });
+    expect(result).toContain("## Pull Request Context");
+    expect(result).toContain("Title: fix: replace streams with sync reads");
+    expect(result).toContain("Description: Streams hang in Bun.");
+    expect(result).toContain("do not suggest reverting");
+  });
+
+  test("omits PR context section when prTitle is absent", () => {
+    const result = buildDynamicFilePrompt({
+      fileDiff: makeDiff(),
+      fullContent: null,
+      signals: makeSignals(),
+      knowledge: [],
+    });
+    expect(result).not.toContain("## Pull Request Context");
+  });
+
+  test("omits description line when prDescription is absent", () => {
+    const result = buildDynamicFilePrompt({
+      fileDiff: makeDiff(),
+      fullContent: null,
+      signals: makeSignals(),
+      knowledge: [],
+      prTitle: "fix: something",
+    });
+    expect(result).toContain("Title: fix: something");
+    expect(result).not.toContain("Description:");
+  });
+
+  test("truncates prDescription at 500 characters", () => {
+    const longDescription = "z".repeat(800);
+    const result = buildDynamicFilePrompt({
+      fileDiff: makeDiff(),
+      fullContent: null,
+      signals: makeSignals(),
+      knowledge: [],
+      prTitle: "chore: truncation test",
+      prDescription: longDescription,
+    });
+    expect(result).toContain("Description: " + "z".repeat(500));
+    expect(result).not.toContain("z".repeat(501));
+  });
+
+  test("PR context appears before the diff section", () => {
+    const result = buildDynamicFilePrompt({
+      fileDiff: makeDiff(),
+      fullContent: null,
+      signals: makeSignals(),
+      knowledge: [],
+      prTitle: "feat: new feature",
+    });
+    const contextIndex = result.indexOf("## Pull Request Context");
+    const diffIndex = result.indexOf("## Diff");
+    expect(contextIndex).toBeLessThan(diffIndex);
+  });
 });

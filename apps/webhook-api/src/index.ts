@@ -45,6 +45,9 @@ export {
   readWebhookRequestBody,
 } from "./request-handling";
 
+const MAX_PR_TITLE_JOB_CHARS = 200;
+const MAX_PR_BODY_JOB_CHARS = 1000;
+
 /**
  * Supported GitHub pull request actions that should queue analysis work.
  */
@@ -248,6 +251,8 @@ export function buildAnalyzePullRequestJob(
     head_sha: payload.pull_request.head.sha,
     trace_id: traceId,
     queued_at: new Date().toISOString(),
+    pr_title: payload.pull_request.title?.slice(0, MAX_PR_TITLE_JOB_CHARS),
+    pr_body: payload.pull_request.body?.slice(0, MAX_PR_BODY_JOB_CHARS),
   };
 }
 

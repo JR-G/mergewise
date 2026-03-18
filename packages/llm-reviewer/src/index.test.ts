@@ -1073,7 +1073,7 @@ describe("buildFileReviewPrompt", () => {
       makeHunk("@@ -1,2 +1,3 @@", [" import React", "+const App = () => {", "+}"]),
     ]);
 
-    const prompt = buildFileReviewPrompt(diff, null, EMPTY_SIGNALS);
+    const prompt = buildFileReviewPrompt({ fileDiff: diff, fullContent: null, signals: EMPTY_SIGNALS });
 
     expect(prompt).toContain("src/app.tsx");
     expect(prompt).toContain("const App = () => {");
@@ -1084,7 +1084,7 @@ describe("buildFileReviewPrompt", () => {
       makeHunk("@@ -1,1 +1,2 @@", [" export function foo() {}", "+export function bar() {}"]),
     ]);
 
-    const prompt = buildFileReviewPrompt(diff, "full file content here", EMPTY_SIGNALS);
+    const prompt = buildFileReviewPrompt({ fileDiff: diff, fullContent: "full file content here", signals: EMPTY_SIGNALS });
 
     expect(prompt).toContain("full file content here");
     expect(prompt).toContain("Full file content");
@@ -1095,7 +1095,7 @@ describe("buildFileReviewPrompt", () => {
       makeHunk("@@ -1,1 +1,2 @@", ["+const x = 1"]),
     ]);
 
-    const prompt = buildFileReviewPrompt(diff, null, {
+    const prompt = buildFileReviewPrompt({ fileDiff: diff, fullContent: null, signals: {
       ...EMPTY_SIGNALS,
       componentLineCount: 150,
       hookCount: 8,
@@ -1106,7 +1106,7 @@ describe("buildFileReviewPrompt", () => {
       maxParameterCount: 7,
       classCount: 2,
       typeAssertionCount: 3,
-    });
+    } });
 
     expect(prompt).toContain("Component line count: 150");
     expect(prompt).toContain("useState/useEffect calls: 8");

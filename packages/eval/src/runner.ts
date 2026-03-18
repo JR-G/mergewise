@@ -26,11 +26,11 @@ export async function runFixture(
 
   const systemPrompt = buildSystemPrompt(antiPatterns, variant.confidenceThreshold);
   const signals = extractStructuralSignals(fixture.fileDiff);
-  const userPrompt = buildFileReviewPrompt(
-    fixture.fileDiff,
-    fixture.fullFileContent,
+  const userPrompt = buildFileReviewPrompt({
+    fileDiff: fixture.fileDiff,
+    fullContent: fixture.fullFileContent,
     signals,
-  );
+  });
 
   const start = performance.now();
   let rawResponse: string;

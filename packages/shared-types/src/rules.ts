@@ -43,6 +43,10 @@ export interface PullRequestMetadata {
   readonly headSha: SHA;
   /** GitHub App installation identifier for API token resolution. */
   readonly installationId: InstallationId | null;
+  /** Pull request title. Absent for legacy jobs. */
+  readonly prTitle?: string | undefined;
+  /** Pull request description, capped at store boundary. Absent for legacy jobs. */
+  readonly prDescription?: string | undefined;
 }
 
 /**

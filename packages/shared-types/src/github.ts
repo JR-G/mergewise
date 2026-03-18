@@ -49,6 +49,14 @@ export interface GitHubPullRequest {
    * Whether the pull request has been merged.
    */
   merged?: boolean;
+  /**
+   * Pull request title.
+   */
+  title?: string;
+  /**
+   * Pull request body (description). May be null when unset by the author.
+   */
+  body?: string | null;
 }
 
 /**
