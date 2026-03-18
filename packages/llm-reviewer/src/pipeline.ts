@@ -13,14 +13,13 @@ import type {
   TokenUsageSummary,
   TriageResult,
 } from "./pipeline-types";
-import { ANTI_PATTERNS } from "./anti-patterns";
-import { filterPatternsByClassifications } from "./classification-pattern-map";
 import { triageFiles } from "./triage";
 import { criticFindings, collectFileContents } from "./critic";
 import { extractStructuralSignals } from "./signals";
-import { retrieveKnowledge } from "./knowledge/retrieve";
-import { buildSlimSystemPrompt, buildDynamicFilePrompt } from "./prompt-slim";
+import { buildSlimSystemPrompt, buildToolUseFilePrompt } from "./prompt-slim";
 import { parseLlmResponse } from "./schema";
+import { REVIEW_TOOLS, toOpenAiTools, executeToolCall, buildAvailablePatternsSummary } from "./review-tools";
+import type { ToolContext } from "./review-tools";
 
 const PRIORITY_ORDER: Readonly<Record<string, number>> = {
   high: 0,
@@ -31,6 +30,7 @@ const PRIORITY_ORDER: Readonly<Record<string, number>> = {
 
 const DEFAULT_MAX_FILES = 20;
 const MAX_REVIEW_RESPONSE_TOKENS = 4096;
+const TOOL_TOKEN_BUDGET = 15_000;
 
 interface PipelineClients {
   readonly triageClient: ReviewClient;
@@ -42,7 +42,7 @@ interface PipelineClients {
  * Creates separate client instances for each pipeline stage.
  */
 function createPipelineClients(config: ReviewPipelineConfig): PipelineClients {
-  const baseConfig = { apiKey: config.apiKey, baseUrl: config.baseUrl };
+  const baseConfig = { apiKey: config.apiKey, baseUrl: config.baseUrl, maxRetries: config.maxRetries };
 
   return {
     triageClient: createReviewClient({ ...baseConfig, model: config.triageModel ?? "gpt-4.1-mini" }),
@@ -106,17 +106,8 @@ function selectAndPrioritise(
   return sorted.slice(0, maxFiles);
 }
 
-/**
- * Extracts file extension from a path.
- */
-function getFileExtension(filePath: string): string {
-  const lastDot = filePath.lastIndexOf(".");
-  return lastDot === -1 ? "" : filePath.slice(lastDot);
-}
-
 interface ReviewStageInput {
   readonly diffs: readonly FileDiff[];
-  readonly triageResults: readonly TriageResult[];
   readonly pullRequest: PullRequestMetadata;
   readonly codebaseContext: CodebaseContext;
   readonly client: ReviewClient;
@@ -129,40 +120,42 @@ interface ReviewStageInput {
 async function runReviewStage(
   input: ReviewStageInput,
 ): Promise<{ findings: Finding[]; failedFiles: FileReviewFailure[]; usage: CompletionUsage | undefined }> {
-  const { diffs, triageResults, pullRequest, codebaseContext, client, config } = input;
-  const triageMap = new Map(triageResults.map((result) => [result.filePath, result]));
-  const systemPrompt = buildSlimSystemPrompt({ agentFriendliness: config.agentFriendliness });
+  const { diffs, pullRequest, codebaseContext, client, config } = input;
+  const systemPrompt = buildSlimSystemPrompt({ agentFriendliness: config.agentFriendliness, toolUse: true });
+  const openAiTools = toOpenAiTools(REVIEW_TOOLS);
+  const availablePatterns = buildAvailablePatternsSummary();
   const allFindings: Finding[] = [];
   const failedFiles: FileReviewFailure[] = [];
   let combinedUsage: CompletionUsage | undefined;
 
   for (const diff of diffs) {
     try {
-      const triage = triageMap.get(diff.filePath);
-      const classifications = triage?.classifications ?? [];
       const fullContent = await codebaseContext.readFile(diff.filePath);
       const signals = extractStructuralSignals(diff);
-      const extension = getFileExtension(diff.filePath);
 
-      const knowledge = retrieveKnowledge({ signals, fileExtension: extension, classifications });
-      const filteredPatterns = filterPatternsByClassifications(classifications, ANTI_PATTERNS);
-      const graphContext = config.toolkit?.getCallers?.(diff.filePath);
-      const learnings = config.toolkit?.getRepoLearnings?.(pullRequest.repo, [diff.filePath]);
-
-      const userPrompt = buildDynamicFilePrompt({
-        fileDiff: diff,
+      const toolContext: ToolContext = {
+        filePath: diff.filePath,
         fullContent,
+        toolkit: config.toolkit,
+        repoName: pullRequest.repo,
+      };
+
+      const userPrompt = buildToolUseFilePrompt({
+        fileDiff: diff,
         signals,
-        knowledge,
-        filteredPatterns,
-        graphContext,
-        learnings,
         prTitle: pullRequest.prTitle,
         prDescription: pullRequest.prDescription,
-        agentFriendliness: config.agentFriendliness,
+        availablePatterns,
       });
 
-      const { content, usage } = await client.complete(systemPrompt, userPrompt, MAX_REVIEW_RESPONSE_TOKENS);
+      const { content, usage } = await client.completeWithTools({
+        systemPrompt,
+        userPrompt,
+        tools: openAiTools,
+        onToolCall: (toolName, rawArgs) => executeToolCall(REVIEW_TOOLS, toolContext, toolName, rawArgs),
+        maxTokens: MAX_REVIEW_RESPONSE_TOKENS,
+        toolTokenBudget: TOOL_TOKEN_BUDGET,
+      });
       const findings = parseLlmResponse(content, diff, pullRequest);
       allFindings.push(...findings);
       combinedUsage = mergeUsage(combinedUsage, usage);
@@ -228,7 +221,6 @@ export async function runReviewPipeline(
 
   const reviewOutput = await runReviewStage({
     diffs: selectedDiffs,
-    triageResults: triageOutput.results,
     pullRequest,
     codebaseContext,
     client: clients.reviewClient,

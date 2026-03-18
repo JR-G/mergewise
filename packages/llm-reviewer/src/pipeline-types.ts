@@ -131,6 +131,7 @@ export interface ReviewPipelineConfig {
   readonly confidenceThreshold?: number | undefined;
   readonly apiKey: string;
   readonly baseUrl?: string | undefined;
+  readonly maxRetries?: number | undefined;
   readonly agentFriendliness?: boolean | undefined;
 }
 

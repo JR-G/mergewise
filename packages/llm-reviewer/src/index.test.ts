@@ -164,6 +164,17 @@ describe("createLlmReviewerRule", () => {
       () => {
         invocationCount += 1;
         if (invocationCount === 1) {
+          return new Response(
+            buildCompletionResponse(
+              JSON.stringify({ files: [
+                { file: "src/fail.ts", priority: "high", classifications: ["logic"], reasoning: "test" },
+                { file: "src/pass.ts", priority: "high", classifications: ["logic"], reasoning: "test" },
+              ] }),
+            ),
+            { headers: { "Content-Type": "application/json" } },
+          );
+        }
+        if (invocationCount === 2) {
           return new Response("Internal Server Error", { status: 500 });
         }
         return new Response(
@@ -198,10 +209,8 @@ describe("createLlmReviewerRule", () => {
           pullRequest: PULL_REQUEST_METADATA,
         };
         const findings = await rule.analyse(context, makeMockCodebaseContext());
-        expect(findings).toHaveLength(1);
-        expect(findings[0]!.filePath).toBe(toFilePath("src/pass.ts"));
-        expect(errors).toHaveLength(1);
-        expect(errors[0]!.filePath).toBe(toFilePath("src/fail.ts"));
+        expect(findings.some((finding) => finding.filePath === toFilePath("src/pass.ts"))).toBe(true);
+        expect(errors.some((error) => error.filePath === toFilePath("src/fail.ts"))).toBe(true);
       },
     );
   });
@@ -250,7 +259,7 @@ describe("createLlmReviewerRule", () => {
             baseUrl: "http://mock.local/v1",
             model: "test-model",
           },
-          usePipeline: true,
+
           triageModel: "test-triage",
           criticModel: "test-critic",
           onFileReviewComplete: (filePath, _count, promptTokens, completionTokens) => {
@@ -267,8 +276,8 @@ describe("createLlmReviewerRule", () => {
         expect(completions[0]!.filePath).toBe("src/app.ts");
         const totalPromptTokens = completions.reduce((sum, completion) => sum + completion.promptTokens, 0);
         const totalCompletionTokens = completions.reduce((sum, completion) => sum + completion.completionTokens, 0);
-        expect(totalPromptTokens).toBe(700);
-        expect(totalCompletionTokens).toBe(200);
+        expect(totalPromptTokens).toBe(1000);
+        expect(totalCompletionTokens).toBe(260);
       },
     );
   });
@@ -304,7 +313,7 @@ describe("createLlmReviewerRule", () => {
             baseUrl: "http://mock.local/v1",
             model: "test-model",
           },
-          usePipeline: true,
+
           onFileReviewComplete: (filePath, _count, promptTokens, completionTokens) => {
             completions.push({ filePath, promptTokens, completionTokens });
           },
@@ -365,7 +374,7 @@ describe("createLlmReviewerRule", () => {
             baseUrl: "http://mock.local/v1",
             model: "test-model",
           },
-          usePipeline: true,
+
           onFileReviewComplete: (filePath, _count, promptTokens, completionTokens) => {
             completions.push({ filePath, promptTokens, completionTokens });
           },

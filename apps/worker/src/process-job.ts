@@ -65,12 +65,11 @@ interface BuildLlmRulesOptions {
   readonly mergewiseConfig: MergewiseConfig;
   readonly traceId: string;
   readonly loggers: ResolvedLoggers;
-  readonly repoLearnings?: RepoLearnings;
   readonly toolkit?: ReviewToolkit;
 }
 
 function buildLlmRules(options: BuildLlmRulesOptions): readonly Rule[] {
-  const { mergewiseConfig, traceId, loggers, repoLearnings, toolkit } = options;
+  const { mergewiseConfig, traceId, loggers, toolkit } = options;
   const llmConfig = mergewiseConfig.llm;
   const llmApiKey = process.env["LLM_API_KEY"];
 
@@ -91,8 +90,6 @@ function buildLlmRules(options: BuildLlmRulesOptions): readonly Rule[] {
         model: llmConfig.model,
       },
       tokenBudget: llmConfig.tokenBudget,
-      consistencySamples: llmConfig.consistencySamples,
-      usePipeline: llmConfig.usePipeline,
       triageModel: llmConfig.triageModel,
       criticModel: llmConfig.criticModel,
       userSkipPatterns: mergewiseConfig.review.skipPatterns.length > 0
@@ -100,7 +97,6 @@ function buildLlmRules(options: BuildLlmRulesOptions): readonly Rule[] {
         : undefined,
       confidenceThreshold: mergewiseConfig.gating.confidenceThreshold,
       agentFriendliness: mergewiseConfig.review.agentFriendliness,
-      repoLearnings,
       toolkit,
       onFileReviewError: (filePath, error) => {
         loggers.warnLogger(
@@ -175,7 +171,6 @@ function resolveProcessingConfig(
 
   const baseLlmRules = buildLlmRules({
     mergewiseConfig, traceId, loggers,
-    ...(repoLearnings ? { repoLearnings } : {}),
     ...(toolkit ? { toolkit } : {}),
   });
   const rules = dependencies.rules ?? [...baseLlmRules];
