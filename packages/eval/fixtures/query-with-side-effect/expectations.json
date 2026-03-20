@@ -1,8 +1,20 @@
 [
   {
-    "description": "Flags query-with-side-effect — get/find functions that mutate state",
-    "matchLineRange": [12, 44],
+    "description": "Flags getNextOrder — query function with side effects",
+    "matchLineRange": [12, 22],
     "matchRecommendationContainsAny": ["query", "side effect", "command", "read", "write", "mutate", "separate", "CQS", "get", "find", "pure", "modifier"],
     "required": true
+  },
+  {
+    "description": "Flags getTotalRevenue — query function with side effects",
+    "matchLineRange": [24, 32],
+    "matchRecommendationContainsAny": ["query", "side effect", "command", "read", "write", "mutate", "separate", "CQS", "get", "find", "pure", "modifier"],
+    "required": false
+  },
+  {
+    "description": "Flags findOverdueOrders — query function with side effects",
+    "matchLineRange": [34, 46],
+    "matchRecommendationContainsAny": ["query", "side effect", "command", "read", "write", "mutate", "separate", "CQS", "get", "find", "pure", "modifier"],
+    "required": false
   }
 ]

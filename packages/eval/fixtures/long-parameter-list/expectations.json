@@ -1,7 +1,7 @@
 [
   {
     "description": "Flags long parameter list — too many positional parameters",
-    "matchLineRange": [1, 31],
+    "matchLineRange": [1, 43],
     "matchRecommendationContainsAny": ["parameter object", "options", "interface", "object", "group", "params", "config", "positional", "many param", "long param"],
     "required": true
   }

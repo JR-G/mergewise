@@ -1,15 +1,22 @@
 [
   {
     "description": "Should not flag test factory functions with SRP or extract suggestions",
-    "matchLineRange": [18, 47],
+    "matchLineRange": [1, 47],
     "matchRecommendationContainsAny": ["extract", "SRP", "responsibility", "split", "separate"],
     "required": false,
     "forbidden": true
   },
   {
     "description": "Should not flag mutable nextId counter in test helpers as a mutation anti-pattern",
-    "matchLineRange": [16, 16],
-    "matchRecommendationContainsAny": ["mutab", "mutation", "side effect", "pure"],
+    "matchLineRange": [1, 47],
+    "matchRecommendationContainsAny": ["mutab", "mutation", "side effect", "pure", "accumulat", "reduce", "declarative", "functional"],
+    "required": false,
+    "forbidden": true
+  },
+  {
+    "description": "Should not flag test helper code for any refactoring",
+    "matchLineRange": [1, 47],
+    "matchRecommendationContainsAny": ["duplicate", "DRY", "abstract", "generic", "consolidat"],
     "required": false,
     "forbidden": true
   }

@@ -19,5 +19,19 @@
     "matchRecommendationContainsAny": ["type safety", "cast", "assertion"],
     "required": false,
     "forbidden": true
+  },
+  {
+    "description": "Should not flag useMemo with filter+sort as a performance issue when deps are correct",
+    "matchLineRange": [27, 31],
+    "matchRecommendationContainsAny": ["every render", "performance", "re-render", "expensive"],
+    "required": false,
+    "forbidden": true
+  },
+  {
+    "description": "Should not flag handleRoleChange mixing onRoleChange with setIsEditing as SRP violation",
+    "matchLineRange": [32, 38],
+    "matchRecommendationContainsAny": ["mixes", "responsibilit", "separate concern"],
+    "required": false,
+    "forbidden": true
   }
 ]
