@@ -109,6 +109,15 @@ export interface ReviewToolkit {
 }
 
 /**
+ * Per-file token usage from the review stage.
+ */
+export interface FileTokenUsage {
+  readonly filePath: FilePath;
+  readonly promptTokens: number;
+  readonly completionTokens: number;
+}
+
+/**
  * Aggregated token usage across all pipeline stages.
  */
 export interface TokenUsageSummary {
@@ -116,6 +125,7 @@ export interface TokenUsageSummary {
   readonly reviewUsage: CompletionUsage | undefined;
   readonly criticUsage: CompletionUsage | undefined;
   readonly totalUsage: CompletionUsage | undefined;
+  readonly perFileUsage: readonly FileTokenUsage[];
 }
 
 /**
