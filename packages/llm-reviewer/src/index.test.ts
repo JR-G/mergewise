@@ -326,12 +326,14 @@ describe("createLlmReviewerRule", () => {
         };
         await rule.analyse(context, makeMockCodebaseContext());
 
-        expect(completions.some((completion) => completion.filePath === "src/a.ts")).toBe(true);
-        expect(completions.some((completion) => completion.filePath === "src/b.ts")).toBe(true);
+        const reportedPaths = new Set(completions.map((completion) => completion.filePath));
+        expect(reportedPaths).toEqual(new Set(["src/a.ts", "src/b.ts"]));
         const aCompletion = completions.find((completion) => completion.filePath === "src/a.ts");
         const bCompletion = completions.find((completion) => completion.filePath === "src/b.ts");
         expect(aCompletion!.promptTokens).toBeGreaterThan(0);
+        expect(aCompletion!.completionTokens).toBeGreaterThan(0);
         expect(bCompletion!.promptTokens).toBeGreaterThan(0);
+        expect(bCompletion!.completionTokens).toBeGreaterThan(0);
       },
     );
   });
