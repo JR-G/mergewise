@@ -121,3 +121,14 @@ export {
   type WorkerProcessingDependencies,
   processAnalyzePullRequestJob,
 } from "./process-job";
+
+export {
+  type FeedbackJobDependencies,
+  processCollectFeedbackJob,
+} from "./process-feedback-job";
+
+export {
+  type IndexJobDependencies,
+  type IndexJobSummary,
+  processIndexRepoJob,
+} from "./process-index-job";

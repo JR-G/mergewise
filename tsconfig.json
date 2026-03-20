@@ -26,7 +26,8 @@
       "@mergewise/llm-reviewer": ["packages/llm-reviewer/src/index.ts"],
       "@mergewise/eval": ["packages/eval/src/main.ts"],
       "@mergewise/feedback-store": ["packages/feedback-store/src/index.ts"],
-      "@mergewise/debt-scanner": ["packages/debt-scanner/src/index.ts"]
+      "@mergewise/debt-scanner": ["packages/debt-scanner/src/index.ts"],
+      "@mergewise/test-harness": ["packages/test-harness/src/index.ts"]
     },
 
     // Best practices
