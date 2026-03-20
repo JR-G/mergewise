@@ -1,7 +1,7 @@
 [
   {
     "description": "Flags ISP violation — DocumentService is a fat interface",
-    "matchLineRange": [1, 16],
+    "matchLineRange": [1, 48],
     "matchRecommendationContainsAny": ["Interface Segregation", "ISP", "split", "separate", "fat", "role interface", "segregat", "focused", "narrower", "smaller"],
     "required": true
   },
