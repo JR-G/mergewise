@@ -1,16 +1,30 @@
 [
   {
-    "description": "Should not suggest reduce over a clear for-of loop with multiple accumulators",
+    "description": "Should not suggest reduce or functional alternatives for multi-accumulator loop",
     "matchLineRange": [15, 32],
-    "matchRecommendationContainsAny": ["reduce", "functional", "declarative", "map", "flatMap"],
+    "matchRecommendationContainsAny": [
+      "reduce", "functional", "declarative", "map", "flatMap",
+      "accumulat", "Object.fromEntries", "destruct", "for-of"
+    ],
     "required": false,
     "forbidden": true
   },
   {
     "description": "Should not flag let accumulators in a simple aggregation loop",
-    "matchLineRange": [16, 18],
-    "matchCategory": "clean",
-    "matchRecommendationContainsAny": ["mutable", "const", "immutable"],
+    "matchLineRange": [15, 32],
+    "matchRecommendationContainsAny": [
+      "mutable", "const", "immutable", "let", "reassign", "mutab"
+    ],
+    "required": false,
+    "forbidden": true
+  },
+  {
+    "description": "Should not suggest extracting or restructuring this well-structured function",
+    "matchLineRange": [15, 32],
+    "matchRecommendationContainsAny": [
+      "extract", "split", "separate", "refactor", "simplif", "responsibilit",
+      "SRP", "helper", "restructur", "pattern"
+    ],
     "required": false,
     "forbidden": true
   }
