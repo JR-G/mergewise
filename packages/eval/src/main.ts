@@ -11,6 +11,7 @@ const { values } = parseArgs({
     fixture: { type: "string" },
     variant: { type: "string" },
     runs: { type: "string" },
+    model: { type: "string" },
   },
   strict: true,
 });
@@ -30,30 +31,52 @@ if (!apiKey) {
 const rawBaseUrl = process.env["LLM_EVAL_BASE_URL"]?.trim();
 const baseUrl = rawBaseUrl !== undefined && rawBaseUrl.length > 0 ? rawBaseUrl : undefined;
 const rawModel = process.env["LLM_EVAL_MODEL"]?.trim();
-const model = rawModel !== undefined && rawModel.length > 0 ? rawModel : "gpt-4.1";
+const envModel = rawModel !== undefined && rawModel.length > 0 ? rawModel : "gpt-4.1";
 
-const baseClientConfig: ReviewClientConfig = {
-  apiKey,
-  baseUrl,
-  model,
-};
+const MAX_MODELS = 5;
 
-const BUILT_IN_VARIANTS: readonly EvalVariant[] = [
-  {
-    label: "default",
-    clientConfig: baseClientConfig,
-  },
-  {
-    label: "no-catalogue",
-    clientConfig: baseClientConfig,
-    antiPatterns: [],
-  },
-];
+const modelFlagProvided = values.model !== undefined;
+const modelArg = values.model?.trim();
+
+if (modelFlagProvided && (!modelArg || modelArg.length === 0)) {
+  console.error("--model must specify at least one model name (empty value provided)");
+  process.exit(1);
+}
+
+const models = modelArg
+  ? [...new Set(modelArg.split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0))]
+  : [envModel];
+
+if (models.length === 0) {
+  console.error("--model must specify at least one model name");
+  process.exit(1);
+}
+
+if (models.length > MAX_MODELS) {
+  console.error(`--model accepts at most ${MAX_MODELS} models, got ${models.length}`);
+  process.exit(1);
+}
+
+function buildVariantsForModel(
+  key: string,
+  modelName: string,
+  includeModelPrefix: boolean,
+): EvalVariant[] {
+  const clientConfig: ReviewClientConfig = { apiKey: key, baseUrl, model: modelName };
+  const prefix = includeModelPrefix ? `${modelName}/` : "";
+  return [
+    { label: `${prefix}default`, clientConfig },
+    { label: `${prefix}no-catalogue`, clientConfig, antiPatterns: [] },
+  ];
+}
+
+const includeModelPrefix = models.length > 1;
+const builtVariants = models.flatMap((modelName) => buildVariantsForModel(apiKey, modelName, includeModelPrefix));
 
 const variantFilter = values.variant;
 const variants = variantFilter
-  ? BUILT_IN_VARIANTS.filter((variant) => variant.label === variantFilter)
-  : BUILT_IN_VARIANTS;
+  ? builtVariants.filter((variant) => variant.label === variantFilter || variant.label.endsWith(`/${variantFilter}`))
+  : builtVariants;
 
 if (variants.length === 0) {
   console.error(`Unknown variant: ${variantFilter}`);
