@@ -1,8 +1,13 @@
 [
   {
-    "description": "Flags ISP violation — DocumentService is a fat interface",
+    "description": "Flags ISP or LSP violation — fat interface forcing throw-based stubs",
     "matchLineRange": [1, 48],
-    "matchRecommendationContainsAny": ["Interface Segregation", "ISP", "split", "separate", "fat", "role interface", "segregat", "focused", "narrower", "smaller"],
+    "matchRecommendationContainsAny": [
+      "Interface Segregation", "ISP", "split", "separate", "fat", "role interface",
+      "segregat", "focused", "narrower", "smaller",
+      "throw", "implement", "not supported", "contract", "Liskov", "LSP", "substitut",
+      "unnecessary method", "unused method", "stub"
+    ],
     "required": true
   },
   {

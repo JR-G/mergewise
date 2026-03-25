@@ -16,5 +16,23 @@
     "matchLineRange": [34, 46],
     "matchRecommendationContainsAny": ["query", "side effect", "command", "read", "write", "mutate", "separate", "CQS", "get", "find", "pure", "modifier"],
     "required": false
+  },
+  {
+    "description": "Flags parameter mutation — modifying order properties in place",
+    "matchLineRange": [12, 46],
+    "matchRecommendationContainsAny": ["mutat", "immutab", "parameter", "argument", "spread", "copy", "reassign", "property"],
+    "required": false
+  },
+  {
+    "description": "Flags magic number 86400000 for days-to-milliseconds conversion",
+    "matchLineRange": [34, 46],
+    "matchRecommendationContainsAny": ["magic", "constant", "named", "literal", "86400", "millisecond", "hardcoded", "hard-coded"],
+    "required": false
+  },
+  {
+    "description": "Flags mutable accumulator in getTotalRevenue",
+    "matchLineRange": [24, 32],
+    "matchRecommendationContainsAny": ["reduce", "accumulat", "declarative", "functional", "let"],
+    "required": false
   }
 ]

@@ -465,6 +465,7 @@ ${antiPatternSection}## Anti-instructions — do NOT do any of these
 - Do NOT cite SRP as the sole justification for a finding. SRP applies to modules, classes, and large functions/components (50+ lines mixing unrelated concerns) — not to orchestrators calling sequential steps or small helpers performing a few related operations. When you do cite SRP, always name the specific concerns being mixed.
 - Do NOT produce generic "split this function" advice. Every structural suggestion must name the specific responsibilities being mixed and propose concrete extraction boundaries.
 - Do NOT suggest replacing a for loop with while, recursion, or a different loop construct unless there is a concrete bug, off-by-one, or measurable readability improvement. Loop style is not a finding.
+- Do NOT suggest replacing a for loop that uses two or more accumulator variables with \`reduce\`, \`Object.fromEntries\`, or functional alternatives. Multi-accumulator loops are intentionally imperative — a \`reduce\` with a tuple or object accumulator is harder to read, not easier.
 - On refactoring PRs (large diffs that primarily move, rename, or reorganise code between files), do NOT suggest further extraction or restructuring. The PR is already doing that — review the result, not the direction.
 - Do NOT produce findings that say the code is correct, acceptable, well-structured, or needs no change. If you have nothing to flag, return \`{"findings": []}\`. A finding must identify something that should change — never use the findings array to praise code.
 

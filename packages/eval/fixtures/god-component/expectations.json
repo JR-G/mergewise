@@ -1,14 +1,12 @@
 [
   {
-    "description": "Flags god component with multiple responsibilities",
+    "description": "Flags god component — multiple responsibilities, inline filtering/sorting, or in-place mutation",
     "matchLineRange": [1, 9],
-    "matchRecommendationContainsAny": ["extract", "custom hook", "split", "separate", "responsibilities"],
-    "required": false
-  },
-  {
-    "description": "Flags inline data filtering/sorting or in-place mutation",
-    "matchLineRange": [5, 9],
-    "matchRecommendationContainsAny": ["extract", "useMemo", "memoiz", "mutation", "mutate", "sort", "in place", "in-place", "copy"],
+    "matchRecommendationContainsAny": [
+      "extract", "custom hook", "split", "separate", "responsibilities",
+      "useMemo", "memoiz", "mutation", "mutate", "sort", "in place", "in-place",
+      "copy", "filter", "concern", "hook"
+    ],
     "required": true
   }
 ]

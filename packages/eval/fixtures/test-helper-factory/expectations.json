@@ -1,22 +1,42 @@
 [
   {
-    "description": "Should not flag test factory functions with SRP or extract suggestions",
+    "description": "Should not flag test factory functions with SRP, extract, or structural suggestions",
     "matchLineRange": [1, 47],
-    "matchRecommendationContainsAny": ["extract", "SRP", "responsibility", "split", "separate"],
+    "matchRecommendationContainsAny": [
+      "extract", "SRP", "responsibility", "split", "separate",
+      "refactor", "restructur", "simplif", "combin"
+    ],
     "required": false,
     "forbidden": true
   },
   {
-    "description": "Should not flag mutable nextId counter in test helpers as a mutation anti-pattern",
+    "description": "Should not flag mutable nextId counter or state in test helpers",
     "matchLineRange": [1, 47],
-    "matchRecommendationContainsAny": ["mutab", "mutation", "side effect", "pure", "accumulat", "reduce", "declarative", "functional"],
+    "matchRecommendationContainsAny": [
+      "mutab", "mutation", "side effect", "pure", "accumulat", "reduce",
+      "declarative", "functional", "immutab", "const", "reassign", "global"
+    ],
     "required": false,
     "forbidden": true
   },
   {
-    "description": "Should not flag test helper code for any refactoring",
+    "description": "Should not flag test helper code for DRY, naming, or pattern suggestions",
     "matchLineRange": [1, 47],
-    "matchRecommendationContainsAny": ["duplicate", "DRY", "abstract", "generic", "consolidat"],
+    "matchRecommendationContainsAny": [
+      "duplicate", "DRY", "abstract", "generic", "consolidat",
+      "class", "builder", "pattern", "rename", "naming",
+      "encapsulat", "magic", "constant", "hardcoded", "inject", "depend"
+    ],
+    "required": false,
+    "forbidden": true
+  },
+  {
+    "description": "Should not flag test helpers for type safety or code quality",
+    "matchLineRange": [1, 47],
+    "matchRecommendationContainsAny": [
+      "type guard", "assert", "narrow", "unsafe", "cast",
+      "inline", "unnecessary", "overhead", "complex"
+    ],
     "required": false,
     "forbidden": true
   }
