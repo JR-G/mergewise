@@ -33,13 +33,20 @@ const baseUrl = rawBaseUrl !== undefined && rawBaseUrl.length > 0 ? rawBaseUrl :
 const rawModel = process.env["LLM_EVAL_MODEL"]?.trim();
 const envModel = rawModel !== undefined && rawModel.length > 0 ? rawModel : "gpt-4.1";
 
+const MAX_MODELS = 5;
+
 const modelArg = values.model?.trim();
 const models = modelArg
-  ? modelArg.split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0)
+  ? [...new Set(modelArg.split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0))]
   : [envModel];
 
 if (models.length === 0) {
   console.error("--model must specify at least one model name");
+  process.exit(1);
+}
+
+if (models.length > MAX_MODELS) {
+  console.error(`--model accepts at most ${MAX_MODELS} models, got ${models.length}`);
   process.exit(1);
 }
 
