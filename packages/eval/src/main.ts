@@ -35,7 +35,14 @@ const envModel = rawModel !== undefined && rawModel.length > 0 ? rawModel : "gpt
 
 const MAX_MODELS = 5;
 
+const modelFlagProvided = values.model !== undefined;
 const modelArg = values.model?.trim();
+
+if (modelFlagProvided && (!modelArg || modelArg.length === 0)) {
+  console.error("--model must specify at least one model name (empty value provided)");
+  process.exit(1);
+}
+
 const models = modelArg
   ? [...new Set(modelArg.split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0))]
   : [envModel];
