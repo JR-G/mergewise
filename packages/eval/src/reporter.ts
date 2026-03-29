@@ -15,6 +15,7 @@ const ANSI_OVERHEAD = 9;
 const CYAN = "\x1b[36m";
 const BOLD = "\x1b[1m";
 const MAX_BENCHMARK_SUMMARY_CHARS = 200;
+const MAX_BENCHMARK_DIMENSIONS = 10;
 
 function colourScore(value: number): string {
   if (value >= 0.8) return `${GREEN}${value.toFixed(2)}${RESET}`;
@@ -45,7 +46,11 @@ function printRunSummary(results: readonly EvalResult[]): void {
     `Production benchmark quality: ${meanQuality === null ? `${DIM}n/a${RESET}` : colourScore(meanQuality)}`,
   );
   console.log(
-    `Benchmark scoring mode: ${judgedRuns.length === qualityRuns.length && qualityRuns.length > 0 ? `${CYAN}judge-backed${RESET}` : `${YELLOW}heuristic-heavy${RESET}`}`,
+    `Benchmark scoring mode: ${qualityRuns.length === 0
+      ? `${DIM}n/a${RESET}`
+      : judgedRuns.length === qualityRuns.length
+        ? `${CYAN}judge-backed${RESET}`
+        : `${YELLOW}heuristic-heavy${RESET}`}`,
   );
   console.log(
     `Regression guardrails: recall ${colourScore(regressionMeanRecall)}, precision ${colourScore(regressionMeanPrecision)}`,
@@ -143,15 +148,20 @@ export function printReport(results: readonly EvalResult[]): void {
       }
     }
 
-    if (result.reviewQuality) {
-        console.log(
-        `\n${CYAN}Benchmark diagnosis${RESET} [${result.fixtureId}/${result.variant}]: ${truncateForConsole(result.reviewQuality.summary, MAX_BENCHMARK_SUMMARY_CHARS)}`,
+    if (!result.reviewQuality) continue;
+
+    console.log(
+      `\n${CYAN}Benchmark diagnosis${RESET} [${result.fixtureId}/${result.variant}]: ${truncateForConsole(result.reviewQuality.summary, MAX_BENCHMARK_SUMMARY_CHARS)}`,
+    );
+    const visibleDimensions = result.reviewQuality.dimensions.slice(0, MAX_BENCHMARK_DIMENSIONS);
+    for (const dimension of visibleDimensions) {
+      console.log(
+        `  ${dimension.name}: ${colourScore(dimension.score)} ${DIM}${dimension.rationale.slice(0, 120)}${RESET}`,
       );
-      for (const dimension of result.reviewQuality.dimensions) {
-        console.log(
-          `  ${dimension.name}: ${colourScore(dimension.score)} ${DIM}${dimension.rationale.slice(0, 120)}${RESET}`,
-        );
-      }
+    }
+    const suppressedDimensions = result.reviewQuality.dimensions.length - visibleDimensions.length;
+    if (suppressedDimensions > 0) {
+      console.log(`  ${DIM}and ${suppressedDimensions} more dimensions suppressed${RESET}`);
     }
   }
 
