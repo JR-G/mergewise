@@ -152,6 +152,65 @@ function defaultVerdicts(count: number): CriticVerdict[] {
   }));
 }
 
+function isDependencyInversionFinding(finding: Finding): boolean {
+  const combinedText = `${finding.evidence} ${finding.recommendation}`.toLowerCase();
+  return [
+    "dependency injection",
+    "hardcoded depend",
+    "concrete depend",
+    "constructs ",
+    "instantiat",
+    "prismaclient",
+    "s3client",
+    "nodemailer",
+    "inject ",
+    "abstraction",
+  ].some((needle) => combinedText.includes(needle));
+}
+
+function collapseDependencyInversionDuplicates(
+  findings: readonly Finding[],
+  filtered: readonly FilteredFinding[],
+): CriticResult {
+  const grouped = new Map<string, Finding[]>();
+  const passthrough: Finding[] = [];
+  const collapsedFiltered = [...filtered];
+
+  for (const finding of findings) {
+    if (!isDependencyInversionFinding(finding)) {
+      passthrough.push(finding);
+      continue;
+    }
+
+    const existing = grouped.get(finding.filePath) ?? [];
+    existing.push(finding);
+    grouped.set(finding.filePath, existing);
+  }
+
+  const collapsedFindings = [...passthrough];
+  for (const fileGroup of grouped.values()) {
+    const preferredFinding = [...fileGroup].sort((left, right) => {
+      if (right.recommendation.length !== left.recommendation.length) {
+        return right.recommendation.length - left.recommendation.length;
+      }
+      return left.line - right.line;
+    })[0];
+
+    if (!preferredFinding) continue;
+    collapsedFindings.push(preferredFinding);
+
+    for (const finding of fileGroup) {
+      if (finding.findingId === preferredFinding.findingId) continue;
+      collapsedFiltered.push({
+        finding,
+        reason: "Merged into a single dependency-inversion finding for the file",
+      });
+    }
+  }
+
+  return { findings: collapsedFindings, filtered: collapsedFiltered };
+}
+
 /**
  * Splits findings into kept and filtered based on critic verdicts.
  */
@@ -176,7 +235,7 @@ export function splitByVerdicts(
     filtered.push({ finding, reason: verdict.reason });
   }
 
-  return { findings: kept, filtered };
+  return collapseDependencyInversionDuplicates(kept, filtered);
 }
 
 /**

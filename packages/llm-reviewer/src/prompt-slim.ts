@@ -227,6 +227,19 @@ function buildSignalsSection(signals: StructuralSignals): string[] {
   return lines.length > 2 ? lines : [];
 }
 
+function buildTargetedReviewHints(fileDiff: FileDiff): string[] {
+  const diffText = fileDiff.hunks.flatMap((hunk) => hunk.lines).join("\n");
+  const lines: string[] = [];
+
+  if (/Provider\s+value=\{\{/.test(diffText) || /Provider\s+value=\{[^\n]*\{/.test(diffText)) {
+    lines.push(
+      "- Inline Context.Provider value detected. Check whether a new object or callback reference is recreated on every render and whether useMemo/useCallback would prevent avoidable consumer re-renders.",
+    );
+  }
+
+  return lines.length > 0 ? ["", "## Targeted review hints", ...lines] : [];
+}
+
 /**
  * Configuration for building a dynamic file review prompt.
  */
@@ -342,6 +355,7 @@ export function buildToolUseFilePrompt(input: ToolUsePromptInput): string {
   parts.push(...formatDiffSection(input.fileDiff.hunks));
 
   parts.push(...buildSignalsSection(input.signals));
+  parts.push(...buildTargetedReviewHints(input.fileDiff));
 
   parts.push("");
   parts.push(input.availablePatterns);

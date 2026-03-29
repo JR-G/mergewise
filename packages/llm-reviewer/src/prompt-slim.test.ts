@@ -169,6 +169,30 @@ describe("buildToolUseFilePrompt", () => {
     expect(result).toContain("god-function: God Functions");
   });
 
+  test("includes targeted hint for inline provider values", () => {
+    const providerDiff: FileDiff = {
+      filePath: toFilePath("src/AuthProvider.tsx"),
+      previousPath: null,
+      hunks: [
+        {
+          header: "@@ -1,3 +1,5 @@",
+          lines: [
+            "+return <AuthContext.Provider value={{ user, login }}>{children}</AuthContext.Provider>;",
+          ],
+        },
+      ],
+    };
+
+    const result = buildToolUseFilePrompt({
+      fileDiff: providerDiff,
+      signals: makeSignals({ hookCount: 2 }),
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("## Targeted review hints");
+    expect(result).toContain("Inline Context.Provider value detected");
+  });
+
   test("excludes full file content", () => {
     const result = buildToolUseFilePrompt({
       fileDiff: makeDiff(),
