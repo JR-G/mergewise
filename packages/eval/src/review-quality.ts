@@ -72,7 +72,7 @@ function calculateRestraint(
   }
 
   const falsePositiveCount = countMatches(findings, rubric.mustAvoid);
-  const countPenalty = (() => {
+  const countPenalty = (() : number => {
     if (!rubric.findingCountRange) {
       return 0;
     }
@@ -103,7 +103,7 @@ export function scoreReviewQualityHeuristics(
   const mustFindCoverage = rubric.mustFind.length === 0
     ? 1
     : countMatches(findings, rubric.mustFind) / rubric.mustFind.length;
-  const prioritisation = (() => {
+  const prioritisation = (() : number => {
     if (!rubric.prioritise || rubric.prioritise.length === 0) {
       return mustFindCoverage;
     }

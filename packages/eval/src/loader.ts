@@ -165,11 +165,10 @@ async function loadSourceFiles(
   }
 
   const sourceFiles = new Map<string, string>();
+  const singleSourceEntry = sourceEntries[0];
 
-  if (sourceEntries.length === 1) {
-    const sourceEntry = sourceEntries[0];
-    if (!sourceEntry) return sourceFiles;
-    sourceFiles.set(primaryPath, await Bun.file(join(fixtureDir, sourceEntry)).text());
+  if (sourceEntries.length === 1 && singleSourceEntry !== undefined) {
+    sourceFiles.set(primaryPath, await Bun.file(join(fixtureDir, singleSourceEntry)).text());
     return sourceFiles;
   }
 

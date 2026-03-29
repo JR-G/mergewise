@@ -30,8 +30,8 @@ function buildExecutionInput(fixture: EvalFixture): EvalExecutionInput {
   return {
     fixture,
     pullRequest,
-    codebaseContextReadFile: async (relativePath: string) =>
-      fixture.sourceFiles.get(relativePath) ?? null,
+    codebaseContextReadFile: (relativePath: string) =>
+      Promise.resolve(fixture.sourceFiles.get(relativePath) ?? null),
   };
 }
 

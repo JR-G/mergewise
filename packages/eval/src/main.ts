@@ -51,7 +51,7 @@ if (
   process.exit(1);
 }
 
-const executionMode = rawEngine as EvalExecutionMode | undefined;
+const executionMode: EvalExecutionMode | undefined = rawEngine;
 
 if (
   rawSuite !== undefined &&
