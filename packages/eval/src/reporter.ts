@@ -28,6 +28,7 @@ function formatExecutionMode(result: EvalResult): string {
 function printRunSummary(results: readonly EvalResult[]): void {
   const pipelineRuns = results.filter((result) => result.executionMode === "pipeline");
   const qualityRuns = pipelineRuns.filter((result) => result.reviewQuality !== null);
+  const judgedRuns = qualityRuns.filter((result) => result.reviewQuality?.scoringMode === "judge");
   const meanQuality = qualityRuns.length === 0
     ? null
     : qualityRuns.reduce((sum, result) => sum + (result.reviewQuality?.overall ?? 0), 0) / qualityRuns.length;
@@ -41,6 +42,9 @@ function printRunSummary(results: readonly EvalResult[]): void {
   printSectionTitle("Run Summary");
   console.log(
     `Production benchmark quality: ${meanQuality === null ? `${DIM}n/a${RESET}` : colourScore(meanQuality)}`,
+  );
+  console.log(
+    `Benchmark scoring mode: ${judgedRuns.length === qualityRuns.length && qualityRuns.length > 0 ? `${CYAN}judge-backed${RESET}` : `${YELLOW}heuristic-heavy${RESET}`}`,
   );
   console.log(
     `Regression guardrails: recall ${colourScore(regressionMeanRecall)}, precision ${colourScore(regressionMeanPrecision)}`,
@@ -91,14 +95,15 @@ export function printReport(results: readonly EvalResult[]): void {
   const qualityResults = orderedResults.filter((result) => result.reviewQuality !== null);
   if (qualityResults.length > 0) {
     printSectionTitle("Production Quality");
-    const qualityHeader = `${"Fixture".padEnd(25)} ${"Variant".padEnd(18)} ${"Overall".padEnd(14)} ${"Coverage".padEnd(14)} ${"Restraint".padEnd(14)} ${"Priority".padEnd(14)}`;
+    const qualityHeader = `${"Fixture".padEnd(25)} ${"Variant".padEnd(18)} ${"Mode".padEnd(12)} ${"Overall".padEnd(14)} ${"Coverage".padEnd(14)} ${"Restraint".padEnd(14)} ${"Priority".padEnd(14)}`;
     console.log(qualityHeader);
-    console.log("─".repeat(104));
+    console.log("─".repeat(118));
 
     for (const result of qualityResults) {
       const quality = result.reviewQuality;
       if (!quality) continue;
-      const line = `${result.fixtureId.padEnd(25)} ${result.variant.padEnd(18)} ${colourScore(quality.overall).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(quality.heuristics.mustFindCoverage).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(quality.heuristics.restraint).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(quality.heuristics.prioritisation).padEnd(14 + ANSI_OVERHEAD)}`;
+      const scoringMode = quality.scoringMode === "judge" ? `${CYAN}judge${RESET}` : `${DIM}heuristic${RESET}`;
+      const line = `${result.fixtureId.padEnd(25)} ${result.variant.padEnd(18)} ${scoringMode.padEnd(12 + ANSI_OVERHEAD)} ${colourScore(quality.overall).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(quality.heuristics.mustFindCoverage).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(quality.heuristics.restraint).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(quality.heuristics.prioritisation).padEnd(14 + ANSI_OVERHEAD)}`;
       console.log(line);
     }
   }

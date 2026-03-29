@@ -143,6 +143,10 @@ async function selectFixtureNames(): Promise<string[]> {
 }
 
 const fixtureNames = await selectFixtureNames();
+if (fixtureNames.length === 0) {
+  console.error(`No fixtures matched suite "${suite}"`);
+  process.exit(1);
+}
 
 const allResults: EvalResult[][] = [];
 const runOptions: EvalRunOptions = judgeModel
@@ -155,8 +159,14 @@ const runOptions: EvalRunOptions = judgeModel
   };
 
 console.log(
-  `Eval configuration: suite=${suite}, engine=${executionMode ?? "pipeline"}, models=${models.join(", ")}${judgeModel ? `, judge=${judgeModel}` : ""}`,
+  `Eval configuration: suite=${suite}, fixtures=${fixtureNames.length}, engine=${executionMode ?? "pipeline"}, models=${models.join(", ")}${judgeModel ? `, judge=${judgeModel}` : ""}`,
 );
+
+if (suite === "benchmark" && !judgeModel) {
+  console.log(
+    "Benchmark note: running without `--judge-model` produces heuristic-only quality scores.",
+  );
+}
 
 for (let run = 0; run < runCount; run++) {
   if (runCount > 1) {

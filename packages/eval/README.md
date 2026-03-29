@@ -99,6 +99,14 @@ LLM_EVAL_JUDGE_MODEL=gpt-4.1-mini \
 bun run eval --engine pipeline
 ```
 
+Recommended benchmark run:
+
+```bash
+LLM_EVAL_API_KEY=... \
+LLM_EVAL_JUDGE_MODEL=gpt-4.1-mini \
+bun run eval --suite benchmark
+```
+
 Legacy path remains available only as a compatibility baseline:
 
 ```bash
@@ -132,6 +140,7 @@ Good production-quality fixtures:
 - include code that is almost good, not cartoonishly bad
 - force prioritisation between multiple plausible comments
 - include silence cases
+- reward one dominant comment over multiple weaker comments when appropriate
 - reward code-specific refactoring guidance
 - penalise generic "clean code" preaching
 

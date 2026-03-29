@@ -161,6 +161,7 @@ export interface ReviewQualityScore {
   readonly heuristics: ReviewQualityHeuristics;
   readonly dimensions: readonly ReviewQualityDimensionScore[];
   readonly summary: string;
+  readonly scoringMode: "heuristic" | "judge";
 }
 
 /**

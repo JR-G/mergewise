@@ -1,0 +1,31 @@
+{
+  "executionMode": "pipeline",
+  "prTitle": "Thread theme through navigation tree",
+  "prDescription": "Passes a theme object through multiple component layers down to a leaf renderer.",
+  "reviewQuality": {
+    "summary": "The main concern is prop drilling through layers that do not use the data.",
+    "reviewGoal": "Catch the prop drilling issue reliably. Secondary commentary about class components is acceptable but should not displace the main architecture concern.",
+    "mustFind": [
+      {
+        "description": "Flags prop drilling through Layout and Sidebar",
+        "matchLineRange": [1, 19],
+        "matchRecommendationContainsAny": ["context", "drilling", "useContext", "passing through", "threading"],
+        "required": true
+      }
+    ],
+    "mustAvoid": [],
+    "findingCountRange": [1, 2],
+    "prioritise": [
+      {
+        "description": "The top comment should be the prop-drilling issue",
+        "matchLineRange": [1, 19],
+        "matchRecommendationContainsAny": ["context", "drilling", "useContext", "threading"],
+        "required": true
+      }
+    ],
+    "dimensions": [
+      { "name": "prioritisation", "description": "Did the review foreground the architecture issue rather than stylistic React advice?" },
+      { "name": "correctness", "description": "Was the prop-drilling critique grounded in the actual component tree?" }
+    ]
+  }
+}

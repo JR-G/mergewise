@@ -170,8 +170,10 @@ function buildJudgePrompt(
 
 function normaliseJudgeResponse(
   raw: string,
+  fixture: EvalFixture,
   heuristics: ReviewQualityHeuristics,
 ): ReviewQualityScore {
+  const dimensionDefinitions = fixture.config.reviewQuality?.dimensions ?? DEFAULT_DIMENSIONS;
   let parsed: RawJudgeResponse;
   try {
     parsed = JSON.parse(raw) as RawJudgeResponse;
@@ -181,6 +183,7 @@ function normaliseJudgeResponse(
       heuristics,
       dimensions: [],
       summary: "Judge response was not valid JSON.",
+      scoringMode: "heuristic",
     };
   }
 
@@ -206,15 +209,26 @@ function normaliseJudgeResponse(
     : [];
 
   const heuristicAverage = (heuristics.mustFindCoverage + heuristics.restraint + heuristics.prioritisation) / 3;
-  const judgeAverage = dimensions.length === 0
+  const dimensionWeights = new Map(
+    dimensionDefinitions.map((dimension) => [dimension.name, dimension.weight ?? 1]),
+  );
+  const totalJudgeWeight = dimensions.reduce(
+    (sum, dimension) => sum + (dimensionWeights.get(dimension.name) ?? 1),
+    0,
+  );
+  const judgeAverage = dimensions.length === 0 || totalJudgeWeight === 0
     ? heuristicAverage
-    : dimensions.reduce((sum, dimension) => sum + dimension.score, 0) / dimensions.length;
+    : dimensions.reduce(
+      (sum, dimension) => sum + (dimension.score * (dimensionWeights.get(dimension.name) ?? 1)),
+      0,
+    ) / totalJudgeWeight;
 
   return {
     overall: Number((((judgeAverage * 0.7) + (heuristicAverage * 0.3))).toFixed(2)),
     heuristics,
     dimensions,
     summary: typeof parsed.summary === "string" ? parsed.summary : "No judge summary provided.",
+    scoringMode: dimensions.length === 0 ? "heuristic" : "judge",
   };
 }
 
@@ -234,6 +248,7 @@ export async function scoreReviewQuality(
       heuristics,
       dimensions: [],
       summary: "No judge model configured; overall score is heuristic-only.",
+      scoringMode: "heuristic",
     };
   }
 
@@ -245,5 +260,5 @@ export async function scoreReviewQuality(
     0.1,
   );
 
-  return normaliseJudgeResponse(content, heuristics);
+  return normaliseJudgeResponse(content, fixture, heuristics);
 }
