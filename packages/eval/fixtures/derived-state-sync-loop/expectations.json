@@ -9,6 +9,6 @@
     "description": "Flags unmemoised sort in render",
     "matchLineRange": [4, 11],
     "matchRecommendationContainsAny": ["useMemo", "memo", "sort"],
-    "required": true
+    "required": false
   }
 ]

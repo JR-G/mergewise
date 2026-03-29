@@ -10,5 +10,11 @@
     "matchLineRange": [1, 38],
     "matchRecommendationContainsAny": ["SRP", "Single Responsibility", "responsibilit", "extract", "separate", "concern"],
     "required": false
+  },
+  {
+    "description": "Allows a supporting constructor-level dependency comment when the main issue is already consolidated",
+    "matchLineRange": [15, 31],
+    "matchRecommendationContainsAny": ["inject", "abstraction", "hardcoded", "concrete", "coupling", "dependency"],
+    "required": false
   }
 ]

@@ -38,10 +38,14 @@ When a component has 4+ useState calls managing related state, useReducer provid
 5. Props drilled through 3+ levels
 When a prop passes through intermediate components that do not use it, it couples those components to the data shape. Use context or composition (children) to skip intermediate layers.
 
+6. Unstable context provider values
+Passing an inline object literal as a Context.Provider value creates a new reference on every render, which forces every consumer to re-render even when the underlying values are unchanged. If the value object includes callbacks created inline, stabilise them with useCallback and memoise the provider value with useMemo.
+
 When NOT to flag:
 - A single useState for a simple toggle or input value
 - useEffect for genuine side effects (subscriptions, event listeners, data fetching with cleanup)
-- Custom hooks that encapsulate a single useState + useEffect pair — these ARE the extraction`,
+- Custom hooks that encapsulate a single useState + useEffect pair — these ARE the extraction
+- Converting a simple class component to a function component when the real issue is prop drilling or provider stability elsewhere in the diff`,
   examples: [
     {
       label: "Derived state via useState + useEffect",
@@ -80,6 +84,32 @@ useEffect(() => {
 }`,
       explanation:
         "The useEffect version entangles render lifecycle with user action. The direct handler is simpler to trace and does not risk re-firing on unrelated re-renders.",
+    },
+    {
+      label: "Unstable provider value",
+      scenario:
+        "A context provider recreates its value object on every render, causing all consumers to re-render even when only the provider itself changed.",
+      bad: `function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const login = (nextUser) => setUser(nextUser);
+  return (
+    <AuthContext.Provider value={{ user, login }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}`,
+      good: `function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const login = useCallback((nextUser) => setUser(nextUser), []);
+  const value = useMemo(() => ({ user, login }), [user, login]);
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+}`,
+      explanation:
+        "The inline object forces every consumer to re-render on each provider render because the reference changes every time. Stabilising the callback and memoising the value preserves consumer bailout opportunities.",
     },
   ],
 };

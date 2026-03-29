@@ -144,4 +144,33 @@ describe("splitByVerdicts", () => {
     expect(result.findings.length).toBe(3);
     expect(result.filtered.length).toBe(0);
   });
+
+  test("collapses repeated dependency-inversion comments into one finding", () => {
+    const dependencyFindings = [
+      makeFinding({
+        findingId: "dep-1",
+        line: toLineNumber(15),
+        evidence: "const prisma = new PrismaClient();",
+        recommendation: "Directly instantiating PrismaClient hardcodes a concrete dependency. Inject the dependency instead.",
+      }),
+      makeFinding({
+        findingId: "dep-2",
+        line: toLineNumber(24),
+        evidence: "const s3 = new S3Client({ region: \"eu-west-1\" });",
+        recommendation: "Directly instantiating S3Client hardcodes a concrete dependency. Inject the dependency instead.",
+      }),
+      makeFinding({
+        findingId: "dep-3",
+        line: toLineNumber(30),
+        evidence: "const transport = nodemailer.createTransport(...);",
+        recommendation: "This function constructs several concrete infrastructure clients inline. Introduce one abstraction boundary and inject the concrete dependencies instead.",
+      }),
+    ];
+
+    const result = splitByVerdicts(dependencyFindings, []);
+    expect(result.findings.length).toBe(1);
+    expect(result.findings[0]!.findingId).toBe("dep-3");
+    expect(result.filtered.length).toBe(2);
+    expect(result.filtered[0]!.reason).toContain("single dependency-inversion finding");
+  });
 });

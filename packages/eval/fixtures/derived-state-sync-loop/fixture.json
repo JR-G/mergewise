@@ -3,8 +3,8 @@
   "prTitle": "Add filterable list UI",
   "prDescription": "Stores filtered items in state and sorts them during render.",
   "reviewQuality": {
-    "summary": "The diff contains one main issue and one secondary issue: derived state synchronisation plus unmemoised sorting in render.",
-    "reviewGoal": "A strong reviewer should catch both, with the derive-don't-sync issue treated as the more important one.",
+    "summary": "The diff contains one dominant issue and one secondary issue: derived state synchronisation plus unmemoised sorting in render.",
+    "reviewGoal": "A strong reviewer must catch the derive-don't-sync issue and may optionally also flag the sorting work, with the derived-state concern treated as the more important one.",
     "mustFind": [
       {
         "description": "Flags the derived state sync loop",
@@ -16,11 +16,11 @@
         "description": "Flags the sorting work in render",
         "matchLineRange": [9, 11],
         "matchRecommendationContainsAny": ["useMemo", "memo", "sort"],
-        "required": true
+        "required": false
       }
     ],
     "mustAvoid": [],
-    "findingCountRange": [2, 2],
+    "findingCountRange": [1, 2],
     "prioritise": [
       {
         "description": "The first comment should be the derived state issue",

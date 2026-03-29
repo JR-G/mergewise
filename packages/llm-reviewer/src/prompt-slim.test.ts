@@ -67,6 +67,17 @@ describe("buildSlimSystemPrompt", () => {
     expect(prompt).toContain("Do NOT suggest adding null checks");
     expect(prompt).toContain("Do NOT act as a linter, bug finder, or security scanner");
     expect(prompt).toContain("Do NOT suggest error handling additions unless");
+    expect(prompt).toContain("Do NOT suggest converting a class component to a function component");
+    expect(prompt).toContain("Do NOT suggest restructuring route tables");
+  });
+
+  test("prioritises provider stability and prop drilling over weaker React style comments", () => {
+    expect(prompt).toContain("unstable context provider values as a first-class issue");
+    expect(prompt).toContain("When a diff contains prop drilling and a smaller React style issue");
+    expect(prompt).toContain("same prop is forwarded unchanged through 3+ component signatures");
+    expect(prompt).toContain("Boolean flag parameters that switch between two behaviours");
+    expect(prompt).toContain("memoised filtered/sorted list for display");
+    expect(prompt).toContain("Do NOT call it prop drilling when a parent passes data or callbacks directly into the one child");
   });
 
   test("includes agent-specific detection criteria when agentFriendliness is true", () => {
@@ -157,6 +168,135 @@ describe("buildToolUseFilePrompt", () => {
     });
     expect(result).toContain("srp: SRP Violations");
     expect(result).toContain("god-function: God Functions");
+  });
+
+  test("includes targeted hint for inline provider values", () => {
+    const providerDiff: FileDiff = {
+      filePath: toFilePath("src/AuthProvider.tsx"),
+      previousPath: null,
+      hunks: [
+        {
+          header: "@@ -1,3 +1,5 @@",
+          lines: [
+            "+return <AuthContext.Provider value={{ user, login }}>{children}</AuthContext.Provider>;",
+          ],
+        },
+      ],
+    };
+
+    const result = buildToolUseFilePrompt({
+      fileDiff: providerDiff,
+      signals: makeSignals({ hookCount: 2 }),
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("## Targeted review hints");
+    expect(result).toContain("Inline Context.Provider value detected");
+  });
+
+  test("includes targeted hint for repeated forwarded props", () => {
+    const propDrillDiff: FileDiff = {
+      filePath: toFilePath("src/ThemeApp.tsx"),
+      previousPath: null,
+      hunks: [
+        {
+          header: "@@ -1,3 +1,5 @@",
+          lines: [
+            "+function App({ theme }: { theme: Theme }) {",
+            "+  return <Layout theme={theme} />;",
+            "+}",
+            "+function Layout({ theme }: { theme: Theme }) {",
+            "+  return <Sidebar theme={theme} />;",
+            "+}",
+            "+function Sidebar({ theme }: { theme: Theme }) {",
+            "+  return <NavItem theme={theme} />;",
+            "+}",
+          ],
+        },
+      ],
+    };
+
+    const result = buildToolUseFilePrompt({
+      fileDiff: propDrillDiff,
+      signals: makeSignals(),
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("Repeated forwarding of `theme` detected");
+  });
+
+  test("includes targeted hint for static configuration tables", () => {
+    const configDiff: FileDiff = {
+      filePath: toFilePath("src/config/routes.ts"),
+      previousPath: null,
+      hunks: [
+        {
+          header: "@@ -1,3 +1,5 @@",
+          lines: [
+            "+export const ROUTES: readonly RouteDefinition[] = [",
+            "+  { method: \"get\", path: \"/health\", handler: handleHealthCheck, requiresAuth: false },",
+            "+];",
+          ],
+        },
+      ],
+    };
+
+    const result = buildToolUseFilePrompt({
+      fileDiff: configDiff,
+      signals: makeSignals(),
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("Static configuration table detected");
+  });
+
+  test("includes targeted hint for validation mixed with provider state updates", () => {
+    const providerDiff: FileDiff = {
+      filePath: toFilePath("src/AuthProvider.tsx"),
+      previousPath: null,
+      hunks: [
+        {
+          header: "@@ -1,3 +1,5 @@",
+          lines: [
+            "+if (username.length < 3) throw new Error(\"Username too short\");",
+            "+setUser(username);",
+          ],
+        },
+      ],
+    };
+
+    const result = buildToolUseFilePrompt({
+      fileDiff: providerDiff,
+      signals: makeSignals({ hookCount: 2 }),
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("Validation logic and state updates appear interleaved");
+  });
+
+  test("includes targeted hint for parameter mutation", () => {
+    const mutationDiff: FileDiff = {
+      filePath: toFilePath("src/config.ts"),
+      previousPath: null,
+      hunks: [
+        {
+          header: "@@ -1,3 +1,5 @@",
+          lines: [
+            "+function applyDefaults(config: Config) {",
+            "+  config.timeout ??= 3000;",
+            "+}",
+          ],
+        },
+      ],
+    };
+
+    const result = buildToolUseFilePrompt({
+      fileDiff: mutationDiff,
+      signals: makeSignals(),
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("Function parameter mutation detected");
   });
 
   test("excludes full file content", () => {

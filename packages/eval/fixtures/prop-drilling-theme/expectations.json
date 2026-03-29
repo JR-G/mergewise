@@ -4,11 +4,5 @@
     "matchLineRange": [1, 19],
     "matchRecommendationContainsAny": ["context", "drilling", "useContext", "passing through", "threading"],
     "required": true
-  },
-  {
-    "description": "Flags class component that should be a function component",
-    "matchLineRange": [4, 26],
-    "matchRecommendationContainsAny": ["function", "functional", "class", "convert"],
-    "required": true
   }
 ]

@@ -28,6 +28,10 @@ ALWAYS DISCARD a finding if:
 - The suggested line range does not match the actual code at those lines
 - It attacks a well-structured helper component, local option list, config object, or static data block without concrete behavioural evidence
 - It treats a focused React component with stable callbacks or memoised derived data as over-engineered without showing real complexity cost
+- It labels a focused React component as mixed-concerns just because it combines rendering, one local UI toggle, and memoised display-only derivations
+- It suggests converting a class component to a function component for stylistic consistency rather than a concrete maintenance problem in the diff
+- It suggests restructuring static route tables, status maps, or other constant configuration without real behavioural complexity or duplication
+- It splits one dependency-inversion issue into multiple comments for each concrete client instead of describing the shared abstraction problem once
 
 NEVER DISCARD a finding about:
 - Missing error handling at I/O, network, or request-handler boundaries
@@ -38,7 +42,7 @@ KEEP a finding if:
 - It identifies a genuine SRP violation, god function, or mixed-concern problem with a specific cost explanation
 - It identifies a missing abstraction (factory, strategy, composition) with concrete evidence of repetition or coupling
 - It identifies coupling, prop drilling, or hardcoded dependencies that prevent testing or reuse
-- It catches an idiomatic TypeScript/React anti-pattern (derived state via useState+useEffect, stale closures, imperative where declarative fits)
+- It catches an idiomatic TypeScript/React anti-pattern (derived state via useState+useEffect, stale closures, imperative where declarative fits, unstable context provider values)
 - It identifies missing failure handling at a system boundary (I/O, network, external API)
 - It suggests a refactoring that would genuinely improve maintainability with a concrete reason tied to this specific code
 - It is clearly the single most important maintainability comment in the file, even if smaller secondary issues also exist
@@ -148,6 +152,65 @@ function defaultVerdicts(count: number): CriticVerdict[] {
   }));
 }
 
+function isDependencyInversionFinding(finding: Finding): boolean {
+  const combinedText = `${finding.evidence} ${finding.recommendation}`.toLowerCase();
+  return [
+    "dependency injection",
+    "hardcoded depend",
+    "concrete depend",
+    "constructs ",
+    "instantiat",
+    "prismaclient",
+    "s3client",
+    "nodemailer",
+    "inject ",
+    "abstraction",
+  ].some((needle) => combinedText.includes(needle));
+}
+
+function collapseDependencyInversionDuplicates(
+  findings: readonly Finding[],
+  filtered: readonly FilteredFinding[],
+): CriticResult {
+  const grouped = new Map<string, Finding[]>();
+  const passthrough: Finding[] = [];
+  const collapsedFiltered = [...filtered];
+
+  for (const finding of findings) {
+    if (!isDependencyInversionFinding(finding)) {
+      passthrough.push(finding);
+      continue;
+    }
+
+    const existing = grouped.get(finding.filePath) ?? [];
+    existing.push(finding);
+    grouped.set(finding.filePath, existing);
+  }
+
+  const collapsedFindings = [...passthrough];
+  for (const fileGroup of grouped.values()) {
+    const preferredFinding = [...fileGroup].sort((left, right) => {
+      if (right.recommendation.length !== left.recommendation.length) {
+        return right.recommendation.length - left.recommendation.length;
+      }
+      return left.line - right.line;
+    })[0];
+
+    if (!preferredFinding) continue;
+    collapsedFindings.push(preferredFinding);
+
+    for (const finding of fileGroup) {
+      if (finding.findingId === preferredFinding.findingId) continue;
+      collapsedFiltered.push({
+        finding,
+        reason: "Merged into a single dependency-inversion finding for the file",
+      });
+    }
+  }
+
+  return { findings: collapsedFindings, filtered: collapsedFiltered };
+}
+
 /**
  * Splits findings into kept and filtered based on critic verdicts.
  */
@@ -172,7 +235,7 @@ export function splitByVerdicts(
     filtered.push({ finding, reason: verdict.reason });
   }
 
-  return { findings: kept, filtered };
+  return collapseDependencyInversionDuplicates(kept, filtered);
 }
 
 /**

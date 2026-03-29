@@ -33,6 +33,7 @@ Refactoring approaches:
 - Constructor injection: accept collaborators in the constructor and store them as private fields
 - Factory functions: export a factory that wires up production dependencies, while the core function accepts abstractions
 - Interface-based injection: define a slim interface for the dependency and accept anything that satisfies it
+- When one function constructs several infrastructure clients, prefer one consolidated review comment about the abstraction boundary instead of one comment per client
 
 When NOT to flag:
 - Module-level singletons that are intentionally shared and configured once at startup (e.g. a logger instance, a config object)

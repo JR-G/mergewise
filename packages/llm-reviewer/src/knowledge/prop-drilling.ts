@@ -37,6 +37,7 @@ When NOT to flag:
 - Props that are genuinely used by every component in the chain (e.g. className, disabled)
 - Small component trees (under 4 components total) where the full chain is visible in one file
 - Callback props passed from parent to immediate child — this is standard event handling
+- A class component at the leaf of the tree when the real design problem is the prop being threaded through unrelated intermediaries
 
 The concrete cost must be specific: "Adding a new field to the user profile requires updating the props interface in 5 components that never read it" or "Removing the theme prop from NavItem cascades changes through Layout, Sidebar, and PageWrapper."`,
   examples: [
