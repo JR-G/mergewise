@@ -74,6 +74,9 @@ describe("buildSlimSystemPrompt", () => {
   test("prioritises provider stability and prop drilling over weaker React style comments", () => {
     expect(prompt).toContain("unstable context provider values as a first-class issue");
     expect(prompt).toContain("When a diff contains prop drilling and a smaller React style issue");
+    expect(prompt).toContain("same prop is forwarded unchanged through 3+ component signatures");
+    expect(prompt).toContain("Boolean flag parameters that switch between two behaviours");
+    expect(prompt).toContain("memoised filtered/sorted list for display");
   });
 
   test("includes agent-specific detection criteria when agentFriendliness is true", () => {
