@@ -1,0 +1,54 @@
+{
+  "executionMode": "pipeline",
+  "prTitle": "Add config defaults and user filtering helpers",
+  "prDescription": "Introduces a helper that mutates a config object and a helper that branches on a boolean flag for active users.",
+  "reviewQuality": {
+    "summary": "A utility file introduces one mutation leak and one boolean-flag API that obscures intent.",
+    "reviewGoal": "A strong reviewer should surface both issues without drifting into generic utility cleanup advice.",
+    "mustFind": [
+      {
+        "description": "Flags input mutation in applyDefaults",
+        "matchLineRange": [7, 11],
+        "matchRecommendationContainsAny": ["mutat", "immutab", "spread", "object"],
+        "required": true
+      },
+      {
+        "description": "Flags the boolean flag API in getUsers",
+        "matchLineRange": [16, 22],
+        "matchRecommendationContainsAny": ["flag", "separate", "split", "active", "inactive"],
+        "required": true
+      }
+    ],
+    "mustAvoid": [
+      {
+        "description": "Avoids generic comments about hardcoded sample data",
+        "matchLineRange": [16, 22],
+        "matchRecommendationContainsAny": ["hardcoded", "seed", "sample data", "move this array"],
+        "required": false
+      }
+    ],
+    "findingCountRange": [2, 2],
+    "prioritise": [
+      {
+        "description": "The first comment should be one of the two structural issues",
+        "matchLineRange": [7, 22],
+        "matchRecommendationContainsAny": ["mutat", "flag", "separate", "immutab"],
+        "required": true
+      }
+    ],
+    "dimensions": [
+      {
+        "name": "correctness",
+        "description": "Did the review identify the two actual maintainability issues in the file?"
+      },
+      {
+        "name": "specificity",
+        "description": "Did the review explain the engineering cost of the mutation leak and boolean flag API concretely?"
+      },
+      {
+        "name": "restraint",
+        "description": "Did the review avoid inventing secondary issues around the sample array data?"
+      }
+    ]
+  }
+}

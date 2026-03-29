@@ -51,20 +51,36 @@ function printSectionTitle(title: string): void {
   console.log(`\n${BOLD}${title}${RESET}`);
 }
 
+function compareResults(left: EvalResult, right: EvalResult): number {
+  const leftQuality = left.reviewQuality?.overall ?? Number.POSITIVE_INFINITY;
+  const rightQuality = right.reviewQuality?.overall ?? Number.POSITIVE_INFINITY;
+  if (leftQuality !== rightQuality) {
+    return leftQuality - rightQuality;
+  }
+  if (left.score.recall !== right.score.recall) {
+    return left.score.recall - right.score.recall;
+  }
+  if (left.score.precision !== right.score.precision) {
+    return left.score.precision - right.score.precision;
+  }
+  return left.fixtureId.localeCompare(right.fixtureId);
+}
+
 /**
  * Prints a formatted eval report to stdout.
  *
  * @param results - Evaluation results to display.
  */
 export function printReport(results: readonly EvalResult[]): void {
-  printRunSummary(results);
+  const orderedResults = [...results].sort(compareResults);
+  printRunSummary(orderedResults);
   printSectionTitle("Regression Guardrails");
 
   const header = `${"Fixture".padEnd(25)} ${"Variant".padEnd(18)} ${"Mode".padEnd(12)} ${"Recall".padEnd(14)} ${"Precision".padEnd(14)} ${"Findings".padEnd(10)} ${"FP".padEnd(6)} ${"Time".padEnd(10)}`;
   console.log(header);
   console.log("─".repeat(118));
 
-  for (const result of results) {
+  for (const result of orderedResults) {
     const fpDisplay = result.score.falsePositiveCount > 0
       ? `${RED}${result.score.falsePositiveCount}${RESET}`
       : `${DIM}0${RESET}`;
@@ -72,7 +88,7 @@ export function printReport(results: readonly EvalResult[]): void {
     console.log(line);
   }
 
-  const qualityResults = results.filter((result) => result.reviewQuality !== null);
+  const qualityResults = orderedResults.filter((result) => result.reviewQuality !== null);
   if (qualityResults.length > 0) {
     printSectionTitle("Production Quality");
     const qualityHeader = `${"Fixture".padEnd(25)} ${"Variant".padEnd(18)} ${"Overall".padEnd(14)} ${"Coverage".padEnd(14)} ${"Restraint".padEnd(14)} ${"Priority".padEnd(14)}`;
@@ -87,19 +103,19 @@ export function printReport(results: readonly EvalResult[]): void {
     }
   }
 
-  for (const result of results) {
+  for (const result of orderedResults) {
     const { score } = result;
 
     if (score.recall < 1.0) {
       const missed = result.score.requiredExpectations - result.score.requiredMatched;
       console.log(
-        `\n${RED}Missed expectations${RESET} [${result.fixtureId}/${result.variant}]: ${missed} of ${score.requiredExpectations} required`,
+        `\n${RED}Regression miss${RESET} [${result.fixtureId}/${result.variant}]: ${missed} of ${score.requiredExpectations} required expectations missing`,
       );
     }
 
     if (score.unmatchedFindings.length > 0) {
       console.log(
-        `\n${YELLOW}Unmatched findings${RESET} [${result.fixtureId}/${result.variant}]:`,
+        `\n${YELLOW}Additional findings${RESET} [${result.fixtureId}/${result.variant}]:`,
       );
       for (const finding of score.unmatchedFindings) {
         console.log(
@@ -115,7 +131,7 @@ export function printReport(results: readonly EvalResult[]): void {
 
     if (result.reviewQuality) {
       console.log(
-        `\n${CYAN}Reviewer quality${RESET} [${result.fixtureId}/${result.variant}]: ${result.reviewQuality.summary}`,
+        `\n${CYAN}Benchmark diagnosis${RESET} [${result.fixtureId}/${result.variant}]: ${result.reviewQuality.summary}`,
       );
       for (const dimension of result.reviewQuality.dimensions) {
         console.log(
