@@ -237,6 +237,32 @@ function buildTargetedReviewHints(fileDiff: FileDiff): string[] {
     );
   }
 
+  const functionSignatureMatches = [...diffText.matchAll(/function\s+\w+\s*\(\{\s*(\w+)\s*\}\s*:\s*\{\s*\1\s*:/g)];
+  const forwardedPropCounts = new Map<string, number>();
+  for (const match of functionSignatureMatches) {
+    const propName = match[1];
+    if (!propName) continue;
+    forwardedPropCounts.set(propName, (forwardedPropCounts.get(propName) ?? 0) + 1);
+  }
+  for (const [propName, count] of forwardedPropCounts.entries()) {
+    const forwardingUses = diffText.match(new RegExp(`${propName}=\\{${propName}\\}`, "g"))?.length ?? 0;
+    if (count >= 3 && forwardingUses >= 2) {
+      lines.push(
+        `- Repeated forwarding of \`${propName}\` detected across multiple component signatures. Check for prop drilling through intermediaries that do not use the value directly.`,
+      );
+      break;
+    }
+  }
+
+  if (
+    /export\s+const\s+\w+:\s+readonly\s+\w+\[\]\s*=\s*\[/.test(diffText) ||
+    (/export\s+const\s+\w+\s*=\s*\{/.test(diffText) && diffText.includes("as const"))
+  ) {
+    lines.push(
+      "- Static configuration table detected. Stay quiet unless the diff introduces real branching behaviour, duplicated update paths, or other change-amplifying logic.",
+    );
+  }
+
   return lines.length > 0 ? ["", "## Targeted review hints", ...lines] : [];
 }
 

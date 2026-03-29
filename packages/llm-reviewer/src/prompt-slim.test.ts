@@ -193,6 +193,62 @@ describe("buildToolUseFilePrompt", () => {
     expect(result).toContain("Inline Context.Provider value detected");
   });
 
+  test("includes targeted hint for repeated forwarded props", () => {
+    const propDrillDiff: FileDiff = {
+      filePath: toFilePath("src/ThemeApp.tsx"),
+      previousPath: null,
+      hunks: [
+        {
+          header: "@@ -1,3 +1,5 @@",
+          lines: [
+            "+function App({ theme }: { theme: Theme }) {",
+            "+  return <Layout theme={theme} />;",
+            "+}",
+            "+function Layout({ theme }: { theme: Theme }) {",
+            "+  return <Sidebar theme={theme} />;",
+            "+}",
+            "+function Sidebar({ theme }: { theme: Theme }) {",
+            "+  return <NavItem theme={theme} />;",
+            "+}",
+          ],
+        },
+      ],
+    };
+
+    const result = buildToolUseFilePrompt({
+      fileDiff: propDrillDiff,
+      signals: makeSignals(),
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("Repeated forwarding of `theme` detected");
+  });
+
+  test("includes targeted hint for static configuration tables", () => {
+    const configDiff: FileDiff = {
+      filePath: toFilePath("src/config/routes.ts"),
+      previousPath: null,
+      hunks: [
+        {
+          header: "@@ -1,3 +1,5 @@",
+          lines: [
+            "+export const ROUTES: readonly RouteDefinition[] = [",
+            "+  { method: \"get\", path: \"/health\", handler: handleHealthCheck, requiresAuth: false },",
+            "+];",
+          ],
+        },
+      ],
+    };
+
+    const result = buildToolUseFilePrompt({
+      fileDiff: configDiff,
+      signals: makeSignals(),
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("Static configuration table detected");
+  });
+
   test("excludes full file content", () => {
     const result = buildToolUseFilePrompt({
       fileDiff: makeDiff(),
