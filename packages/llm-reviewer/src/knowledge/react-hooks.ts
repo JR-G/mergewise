@@ -12,7 +12,12 @@ export const REACT_HOOKS_KNOWLEDGE: KnowledgeDocument = {
   id: "react-hooks",
   title: "React Hook Rules and Anti-Patterns",
   category: "idiomatic",
-  triggerSignals: ["has_hooks", "high_hook_count"],
+  triggerSignals: [
+    "has_hooks",
+    "high_hook_count",
+    "unstable_provider_value",
+    "provider_validation_mix",
+  ],
   triggerClassifications: [
     "state-management",
     "new-react-component",

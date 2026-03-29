@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { deriveSignalTags } from "./signal-tags";
-import { makeSignals } from "./test-helpers";
+import { makeReviewSignals, makeSignals } from "./test-helpers";
 
 describe("deriveSignalTags", () => {
   test("returns empty array for zero signals", () => {
@@ -102,5 +102,21 @@ describe("deriveSignalTags", () => {
   test("does not return has_type_assertions when typeAssertionCount is 0", () => {
     const tags = deriveSignalTags(makeSignals({ typeAssertionCount: 0 }));
     expect(tags).not.toContain("has_type_assertions");
+  });
+
+  test("returns review-oriented tags when explicit review signals are present", () => {
+    const tags = deriveSignalTags(
+      makeSignals(),
+      makeReviewSignals({
+        hasInlineProviderValue: true,
+        hasRepeatedForwardedProp: true,
+        hasStaticConfigTable: true,
+        hasParameterMutation: true,
+      }),
+    );
+    expect(tags).toContain("unstable_provider_value");
+    expect(tags).toContain("repeated_prop_forwarding");
+    expect(tags).toContain("static_config_table");
+    expect(tags).toContain("parameter_mutation");
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { extractStructuralSignals } from "./signals";
+import { extractReviewSignals, extractStructuralSignals } from "./signals";
 import { makeDiff, makeHunk } from "./test-helpers";
 
 describe("extractStructuralSignals", () => {
@@ -165,5 +165,99 @@ describe("extractStructuralSignals", () => {
 
     const signals = extractStructuralSignals(diff);
     expect(signals.typeAssertionCount).toBe(2);
+  });
+});
+
+describe("extractReviewSignals", () => {
+  test("detects inline provider values", () => {
+    const diff = makeDiff("src/AuthProvider.tsx", [
+      makeHunk("@@ -0,0 +1,3 @@", [
+        "+return <AuthContext.Provider value={{ user, login }}>{children}</AuthContext.Provider>;",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasInlineProviderValue).toBe(true);
+  });
+
+  test("detects validation mixed with state updates", () => {
+    const diff = makeDiff("src/AuthProvider.tsx", [
+      makeHunk("@@ -0,0 +1,6 @@", [
+        "+function login(email: string) {",
+        "+  if (!email) throw new Error('missing email')",
+        "+  setUser({ email })",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasValidationMixedWithStateUpdates).toBe(true);
+  });
+
+  test("detects repeated forwarded props and preserves the prop name", () => {
+    const diff = makeDiff("src/ThemeApp.tsx", [
+      makeHunk("@@ -0,0 +1,9 @@", [
+        "+function App({ theme }: { theme: Theme }) {",
+        "+  return <Layout theme={theme} />;",
+        "+}",
+        "+function Layout({ theme }: { theme: Theme }) {",
+        "+  return <Sidebar theme={theme} />;",
+        "+}",
+        "+function Sidebar({ theme }: { theme: Theme }) {",
+        "+  return <NavItem theme={theme} />;",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasRepeatedForwardedProp).toBe(true);
+    expect(signals.forwardedPropName).toBe("theme");
+  });
+
+  test("detects static configuration tables", () => {
+    const diff = makeDiff("src/config/routes.ts", [
+      makeHunk("@@ -0,0 +1,3 @@", [
+        "+export const ROUTES: readonly RouteDefinition[] = [",
+        "+  { method: 'get', path: '/health', handler: handleHealthCheck, requiresAuth: false },",
+        "+];",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasStaticConfigTable).toBe(true);
+  });
+
+  test("detects parameter mutation", () => {
+    const diff = makeDiff("src/config.ts", [
+      makeHunk("@@ -0,0 +1,4 @@", [
+        "+function applyDefaults(config: AppConfig) {",
+        "+  config.timeout ??= 1000",
+        "+  return config",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasParameterMutation).toBe(true);
+  });
+
+  test("returns zeroed review signals when no targeted patterns exist", () => {
+    const diff = makeDiff("src/clean.ts", [
+      makeHunk("@@ -0,0 +1,3 @@", [
+        "+export function sum(a: number, b: number) {",
+        "+  return a + b",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals).toEqual({
+      hasInlineProviderValue: false,
+      hasValidationMixedWithStateUpdates: false,
+      hasRepeatedForwardedProp: false,
+      forwardedPropName: null,
+      hasStaticConfigTable: false,
+      hasParameterMutation: false,
+    });
   });
 });

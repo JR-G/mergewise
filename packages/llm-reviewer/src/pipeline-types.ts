@@ -14,7 +14,12 @@ export type SignalTag =
   | "high_param_count"
   | "has_type_assertions"
   | "high_import_count"
-  | "large_component";
+  | "large_component"
+  | "unstable_provider_value"
+  | "provider_validation_mix"
+  | "repeated_prop_forwarding"
+  | "static_config_table"
+  | "parameter_mutation";
 
 /**
  * A worked example within a knowledge document showing good and bad code.

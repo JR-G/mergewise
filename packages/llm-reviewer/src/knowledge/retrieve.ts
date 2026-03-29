@@ -1,4 +1,4 @@
-import type { StructuralSignals } from "../signals";
+import type { ReviewSignals, StructuralSignals } from "../signals";
 import type { KnowledgeDocument, SignalTag } from "../pipeline-types";
 import { deriveSignalTags } from "./signal-tags";
 import { KNOWLEDGE_REGISTRY } from "./registry";
@@ -14,6 +14,7 @@ const EXTENSION_BONUS = 1;
  */
 export interface RetrievalInput {
   readonly signals: StructuralSignals;
+  readonly reviewSignals?: ReviewSignals | undefined;
   readonly fileExtension: string;
   readonly classifications: readonly string[];
 }
@@ -72,7 +73,7 @@ export function retrieveKnowledge(
   input: RetrievalInput,
   registry: readonly KnowledgeDocument[] = KNOWLEDGE_REGISTRY,
 ): readonly KnowledgeDocument[] {
-  const tags = deriveSignalTags(input.signals);
+  const tags = deriveSignalTags(input.signals, input.reviewSignals);
   const tagSet = new Set(tags);
   const classificationSet = new Set(input.classifications);
 

@@ -16,7 +16,7 @@ import type {
 } from "./pipeline-types";
 import { triageFiles } from "./triage";
 import { criticFindings, collectFileContents } from "./critic";
-import { extractStructuralSignals } from "./signals";
+import { extractReviewSignals, extractStructuralSignals } from "./signals";
 import { buildSlimSystemPrompt, buildToolUseFilePrompt } from "./prompt-slim";
 import { parseLlmResponse } from "./schema";
 import { REVIEW_TOOLS, toOpenAiTools, executeToolCall, buildAvailablePatternsSummary, lookupPattern } from "./review-tools";
@@ -152,6 +152,7 @@ async function runReviewStage(
 
     try {
       const signals = extractStructuralSignals(diff);
+      const reviewSignals = extractReviewSignals(diff);
 
       const toolContext: ToolContext = {
         filePath: diff.filePath,
@@ -163,6 +164,7 @@ async function runReviewStage(
       const userPrompt = buildToolUseFilePrompt({
         fileDiff: diff,
         signals,
+        reviewSignals,
         prTitle: pullRequest.prTitle,
         prDescription: pullRequest.prDescription,
         availablePatterns,

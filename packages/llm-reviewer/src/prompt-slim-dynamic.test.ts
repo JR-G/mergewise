@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { FileDiff } from "@mergewise/shared-types";
 import { toFilePath } from "@mergewise/shared-types";
-import type { StructuralSignals } from "./signals";
+import type { ReviewSignals, StructuralSignals } from "./signals";
 import type { KnowledgeDocument, FileGraphContext, ReviewLearnings } from "./pipeline-types";
 import { buildDynamicFilePrompt } from "./prompt-slim";
 
@@ -16,6 +16,18 @@ function makeSignals(overrides: Partial<StructuralSignals> = {}): StructuralSign
     maxParameterCount: 0,
     classCount: 0,
     typeAssertionCount: 0,
+    ...overrides,
+  };
+}
+
+function makeReviewSignals(overrides: Partial<ReviewSignals> = {}): ReviewSignals {
+  return {
+    hasInlineProviderValue: false,
+    hasValidationMixedWithStateUpdates: false,
+    hasRepeatedForwardedProp: false,
+    forwardedPropName: null,
+    hasStaticConfigTable: false,
+    hasParameterMutation: false,
     ...overrides,
   };
 }
@@ -172,6 +184,18 @@ describe("buildDynamicFilePrompt", () => {
       knowledge: [],
     });
     expect(result).not.toContain("## Structural signals");
+  });
+
+  test("includes review signals when provided", () => {
+    const result = buildDynamicFilePrompt({
+      fileDiff: makeDiff(),
+      fullContent: null,
+      signals: makeSignals(),
+      reviewSignals: makeReviewSignals({ hasParameterMutation: true }),
+      knowledge: [],
+    });
+    expect(result).toContain("## Review signals");
+    expect(result).toContain("Function parameter mutation detected");
   });
 
   test("includes file context when fullContent is provided", () => {

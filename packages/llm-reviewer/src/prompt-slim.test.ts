@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { FileDiff } from "@mergewise/shared-types";
 import { toFilePath } from "@mergewise/shared-types";
-import type { StructuralSignals } from "./signals";
+import type { ReviewSignals, StructuralSignals } from "./signals";
 import { buildSlimSystemPrompt, buildToolUseFilePrompt, MAX_DIFF_CHARS } from "./prompt-slim";
 
 function makeSignals(overrides: Partial<StructuralSignals> = {}): StructuralSignals {
@@ -15,6 +15,18 @@ function makeSignals(overrides: Partial<StructuralSignals> = {}): StructuralSign
     maxParameterCount: 0,
     classCount: 0,
     typeAssertionCount: 0,
+    ...overrides,
+  };
+}
+
+function makeReviewSignals(overrides: Partial<ReviewSignals> = {}): ReviewSignals {
+  return {
+    hasInlineProviderValue: false,
+    hasValidationMixedWithStateUpdates: false,
+    hasRepeatedForwardedProp: false,
+    forwardedPropName: null,
+    hasStaticConfigTable: false,
+    hasParameterMutation: false,
     ...overrides,
   };
 }
@@ -74,8 +86,6 @@ describe("buildSlimSystemPrompt", () => {
   test("prioritises provider stability and prop drilling over weaker React style comments", () => {
     expect(prompt).toContain("unstable context provider values as a first-class issue");
     expect(prompt).toContain("When a diff contains prop drilling and a smaller React style issue");
-    expect(prompt).toContain("same prop is forwarded unchanged through 3+ component signatures");
-    expect(prompt).toContain("Boolean flag parameters that switch between two behaviours");
     expect(prompt).toContain("memoised filtered/sorted list for display");
     expect(prompt).toContain("Do NOT call it prop drilling when a parent passes data or callbacks directly into the one child");
   });
@@ -187,10 +197,11 @@ describe("buildToolUseFilePrompt", () => {
     const result = buildToolUseFilePrompt({
       fileDiff: providerDiff,
       signals: makeSignals({ hookCount: 2 }),
+      reviewSignals: makeReviewSignals({ hasInlineProviderValue: true }),
       availablePatterns: "",
     });
 
-    expect(result).toContain("## Targeted review hints");
+    expect(result).toContain("## Review signals");
     expect(result).toContain("Inline Context.Provider value detected");
   });
 
@@ -219,6 +230,10 @@ describe("buildToolUseFilePrompt", () => {
     const result = buildToolUseFilePrompt({
       fileDiff: propDrillDiff,
       signals: makeSignals(),
+      reviewSignals: makeReviewSignals({
+        hasRepeatedForwardedProp: true,
+        forwardedPropName: "theme",
+      }),
       availablePatterns: "",
     });
 
@@ -244,6 +259,7 @@ describe("buildToolUseFilePrompt", () => {
     const result = buildToolUseFilePrompt({
       fileDiff: configDiff,
       signals: makeSignals(),
+      reviewSignals: makeReviewSignals({ hasStaticConfigTable: true }),
       availablePatterns: "",
     });
 
@@ -268,6 +284,7 @@ describe("buildToolUseFilePrompt", () => {
     const result = buildToolUseFilePrompt({
       fileDiff: providerDiff,
       signals: makeSignals({ hookCount: 2 }),
+      reviewSignals: makeReviewSignals({ hasValidationMixedWithStateUpdates: true }),
       availablePatterns: "",
     });
 
@@ -293,6 +310,7 @@ describe("buildToolUseFilePrompt", () => {
     const result = buildToolUseFilePrompt({
       fileDiff: mutationDiff,
       signals: makeSignals(),
+      reviewSignals: makeReviewSignals({ hasParameterMutation: true }),
       availablePatterns: "",
     });
 

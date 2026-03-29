@@ -1,6 +1,6 @@
 import type { DiffHunk, FileDiff } from "@mergewise/shared-types";
 import type { AntiPattern } from "./anti-pattern-types";
-import type { StructuralSignals } from "./signals";
+import type { ReviewSignals, StructuralSignals } from "./signals";
 import type {
   KnowledgeDocument,
   FileGraphContext,
@@ -33,8 +33,6 @@ You are a refactoring reviewer, not a bug finder or security scanner. Those are 
 
 3. **Coupling problems**: Hardcoded dependencies that prevent testing. Prop drilling through layers that don't use the data. Tight coupling between modules that should be independent. Mutation leaking across call boundaries.
    Suggest: Accept dependencies as parameters, use context or composition, clone before mutating.
-   If the same prop is forwarded unchanged through 3+ component signatures, flag that coupling even when the file is otherwise small.
-   Boolean flag parameters that switch between two behaviours are also valid maintainability findings when they make call sites read as doThing(true) / doThing(false).
 
 4. **Idiomatic TypeScript/React**: Derived state stored in useState+useEffect instead of computed directly. Stale closures. useEffect as event handler. Imperative transforms where declarative (map/filter) would be clearer. Inconsistent absence representation (mixing null, undefined, optional).
    Suggest: Show the idiomatic alternative and explain why it is preferred.
@@ -228,58 +226,41 @@ function buildSignalsSection(signals: StructuralSignals): string[] {
   return lines.length > 2 ? lines : [];
 }
 
-function buildTargetedReviewHints(fileDiff: FileDiff): string[] {
-  const diffText = fileDiff.hunks.flatMap((hunk) => hunk.lines).join("\n");
+function buildReviewSignalsSection(reviewSignals: ReviewSignals): string[] {
   const lines: string[] = [];
 
-  if (/Provider\s+value=\{\{/.test(diffText) || /Provider\s+value=\{[^\n]*\{/.test(diffText)) {
+  if (reviewSignals.hasInlineProviderValue) {
     lines.push(
       "- Inline Context.Provider value detected. Check whether a new object or callback reference is recreated on every render and whether useMemo/useCallback would prevent avoidable consumer re-renders.",
     );
   }
 
-  if (
-    diffText.includes("throw new Error") &&
-    (diffText.includes("setUser(") || diffText.includes("setToken(") || diffText.includes("setState("))
-  ) {
+  if (reviewSignals.hasValidationMixedWithStateUpdates) {
     lines.push(
       "- Validation logic and state updates appear interleaved in the same React flow. Check whether validation/token creation can be extracted into a pure helper so the provider only coordinates state updates.",
     );
   }
 
-  const functionSignatureMatches = [...diffText.matchAll(/function\s+\w+\s*\(\{\s*(\w+)\s*\}\s*:\s*\{\s*\1\s*:/g)];
-  const forwardedPropCounts = new Map<string, number>();
-  for (const match of functionSignatureMatches) {
-    const propName = match[1];
-    if (!propName) continue;
-    forwardedPropCounts.set(propName, (forwardedPropCounts.get(propName) ?? 0) + 1);
-  }
-  for (const [propName, count] of forwardedPropCounts.entries()) {
-    const forwardingUses = diffText.match(new RegExp(`${propName}=\\{${propName}\\}`, "g"))?.length ?? 0;
-    if (count >= 3 && forwardingUses >= 2) {
-      lines.push(
-        `- Repeated forwarding of \`${propName}\` detected across multiple component signatures. Check for prop drilling through intermediaries that do not use the value directly.`,
-      );
-      break;
-    }
+  if (reviewSignals.hasRepeatedForwardedProp) {
+    const propName = reviewSignals.forwardedPropName ?? "the same prop";
+    lines.push(
+      `- Repeated forwarding of \`${propName}\` detected across multiple component signatures. Check for prop drilling through intermediaries that do not use the value directly.`,
+    );
   }
 
-  if (
-    /export\s+const\s+\w+:\s+readonly\s+\w+\[\]\s*=\s*\[/.test(diffText) ||
-    (/export\s+const\s+\w+\s*=\s*\{/.test(diffText) && diffText.includes("as const"))
-  ) {
+  if (reviewSignals.hasStaticConfigTable) {
     lines.push(
       "- Static configuration table detected. Stay quiet unless the diff introduces real branching behaviour, duplicated update paths, or other change-amplifying logic.",
     );
   }
 
-  if (/function\s+\w+\(\w+:\s*\w+\)/.test(diffText) && /\w+\.\w+\s*\?\?=/.test(diffText)) {
+  if (reviewSignals.hasParameterMutation) {
     lines.push(
       "- Function parameter mutation detected. Check whether the helper is mutating an input object that callers may still reference, and prefer returning a new object instead.",
     );
   }
 
-  return lines.length > 0 ? ["", "## Targeted review hints", ...lines] : [];
+  return lines.length > 0 ? ["", "## Review signals", ...lines] : [];
 }
 
 /**
@@ -289,6 +270,7 @@ export interface DynamicPromptInput {
   readonly fileDiff: FileDiff;
   readonly fullContent: string | null;
   readonly signals: StructuralSignals;
+  readonly reviewSignals?: ReviewSignals | undefined;
   readonly knowledge: readonly KnowledgeDocument[];
   readonly filteredPatterns?: readonly AntiPattern[] | undefined;
   readonly graphContext?: FileGraphContext | undefined;
@@ -319,6 +301,9 @@ export function buildDynamicFilePrompt(input: DynamicPromptInput): string {
   }
 
   parts.push(...buildSignalsSection(input.signals));
+  if (input.reviewSignals) {
+    parts.push(...buildReviewSignalsSection(input.reviewSignals));
+  }
 
   const knowledgeSection = formatKnowledgeSection(input.knowledge);
   if (knowledgeSection.length > 0) {
@@ -375,6 +360,7 @@ export function buildDynamicFilePrompt(input: DynamicPromptInput): string {
 export interface ToolUsePromptInput {
   readonly fileDiff: FileDiff;
   readonly signals: StructuralSignals;
+  readonly reviewSignals?: ReviewSignals | undefined;
   readonly prTitle?: string | undefined;
   readonly prDescription?: string | undefined;
   readonly availablePatterns: string;
@@ -397,7 +383,9 @@ export function buildToolUseFilePrompt(input: ToolUsePromptInput): string {
   parts.push(...formatDiffSection(input.fileDiff.hunks));
 
   parts.push(...buildSignalsSection(input.signals));
-  parts.push(...buildTargetedReviewHints(input.fileDiff));
+  if (input.reviewSignals) {
+    parts.push(...buildReviewSignalsSection(input.reviewSignals));
+  }
 
   parts.push("");
   parts.push(input.availablePatterns);

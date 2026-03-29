@@ -12,7 +12,7 @@ export const SIDE_EFFECTS_PURITY_KNOWLEDGE: KnowledgeDocument = {
   id: "side-effects-purity",
   title: "Side Effects in Pure Transforms",
   category: "clean",
-  triggerSignals: ["high_function_count"],
+  triggerSignals: ["high_function_count", "parameter_mutation"],
   triggerClassifications: [
     "side-effects",
     "mixed-responsibilities",

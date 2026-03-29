@@ -15,6 +15,22 @@ export interface StructuralSignals {
   readonly typeAssertionCount: number;
 }
 
+/**
+ * Explicit review-oriented signals extracted from a file diff.
+ *
+ * @remarks
+ * Unlike {@link StructuralSignals}, these booleans capture specific review
+ * situations that should influence retrieval, ranking, and suppression.
+ */
+export interface ReviewSignals {
+  readonly hasInlineProviderValue: boolean;
+  readonly hasValidationMixedWithStateUpdates: boolean;
+  readonly hasRepeatedForwardedProp: boolean;
+  readonly forwardedPropName: string | null;
+  readonly hasStaticConfigTable: boolean;
+  readonly hasParameterMutation: boolean;
+}
+
 const HOOK_PATTERN = /\buse(?:State|Effect|Memo|Callback|Ref|Reducer|Context)\s*\(/g;
 const IMPORT_PATTERN = /^[+ ]import\s/;
 const COMPONENT_PATTERN = /(?:function\s+\w+|const\s+\w+\s*=\s*(?:\([^)]*\)|[^=])*=>)/;
@@ -24,6 +40,12 @@ const FUNCTION_DECLARATION_PATTERN = /(?:^|\s)(?:function\s+\w+|(?:async\s+)?(?:
 const CLASS_DECLARATION_PATTERN = /(?:^|\s)class\s+\w+/;
 const TYPE_ASSERTION_PATTERN = /\bas\s+\w/g;
 const PARAM_LIST_PATTERN = /\(([^)]*)\)/;
+const PROVIDER_VALUE_PATTERN = /Provider\s+value=\{\{|\bProvider\s+value=\{[^\n]*\{/;
+const FUNCTION_SIGNATURE_PROP_PATTERN = /function\s+\w+\s*\(\{\s*(\w+)\s*\}\s*:\s*\{\s*\1\s*:/g;
+const STATIC_CONFIG_ARRAY_PATTERN = /export\s+const\s+\w+:\s+readonly\s+\w+\[\]\s*=\s*\[/;
+const STATIC_CONFIG_OBJECT_PATTERN = /export\s+const\s+\w+\s*=\s*\{/;
+const STATE_UPDATE_PATTERN = /\b(?:setUser|setToken|setState)\s*\(/;
+const FUNCTION_DECLARATION_WITH_PARAMS_PATTERN = /function\s+\w+\(([^)]*)\)/g;
 
 /**
  * Extracts structural signals from a file diff for LLM context.
@@ -149,4 +171,74 @@ export function extractStructuralSignals(diff: FileDiff): StructuralSignals {
     classCount,
     typeAssertionCount,
   };
+}
+
+/**
+ * Extracts explicit review signals from a file diff.
+ *
+ * @param diff - File diff to analyse.
+ * @returns Review-specific signals for routing and suppression.
+ */
+export function extractReviewSignals(diff: FileDiff): ReviewSignals {
+  const diffText = diff.hunks.flatMap((hunk) => hunk.lines).filter((line) => !line.startsWith("-")).join("\n");
+  const forwardedPropName = detectRepeatedForwardedProp(diffText);
+  const parameterNames = extractFunctionParameterNames(diffText);
+
+  return {
+    hasInlineProviderValue: PROVIDER_VALUE_PATTERN.test(diffText),
+    hasValidationMixedWithStateUpdates:
+      diffText.includes("throw new Error") && STATE_UPDATE_PATTERN.test(diffText),
+    hasRepeatedForwardedProp: forwardedPropName !== null,
+    forwardedPropName,
+    hasStaticConfigTable:
+      STATIC_CONFIG_ARRAY_PATTERN.test(diffText) ||
+      (STATIC_CONFIG_OBJECT_PATTERN.test(diffText) && diffText.includes("as const")),
+    hasParameterMutation: parameterNames.some((parameterName) =>
+      new RegExp(`\\b${parameterName}\\.\\w+\\s*(?:=|\\?\\?=|\\|\\|=)`).test(diffText)),
+  };
+}
+
+/**
+ * Detects a prop name that is forwarded through several component signatures.
+ */
+function detectRepeatedForwardedProp(diffText: string): string | null {
+  const forwardedPropCounts = new Map<string, number>();
+
+  for (const match of diffText.matchAll(FUNCTION_SIGNATURE_PROP_PATTERN)) {
+    const propName = match[1];
+    if (!propName) continue;
+    forwardedPropCounts.set(propName, (forwardedPropCounts.get(propName) ?? 0) + 1);
+  }
+
+  for (const [propName, count] of forwardedPropCounts.entries()) {
+    const forwardingUses = diffText.match(new RegExp(`${propName}=\\{${propName}\\}`, "g"))?.length ?? 0;
+    if (count >= 3 && forwardingUses >= 2) {
+      return propName;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extracts simple parameter names from function declarations in the diff.
+ */
+function extractFunctionParameterNames(diffText: string): readonly string[] {
+  const parameterNames = new Set<string>();
+
+  for (const match of diffText.matchAll(FUNCTION_DECLARATION_WITH_PARAMS_PATTERN)) {
+    const rawParameterList = match[1];
+    if (!rawParameterList) continue;
+
+    for (const rawParameter of rawParameterList.split(",")) {
+      const trimmedParameter = rawParameter.trim();
+      if (trimmedParameter.length === 0 || trimmedParameter.startsWith("{")) continue;
+
+      const name = trimmedParameter.split(":")[0]?.trim();
+      if (!name || !/^[A-Za-z_]\w*$/.test(name)) continue;
+      parameterNames.add(name);
+    }
+  }
+
+  return [...parameterNames];
 }
