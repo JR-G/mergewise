@@ -28,6 +28,8 @@ ALWAYS DISCARD a finding if:
 - The suggested line range does not match the actual code at those lines
 - It attacks a well-structured helper component, local option list, config object, or static data block without concrete behavioural evidence
 - It treats a focused React component with stable callbacks or memoised derived data as over-engineered without showing real complexity cost
+- It suggests converting a class component to a function component for stylistic consistency rather than a concrete maintenance problem in the diff
+- It suggests restructuring static route tables, status maps, or other constant configuration without real behavioural complexity or duplication
 
 NEVER DISCARD a finding about:
 - Missing error handling at I/O, network, or request-handler boundaries
@@ -38,7 +40,7 @@ KEEP a finding if:
 - It identifies a genuine SRP violation, god function, or mixed-concern problem with a specific cost explanation
 - It identifies a missing abstraction (factory, strategy, composition) with concrete evidence of repetition or coupling
 - It identifies coupling, prop drilling, or hardcoded dependencies that prevent testing or reuse
-- It catches an idiomatic TypeScript/React anti-pattern (derived state via useState+useEffect, stale closures, imperative where declarative fits)
+- It catches an idiomatic TypeScript/React anti-pattern (derived state via useState+useEffect, stale closures, imperative where declarative fits, unstable context provider values)
 - It identifies missing failure handling at a system boundary (I/O, network, external API)
 - It suggests a refactoring that would genuinely improve maintainability with a concrete reason tied to this specific code
 - It is clearly the single most important maintainability comment in the file, even if smaller secondary issues also exist

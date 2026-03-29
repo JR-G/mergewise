@@ -67,6 +67,13 @@ describe("buildSlimSystemPrompt", () => {
     expect(prompt).toContain("Do NOT suggest adding null checks");
     expect(prompt).toContain("Do NOT act as a linter, bug finder, or security scanner");
     expect(prompt).toContain("Do NOT suggest error handling additions unless");
+    expect(prompt).toContain("Do NOT suggest converting a class component to a function component");
+    expect(prompt).toContain("Do NOT suggest restructuring route tables");
+  });
+
+  test("prioritises provider stability and prop drilling over weaker React style comments", () => {
+    expect(prompt).toContain("unstable context provider values as a first-class issue");
+    expect(prompt).toContain("When a diff contains prop drilling and a smaller React style issue");
   });
 
   test("includes agent-specific detection criteria when agentFriendliness is true", () => {
