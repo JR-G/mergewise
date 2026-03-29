@@ -5,6 +5,8 @@ import { discoverFixtures, loadFixture } from "./loader";
 import { runFixture } from "./runner";
 import { printReport, printMultiRunReport, appendRunRecord } from "./reporter";
 
+type EvalSuite = "all" | "benchmark" | "regression";
+
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
   options: {
@@ -14,6 +16,7 @@ const { values } = parseArgs({
     model: { type: "string" },
     engine: { type: "string" },
     "judge-model": { type: "string" },
+    suite: { type: "string" },
   },
   strict: true,
 });
@@ -37,6 +40,7 @@ const envModel = rawModel !== undefined && rawModel.length > 0 ? rawModel : "gpt
 const rawJudgeModel = values["judge-model"]?.trim() ?? process.env["LLM_EVAL_JUDGE_MODEL"]?.trim();
 const judgeModel = rawJudgeModel && rawJudgeModel.length > 0 ? rawJudgeModel : undefined;
 const rawEngine = values.engine?.trim();
+const rawSuite = values.suite?.trim();
 
 if (
   rawEngine !== undefined &&
@@ -48,6 +52,18 @@ if (
 }
 
 const executionMode = rawEngine as EvalExecutionMode | undefined;
+
+if (
+  rawSuite !== undefined &&
+  rawSuite !== "all" &&
+  rawSuite !== "benchmark" &&
+  rawSuite !== "regression"
+) {
+  console.error(`--suite must be one of "all", "benchmark", or "regression", got "${rawSuite}"`);
+  process.exit(1);
+}
+
+const suite = (rawSuite ?? "all") as EvalSuite;
 
 const MAX_MODELS = 5;
 
@@ -103,9 +119,30 @@ if (variants.length === 0) {
 }
 
 const fixtureFilter = values.fixture;
-const fixtureNames = fixtureFilter
+const discoveredFixtureNames = fixtureFilter
   ? [fixtureFilter]
   : await discoverFixtures();
+
+async function selectFixtureNames(): Promise<string[]> {
+  if (suite === "all" || fixtureFilter) {
+    return discoveredFixtureNames;
+  }
+
+  const selected: string[] = [];
+  for (const fixtureName of discoveredFixtureNames) {
+    const fixture = await loadFixture(fixtureName);
+    const hasBenchmarkRubric = fixture.config.reviewQuality !== undefined;
+    if (suite === "benchmark" && hasBenchmarkRubric) {
+      selected.push(fixtureName);
+    }
+    if (suite === "regression" && !hasBenchmarkRubric) {
+      selected.push(fixtureName);
+    }
+  }
+  return selected;
+}
+
+const fixtureNames = await selectFixtureNames();
 
 const allResults: EvalResult[][] = [];
 const runOptions: EvalRunOptions = judgeModel
@@ -116,6 +153,10 @@ const runOptions: EvalRunOptions = judgeModel
   : {
     ...(executionMode ? { executionMode } : {}),
   };
+
+console.log(
+  `Eval configuration: suite=${suite}, engine=${executionMode ?? "pipeline"}, models=${models.join(", ")}${judgeModel ? `, judge=${judgeModel}` : ""}`,
+);
 
 for (let run = 0; run < runCount; run++) {
   if (runCount > 1) {

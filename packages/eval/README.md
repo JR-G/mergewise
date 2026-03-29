@@ -79,6 +79,18 @@ Production pipeline benchmark:
 LLM_EVAL_API_KEY=... bun run eval --engine pipeline
 ```
 
+Benchmark-only suite:
+
+```bash
+LLM_EVAL_API_KEY=... bun run eval --suite benchmark
+```
+
+Regression-only suite:
+
+```bash
+LLM_EVAL_API_KEY=... bun run eval --suite regression
+```
+
 Benchmark with a judge model for reviewer-quality scoring:
 
 ```bash
@@ -105,6 +117,12 @@ The intended workflow is:
 
 1. use `Production Quality` to improve the reviewer
 2. use `Regression Guardrails` to ensure changes do not break known behaviours
+
+Recommended loops:
+
+1. `bun run eval --suite benchmark` while iterating on output quality
+2. `bun run eval --suite regression` before merging prompt or pipeline changes
+3. `bun run eval --suite all` for release candidates or larger model changes
 
 ## Authoring Guidance
 
