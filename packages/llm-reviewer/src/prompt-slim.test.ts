@@ -77,6 +77,7 @@ describe("buildSlimSystemPrompt", () => {
     expect(prompt).toContain("same prop is forwarded unchanged through 3+ component signatures");
     expect(prompt).toContain("Boolean flag parameters that switch between two behaviours");
     expect(prompt).toContain("memoised filtered/sorted list for display");
+    expect(prompt).toContain("Do NOT call it prop drilling when a parent passes data or callbacks directly into the one child");
   });
 
   test("includes agent-specific detection criteria when agentFriendliness is true", () => {
@@ -247,6 +248,55 @@ describe("buildToolUseFilePrompt", () => {
     });
 
     expect(result).toContain("Static configuration table detected");
+  });
+
+  test("includes targeted hint for validation mixed with provider state updates", () => {
+    const providerDiff: FileDiff = {
+      filePath: toFilePath("src/AuthProvider.tsx"),
+      previousPath: null,
+      hunks: [
+        {
+          header: "@@ -1,3 +1,5 @@",
+          lines: [
+            "+if (username.length < 3) throw new Error(\"Username too short\");",
+            "+setUser(username);",
+          ],
+        },
+      ],
+    };
+
+    const result = buildToolUseFilePrompt({
+      fileDiff: providerDiff,
+      signals: makeSignals({ hookCount: 2 }),
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("Validation logic and state updates appear interleaved");
+  });
+
+  test("includes targeted hint for parameter mutation", () => {
+    const mutationDiff: FileDiff = {
+      filePath: toFilePath("src/config.ts"),
+      previousPath: null,
+      hunks: [
+        {
+          header: "@@ -1,3 +1,5 @@",
+          lines: [
+            "+function applyDefaults(config: Config) {",
+            "+  config.timeout ??= 3000;",
+            "+}",
+          ],
+        },
+      ],
+    };
+
+    const result = buildToolUseFilePrompt({
+      fileDiff: mutationDiff,
+      signals: makeSignals(),
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("Function parameter mutation detected");
   });
 
   test("excludes full file content", () => {

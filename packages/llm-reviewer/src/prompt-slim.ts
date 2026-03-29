@@ -73,6 +73,7 @@ Prioritise the strongest maintainability problem over secondary cleanups. One sh
 - Do NOT manufacture extra findings on already-clean React code. A focused component with stable hooks, memoised derivations, and clear callbacks should usually receive no comments.
 - Do NOT treat a focused component as a mixed-concerns smell just because it renders UI, keeps one small local state toggle, and derives a memoised filtered/sorted list for display.
 - Do NOT critique a small helper component just because it renders JSX and maps a short static list. Rendering UI and listing local options is not a design smell by itself.
+- Do NOT call it prop drilling when a parent passes data or callbacks directly into the one child that actually needs them inside the same focused component flow. Prop drilling requires intermediate layers that do not use the value.
 - Do NOT suggest converting a class component to a function component unless the class form is causing a concrete maintenance problem in this diff. Style consistency alone is not enough.
 - Do NOT suggest restructuring route tables, status maps, rate-limit settings, or other static configuration unless the diff introduces real branching behaviour or change-amplifying duplication.
 - Do NOT turn a main structural issue into multiple weaker comments unless each comment stands on its own and would still be worth posting alone.
@@ -237,6 +238,15 @@ function buildTargetedReviewHints(fileDiff: FileDiff): string[] {
     );
   }
 
+  if (
+    diffText.includes("throw new Error") &&
+    (diffText.includes("setUser(") || diffText.includes("setToken(") || diffText.includes("setState("))
+  ) {
+    lines.push(
+      "- Validation logic and state updates appear interleaved in the same React flow. Check whether validation/token creation can be extracted into a pure helper so the provider only coordinates state updates.",
+    );
+  }
+
   const functionSignatureMatches = [...diffText.matchAll(/function\s+\w+\s*\(\{\s*(\w+)\s*\}\s*:\s*\{\s*\1\s*:/g)];
   const forwardedPropCounts = new Map<string, number>();
   for (const match of functionSignatureMatches) {
@@ -260,6 +270,12 @@ function buildTargetedReviewHints(fileDiff: FileDiff): string[] {
   ) {
     lines.push(
       "- Static configuration table detected. Stay quiet unless the diff introduces real branching behaviour, duplicated update paths, or other change-amplifying logic.",
+    );
+  }
+
+  if (/function\s+\w+\(\w+:\s*\w+\)/.test(diffText) && /\w+\.\w+\s*\?\?=/.test(diffText)) {
+    lines.push(
+      "- Function parameter mutation detected. Check whether the helper is mutating an input object that callers may still reference, and prefer returning a new object instead.",
     );
   }
 
