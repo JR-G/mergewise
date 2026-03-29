@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import type { ReviewClientConfig } from "@mergewise/llm-reviewer";
-import type { EvalResult, EvalVariant } from "./types";
+import type { EvalExecutionMode, EvalResult, EvalRunOptions, EvalVariant } from "./types";
 import { discoverFixtures, loadFixture } from "./loader";
 import { runFixture } from "./runner";
 import { printReport, printMultiRunReport, appendRunRecord } from "./reporter";
@@ -12,6 +12,8 @@ const { values } = parseArgs({
     variant: { type: "string" },
     runs: { type: "string" },
     model: { type: "string" },
+    engine: { type: "string" },
+    "judge-model": { type: "string" },
   },
   strict: true,
 });
@@ -32,6 +34,20 @@ const rawBaseUrl = process.env["LLM_EVAL_BASE_URL"]?.trim();
 const baseUrl = rawBaseUrl !== undefined && rawBaseUrl.length > 0 ? rawBaseUrl : undefined;
 const rawModel = process.env["LLM_EVAL_MODEL"]?.trim();
 const envModel = rawModel !== undefined && rawModel.length > 0 ? rawModel : "gpt-4.1";
+const rawJudgeModel = values["judge-model"]?.trim() ?? process.env["LLM_EVAL_JUDGE_MODEL"]?.trim();
+const judgeModel = rawJudgeModel && rawJudgeModel.length > 0 ? rawJudgeModel : undefined;
+const rawEngine = values.engine?.trim();
+
+if (
+  rawEngine !== undefined &&
+  rawEngine !== "legacy" &&
+  rawEngine !== "pipeline"
+) {
+  console.error(`--engine must be either "legacy" or "pipeline", got "${rawEngine}"`);
+  process.exit(1);
+}
+
+const executionMode = rawEngine as EvalExecutionMode | undefined;
 
 const MAX_MODELS = 5;
 
@@ -64,10 +80,13 @@ function buildVariantsForModel(
 ): EvalVariant[] {
   const clientConfig: ReviewClientConfig = { apiKey: key, baseUrl, model: modelName };
   const prefix = includeModelPrefix ? `${modelName}/` : "";
-  return [
-    { label: `${prefix}default`, clientConfig },
-    { label: `${prefix}no-catalogue`, clientConfig, antiPatterns: [] },
-  ];
+  const defaultVariant: EvalVariant = judgeModel
+    ? { label: `${prefix}default`, clientConfig, judgeModel }
+    : { label: `${prefix}default`, clientConfig };
+  const noCatalogueVariant: EvalVariant = judgeModel
+    ? { label: `${prefix}no-catalogue`, clientConfig, antiPatterns: [], judgeModel }
+    : { label: `${prefix}no-catalogue`, clientConfig, antiPatterns: [] };
+  return [defaultVariant, noCatalogueVariant];
 }
 
 const includeModelPrefix = models.length > 1;
@@ -89,6 +108,14 @@ const fixtureNames = fixtureFilter
   : await discoverFixtures();
 
 const allResults: EvalResult[][] = [];
+const runOptions: EvalRunOptions = judgeModel
+  ? {
+    ...(executionMode ? { executionMode } : {}),
+    judgeClientConfig: { apiKey, baseUrl, model: judgeModel },
+  }
+  : {
+    ...(executionMode ? { executionMode } : {}),
+  };
 
 for (let run = 0; run < runCount; run++) {
   if (runCount > 1) {
@@ -109,7 +136,7 @@ for (let run = 0; run < runCount; run++) {
     for (const variant of variants) {
       console.log(`Running ${fixtureName} / ${variant.label}...`);
       try {
-        const result = await runFixture(fixture, variant);
+        const result = await runFixture(fixture, variant, runOptions);
         results.push(result);
       } catch (error) {
         console.error(

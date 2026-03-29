@@ -48,6 +48,7 @@ describe("loadFixture", () => {
     expect(fixture.fixtureId).toBe("clean-utility-functions");
     expect(fixture.fileDiff.filePath).toBeDefined();
     expect(Array.isArray(fixture.expectations)).toBe(true);
+    expect(fixture.sourceFiles instanceof Map).toBe(true);
   });
 
   it("throws for a nonexistent fixture directory", async () => {
@@ -73,6 +74,12 @@ describe("loadFixture", () => {
     const firstName = fixtures[0]!;
     const fixture = await loadFixture(firstName);
     expect(fixture.fixtureId).toBe(firstName);
+  });
+
+  it("loads optional fixture quality metadata when present", async () => {
+    const fixture = await loadFixture("god-component");
+    expect(fixture.config.executionMode).toBe("pipeline");
+    expect(fixture.config.reviewQuality?.summary).toContain("single React component");
   });
 
   it("throws for a fixture with invalid diff.json", async () => {

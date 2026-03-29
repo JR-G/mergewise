@@ -12,11 +12,43 @@ const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
 
 const ANSI_OVERHEAD = 9;
+const CYAN = "\x1b[36m";
+const BOLD = "\x1b[1m";
 
 function colourScore(value: number): string {
   if (value >= 0.8) return `${GREEN}${value.toFixed(2)}${RESET}`;
   if (value >= 0.5) return `${YELLOW}${value.toFixed(2)}${RESET}`;
   return `${RED}${value.toFixed(2)}${RESET}`;
+}
+
+function formatExecutionMode(result: EvalResult): string {
+  return result.executionMode === "pipeline" ? `${CYAN}pipeline${RESET}` : `${DIM}legacy${RESET}`;
+}
+
+function printRunSummary(results: readonly EvalResult[]): void {
+  const pipelineRuns = results.filter((result) => result.executionMode === "pipeline");
+  const qualityRuns = pipelineRuns.filter((result) => result.reviewQuality !== null);
+  const meanQuality = qualityRuns.length === 0
+    ? null
+    : qualityRuns.reduce((sum, result) => sum + (result.reviewQuality?.overall ?? 0), 0) / qualityRuns.length;
+  const regressionMeanRecall = results.length === 0
+    ? 0
+    : results.reduce((sum, result) => sum + result.score.recall, 0) / results.length;
+  const regressionMeanPrecision = results.length === 0
+    ? 0
+    : results.reduce((sum, result) => sum + result.score.precision, 0) / results.length;
+
+  printSectionTitle("Run Summary");
+  console.log(
+    `Production benchmark quality: ${meanQuality === null ? `${DIM}n/a${RESET}` : colourScore(meanQuality)}`,
+  );
+  console.log(
+    `Regression guardrails: recall ${colourScore(regressionMeanRecall)}, precision ${colourScore(regressionMeanPrecision)}`,
+  );
+}
+
+function printSectionTitle(title: string): void {
+  console.log(`\n${BOLD}${title}${RESET}`);
 }
 
 /**
@@ -25,18 +57,34 @@ function colourScore(value: number): string {
  * @param results - Evaluation results to display.
  */
 export function printReport(results: readonly EvalResult[]): void {
-  console.log("\n=== Eval Report ===\n");
+  printRunSummary(results);
+  printSectionTitle("Regression Guardrails");
 
-  const header = `${"Fixture".padEnd(25)} ${"Variant".padEnd(18)} ${"Recall".padEnd(14)} ${"Precision".padEnd(14)} ${"Findings".padEnd(10)} ${"FP".padEnd(6)} ${"Duration".padEnd(10)}`;
+  const header = `${"Fixture".padEnd(25)} ${"Variant".padEnd(18)} ${"Mode".padEnd(12)} ${"Recall".padEnd(14)} ${"Precision".padEnd(14)} ${"Findings".padEnd(10)} ${"FP".padEnd(6)} ${"Time".padEnd(10)}`;
   console.log(header);
-  console.log("─".repeat(105));
+  console.log("─".repeat(118));
 
   for (const result of results) {
     const fpDisplay = result.score.falsePositiveCount > 0
       ? `${RED}${result.score.falsePositiveCount}${RESET}`
       : `${DIM}0${RESET}`;
-    const line = `${result.fixtureId.padEnd(25)} ${result.variant.padEnd(18)} ${colourScore(result.score.recall).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(result.score.precision).padEnd(14 + ANSI_OVERHEAD)} ${String(result.score.totalFindings).padEnd(10)} ${fpDisplay.padEnd(6 + ANSI_OVERHEAD)} ${DIM}${result.durationMs}ms${RESET}`;
+    const line = `${result.fixtureId.padEnd(25)} ${result.variant.padEnd(18)} ${formatExecutionMode(result).padEnd(12 + ANSI_OVERHEAD)} ${colourScore(result.score.recall).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(result.score.precision).padEnd(14 + ANSI_OVERHEAD)} ${String(result.score.totalFindings).padEnd(10)} ${fpDisplay.padEnd(6 + ANSI_OVERHEAD)} ${DIM}${result.durationMs}ms${RESET}`;
     console.log(line);
+  }
+
+  const qualityResults = results.filter((result) => result.reviewQuality !== null);
+  if (qualityResults.length > 0) {
+    printSectionTitle("Production Quality");
+    const qualityHeader = `${"Fixture".padEnd(25)} ${"Variant".padEnd(18)} ${"Overall".padEnd(14)} ${"Coverage".padEnd(14)} ${"Restraint".padEnd(14)} ${"Priority".padEnd(14)}`;
+    console.log(qualityHeader);
+    console.log("─".repeat(104));
+
+    for (const result of qualityResults) {
+      const quality = result.reviewQuality;
+      if (!quality) continue;
+      const line = `${result.fixtureId.padEnd(25)} ${result.variant.padEnd(18)} ${colourScore(quality.overall).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(quality.heuristics.mustFindCoverage).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(quality.heuristics.restraint).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(quality.heuristics.prioritisation).padEnd(14 + ANSI_OVERHEAD)}`;
+      console.log(line);
+    }
   }
 
   for (const result of results) {
@@ -64,6 +112,17 @@ export function printReport(results: readonly EvalResult[]): void {
         }
       }
     }
+
+    if (result.reviewQuality) {
+      console.log(
+        `\n${CYAN}Reviewer quality${RESET} [${result.fixtureId}/${result.variant}]: ${result.reviewQuality.summary}`,
+      );
+      for (const dimension of result.reviewQuality.dimensions) {
+        console.log(
+          `  ${dimension.name}: ${colourScore(dimension.score)} ${DIM}${dimension.rationale.slice(0, 120)}${RESET}`,
+        );
+      }
+    }
   }
 
   console.log();
@@ -72,9 +131,11 @@ export function printReport(results: readonly EvalResult[]): void {
 interface MultiRunSummary {
   readonly fixtureId: string;
   readonly variant: string;
+  readonly executionMode: string;
   readonly meanRecall: number;
   readonly fullRecallRate: number;
   readonly meanPrecision: number;
+  readonly meanQualityOverall: number | null;
   readonly runs: number;
 }
 
@@ -109,9 +170,13 @@ function summariseRuns(
     summaries.push({
       fixtureId: firstResult.fixtureId,
       variant: firstResult.variant,
+      executionMode: firstResult.executionMode,
       meanRecall: recallSum / totalRuns,
       fullRecallRate: fullRecallCount / totalRuns,
       meanPrecision: precisionSum / totalRuns,
+      meanQualityOverall: results.every((result) => result.reviewQuality !== null)
+        ? results.reduce((sum, result) => sum + (result.reviewQuality?.overall ?? 0), 0) / totalRuns
+        : null,
       runs: totalRuns,
     });
   }
@@ -127,16 +192,19 @@ function summariseRuns(
 export function printMultiRunReport(
   allResults: readonly (readonly EvalResult[])[],
 ): void {
-  console.log(`\n=== Eval Report (${allResults.length} runs) ===\n`);
+  printSectionTitle(`Benchmark Report (${allResults.length} runs)`);
 
   const summaries = summariseRuns(allResults);
 
-  const header = `${"Fixture".padEnd(25)} ${"Variant".padEnd(18)} ${"Mean Recall".padEnd(16)} ${"P(full)".padEnd(14)} ${"Mean Prec.".padEnd(14)} ${"Runs".padEnd(6)}`;
+  const header = `${"Fixture".padEnd(25)} ${"Variant".padEnd(18)} ${"Mode".padEnd(12)} ${"Mean Recall".padEnd(16)} ${"P(full)".padEnd(14)} ${"Mean Prec.".padEnd(14)} ${"Quality".padEnd(14)} ${"Runs".padEnd(6)}`;
   console.log(header);
-  console.log("─".repeat(95));
+  console.log("─".repeat(122));
 
   for (const summary of summaries) {
-    const line = `${summary.fixtureId.padEnd(25)} ${summary.variant.padEnd(18)} ${colourScore(summary.meanRecall).padEnd(16 + ANSI_OVERHEAD)} ${colourScore(summary.fullRecallRate).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(summary.meanPrecision).padEnd(14 + ANSI_OVERHEAD)} ${String(summary.runs).padEnd(6)}`;
+    const qualityDisplay = summary.meanQualityOverall === null
+      ? `${DIM}n/a${RESET}`
+      : colourScore(summary.meanQualityOverall);
+    const line = `${summary.fixtureId.padEnd(25)} ${summary.variant.padEnd(18)} ${summary.executionMode.padEnd(12)} ${colourScore(summary.meanRecall).padEnd(16 + ANSI_OVERHEAD)} ${colourScore(summary.fullRecallRate).padEnd(14 + ANSI_OVERHEAD)} ${colourScore(summary.meanPrecision).padEnd(14 + ANSI_OVERHEAD)} ${qualityDisplay.padEnd(14 + ANSI_OVERHEAD)} ${String(summary.runs).padEnd(6)}`;
     console.log(line);
   }
 

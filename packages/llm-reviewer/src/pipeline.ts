@@ -19,7 +19,7 @@ import { criticFindings, collectFileContents } from "./critic";
 import { extractStructuralSignals } from "./signals";
 import { buildSlimSystemPrompt, buildToolUseFilePrompt } from "./prompt-slim";
 import { parseLlmResponse } from "./schema";
-import { REVIEW_TOOLS, toOpenAiTools, executeToolCall, buildAvailablePatternsSummary } from "./review-tools";
+import { REVIEW_TOOLS, toOpenAiTools, executeToolCall, buildAvailablePatternsSummary, lookupPattern } from "./review-tools";
 import type { ToolContext } from "./review-tools";
 
 const PRIORITY_ORDER: Readonly<Record<string, number>> = {
@@ -125,8 +125,13 @@ async function runReviewStage(
 ): Promise<{ findings: Finding[]; failedFiles: FileReviewFailure[]; usage: CompletionUsage | undefined; perFileUsage: FileTokenUsage[] }> {
   const { diffs, pullRequest, codebaseContext, client, config } = input;
   const systemPrompt = buildSlimSystemPrompt({ agentFriendliness: config.agentFriendliness, toolUse: true });
-  const openAiTools = toOpenAiTools(REVIEW_TOOLS);
-  const availablePatterns = buildAvailablePatternsSummary();
+  const enabledTools = config.knowledgeEnabled === false
+    ? REVIEW_TOOLS.filter((tool) => tool !== lookupPattern)
+    : REVIEW_TOOLS;
+  const openAiTools = toOpenAiTools(enabledTools);
+  const availablePatterns = config.knowledgeEnabled === false
+    ? "Pattern lookup disabled for this run."
+    : buildAvailablePatternsSummary();
   const allFindings: Finding[] = [];
   const failedFiles: FileReviewFailure[] = [];
   const perFileUsage: FileTokenUsage[] = [];
@@ -167,7 +172,7 @@ async function runReviewStage(
         systemPrompt,
         userPrompt,
         tools: openAiTools,
-        onToolCall: (toolName, rawArgs) => executeToolCall(REVIEW_TOOLS, toolContext, toolName, rawArgs),
+        onToolCall: (toolName, rawArgs) => executeToolCall(enabledTools, toolContext, toolName, rawArgs),
         maxTokens: MAX_REVIEW_RESPONSE_TOKENS,
         toolTokenBudget: perFileToolBudget,
       });

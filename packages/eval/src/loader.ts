@@ -2,7 +2,13 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { FileDiff, PullRequestMetadata } from "@mergewise/shared-types";
 import { toRepoFullName, toPRNumber, toSHA } from "@mergewise/shared-types";
-import type { EvalFixture, ExpectedFinding } from "./types";
+import type {
+  EvalFixture,
+  EvalFixtureConfig,
+  ExpectedFinding,
+  ReviewQualityDimension,
+  ReviewQualityRubric,
+} from "./types";
 
 const FIXTURES_DIR = join(import.meta.dirname, "..", "fixtures");
 
@@ -83,13 +89,17 @@ export async function loadFixture(
   }
 
   const expectations = rawExpectations as ExpectedFinding[];
-  const sourceFile = await findSourceFile(fixtureDir);
+  const config = await loadFixtureConfig(name, fixtureDir);
+  const sourceFiles = await loadSourceFiles(fixtureDir, diffRaw.filePath);
+  const sourceFile = sourceFiles.get(diffRaw.filePath) ?? null;
 
   return {
     fixtureId: name,
     fileDiff: diffRaw,
     fullFileContent: sourceFile,
+    sourceFiles,
     expectations,
+    config,
   };
 }
 
@@ -110,13 +120,165 @@ function isValidExpectedFinding(
   );
 }
 
-async function findSourceFile(fixtureDir: string): Promise<string | null> {
+async function loadFixtureConfig(
+  fixtureId: string,
+  fixtureDir: string,
+): Promise<EvalFixtureConfig> {
+  const configPath = join(fixtureDir, "fixture.json");
+  const configFile = Bun.file(configPath);
+  if (!(await configFile.exists())) {
+    return {};
+  }
+
+  let rawConfig: unknown;
+  try {
+    rawConfig = await configFile.json();
+  } catch (error) {
+    throw new Error(`Failed to load fixture.json for fixture "${fixtureId}"`, {
+      cause: error,
+    });
+  }
+
+  if (!isValidFixtureConfig(rawConfig)) {
+    throw new Error(
+      `Invalid fixture.json for fixture "${fixtureId}": expected object with optional executionMode, PR metadata, and reviewQuality`,
+    );
+  }
+
+  return rawConfig;
+}
+
+async function loadSourceFiles(
+  fixtureDir: string,
+  primaryPath: string,
+): Promise<ReadonlyMap<string, string>> {
   const entries = await readdir(fixtureDir);
-  const source = entries.find(
-    (name) => name.endsWith(".ts") || name.endsWith(".tsx"),
+  const sourceEntries = entries.filter((name) =>
+    name.endsWith(".ts") ||
+    name.endsWith(".tsx") ||
+    name.endsWith(".js") ||
+    name.endsWith(".jsx"),
   );
-  if (!source) return null;
-  return Bun.file(join(fixtureDir, source)).text();
+
+  if (sourceEntries.length === 0) {
+    return new Map();
+  }
+
+  const sourceFiles = new Map<string, string>();
+
+  if (sourceEntries.length === 1) {
+    const sourceEntry = sourceEntries[0];
+    if (!sourceEntry) return sourceFiles;
+    sourceFiles.set(primaryPath, await Bun.file(join(fixtureDir, sourceEntry)).text());
+    return sourceFiles;
+  }
+
+  for (const sourceEntry of sourceEntries) {
+    sourceFiles.set(sourceEntry, await Bun.file(join(fixtureDir, sourceEntry)).text());
+  }
+
+  return sourceFiles;
+}
+
+function isValidFixtureConfig(value: unknown): value is EvalFixtureConfig {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+
+  if (
+    candidate["executionMode"] !== undefined &&
+    candidate["executionMode"] !== "legacy" &&
+    candidate["executionMode"] !== "pipeline"
+  ) {
+    return false;
+  }
+
+  if (
+    candidate["prTitle"] !== undefined &&
+    typeof candidate["prTitle"] !== "string"
+  ) {
+    return false;
+  }
+
+  if (
+    candidate["prDescription"] !== undefined &&
+    typeof candidate["prDescription"] !== "string"
+  ) {
+    return false;
+  }
+
+  if (
+    candidate["maxFilesPerReview"] !== undefined &&
+    typeof candidate["maxFilesPerReview"] !== "number"
+  ) {
+    return false;
+  }
+
+  if (
+    candidate["reviewQuality"] !== undefined &&
+    !isValidReviewQualityRubric(candidate["reviewQuality"])
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function isValidReviewQualityRubric(value: unknown): value is ReviewQualityRubric {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+
+  if (
+    typeof candidate["summary"] !== "string" ||
+    typeof candidate["reviewGoal"] !== "string"
+  ) {
+    return false;
+  }
+
+  if (!Array.isArray(candidate["mustFind"]) || !Array.isArray(candidate["mustAvoid"])) {
+    return false;
+  }
+
+  if (
+    candidate["findingCountRange"] !== undefined &&
+    !(
+      Array.isArray(candidate["findingCountRange"]) &&
+      candidate["findingCountRange"].length === 2 &&
+      typeof candidate["findingCountRange"][0] === "number" &&
+      typeof candidate["findingCountRange"][1] === "number"
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    candidate["prioritise"] !== undefined &&
+    !Array.isArray(candidate["prioritise"])
+  ) {
+    return false;
+  }
+
+  if (
+    candidate["dimensions"] !== undefined &&
+    !isValidReviewQualityDimensions(candidate["dimensions"])
+  ) {
+    return false;
+  }
+
+  return candidate["mustFind"].every(isValidExpectedFinding)
+    && candidate["mustAvoid"].every(isValidExpectedFinding)
+    && (candidate["prioritise"] === undefined || candidate["prioritise"].every(isValidExpectedFinding));
+}
+
+function isValidReviewQualityDimensions(
+  value: unknown,
+): value is readonly ReviewQualityDimension[] {
+  return Array.isArray(value) && value.every((item) => {
+    if (typeof item !== "object" || item === null) return false;
+    const candidate = item as Record<string, unknown>;
+    return typeof candidate["name"] === "string"
+      && typeof candidate["description"] === "string"
+      && (candidate["weight"] === undefined || typeof candidate["weight"] === "number");
+  });
 }
 
 export { STUB_PR_METADATA };
