@@ -73,6 +73,7 @@ Prioritise the strongest maintainability problem over secondary cleanups. One sh
 - Do NOT suggest converting a class component to a function component unless the class form is causing a concrete maintenance problem in this diff. Style consistency alone is not enough.
 - Do NOT suggest restructuring route tables, status maps, rate-limit settings, or other static configuration unless the diff introduces real branching behaviour or change-amplifying duplication.
 - Do NOT turn a main structural issue into multiple weaker comments unless each comment stands on its own and would still be worth posting alone.
+- Do NOT split one dependency-inversion problem into separate comments for each constructed client. If one function wires up several concrete infrastructure dependencies, prefer a single consolidated comment about the abstraction boundary.
 - Do NOT produce generic advice that could apply to any codebase ("consider adding error handling", "this could be more modular", "validate before casting").
 
 ## Output format

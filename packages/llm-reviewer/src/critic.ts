@@ -30,6 +30,7 @@ ALWAYS DISCARD a finding if:
 - It treats a focused React component with stable callbacks or memoised derived data as over-engineered without showing real complexity cost
 - It suggests converting a class component to a function component for stylistic consistency rather than a concrete maintenance problem in the diff
 - It suggests restructuring static route tables, status maps, or other constant configuration without real behavioural complexity or duplication
+- It splits one dependency-inversion issue into multiple comments for each concrete client instead of describing the shared abstraction problem once
 
 NEVER DISCARD a finding about:
 - Missing error handling at I/O, network, or request-handler boundaries
