@@ -42,6 +42,16 @@ const DEFAULT_DIMENSIONS = [
     weight: 2,
   },
 ] as const;
+const MAX_JUDGE_FINDINGS = 20;
+const MAX_JUDGE_FIELD_CHARS = 400;
+const MAX_JUDGE_PROMPT_CHARS = 20_000;
+
+function truncateForJudgeField(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+  return `${value.slice(0, maxChars - 12)}…[truncated]`;
+}
 
 function countMatches(
   findings: readonly Finding[],
@@ -131,15 +141,16 @@ function buildJudgePrompt(
   }
 
   const dimensions = rubric.dimensions ?? DEFAULT_DIMENSIONS;
-  const formattedFindings = findings.length === 0
+  const findingsForJudge = findings.slice(0, MAX_JUDGE_FINDINGS);
+  const formattedFindings = findingsForJudge.length === 0
     ? "- No findings"
-    : findings.map((finding, index) => [
+    : findingsForJudge.map((finding, index) => [
       `${index + 1}. ${finding.filePath}:${finding.line} [${finding.category}]`,
-      `Evidence: ${finding.evidence}`,
-      `Recommendation: ${finding.recommendation}`,
+      `Evidence: ${truncateForJudgeField(finding.evidence, MAX_JUDGE_FIELD_CHARS)}`,
+      `Recommendation: ${truncateForJudgeField(finding.recommendation, MAX_JUDGE_FIELD_CHARS)}`,
     ].join("\n")).join("\n\n");
 
-  return [
+  const prompt = [
     `Scenario: ${rubric.summary}`,
     `Reviewer goal: ${rubric.reviewGoal}`,
     "",
@@ -166,6 +177,14 @@ function buildJudgePrompt(
     "",
     'Respond as JSON: {"summary":"...","dimensions":[{"name":"...","score":0.0,"rationale":"..."}]}',
   ].join("\n");
+
+  if (prompt.length <= MAX_JUDGE_PROMPT_CHARS) {
+    return prompt;
+  }
+
+  throw new Error(
+    `Judge prompt exceeded ${MAX_JUDGE_PROMPT_CHARS} characters after truncation`,
+  );
 }
 
 function normaliseJudgeResponse(
@@ -253,12 +272,22 @@ export async function scoreReviewQuality(
   }
 
   const client = new ReviewClient(judgeClientConfig);
-  const { content } = await client.complete(
-    "You are evaluating the quality of AI code review output for a refactoring-focused reviewer. Judge the reviewer, not the underlying code author.",
-    buildJudgePrompt(findings, fixture, heuristics),
-    2048,
-    0.1,
-  );
+  try {
+    const { content } = await client.complete(
+      "You are evaluating the quality of AI code review output for a refactoring-focused reviewer. Judge the reviewer, not the underlying code author.",
+      buildJudgePrompt(findings, fixture, heuristics),
+      2048,
+      0.1,
+    );
 
-  return normaliseJudgeResponse(content, fixture, heuristics);
+    return normaliseJudgeResponse(content, fixture, heuristics);
+  } catch {
+    return {
+      overall: Number((((heuristics.mustFindCoverage + heuristics.restraint + heuristics.prioritisation) / 3)).toFixed(2)),
+      heuristics,
+      dimensions: [],
+      summary: "Judge request failed; overall score is heuristic-only.",
+      scoringMode: "heuristic",
+    };
+  }
 }

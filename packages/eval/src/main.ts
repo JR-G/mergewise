@@ -123,26 +123,32 @@ const discoveredFixtureNames = fixtureFilter
   ? [fixtureFilter]
   : await discoverFixtures();
 
-async function selectFixtureNames(): Promise<string[]> {
+async function selectFixtures(): Promise<ReadonlyMap<string, Awaited<ReturnType<typeof loadFixture>>>> {
+  const fixtures = new Map<string, Awaited<ReturnType<typeof loadFixture>>>();
+
   if (suite === "all" || fixtureFilter) {
-    return discoveredFixtureNames;
+    for (const fixtureName of discoveredFixtureNames) {
+      fixtures.set(fixtureName, await loadFixture(fixtureName));
+    }
+    return fixtures;
   }
 
-  const selected: string[] = [];
   for (const fixtureName of discoveredFixtureNames) {
     const fixture = await loadFixture(fixtureName);
     const hasBenchmarkRubric = fixture.config.reviewQuality !== undefined;
     if (suite === "benchmark" && hasBenchmarkRubric) {
-      selected.push(fixtureName);
+      fixtures.set(fixtureName, fixture);
     }
     if (suite === "regression" && !hasBenchmarkRubric) {
-      selected.push(fixtureName);
+      fixtures.set(fixtureName, fixture);
     }
   }
-  return selected;
+
+  return fixtures;
 }
 
-const fixtureNames = await selectFixtureNames();
+const selectedFixtures = await selectFixtures();
+const fixtureNames = [...selectedFixtures.keys()];
 if (fixtureNames.length === 0) {
   console.error(`No fixtures matched suite "${suite}"`);
   process.exit(1);
@@ -176,13 +182,8 @@ for (let run = 0; run < runCount; run++) {
   const results: EvalResult[] = [];
 
   for (const fixtureName of fixtureNames) {
-    let fixture;
-    try {
-      fixture = await loadFixture(fixtureName);
-    } catch (error) {
-      console.error(`Failed to load fixture "${fixtureName}":`, error);
-      continue;
-    }
+    const fixture = selectedFixtures.get(fixtureName);
+    if (!fixture) continue;
 
     for (const variant of variants) {
       console.log(`Running ${fixtureName} / ${variant.label}...`);

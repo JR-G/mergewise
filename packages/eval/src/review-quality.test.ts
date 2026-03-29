@@ -89,6 +89,12 @@ describe("scoreReviewQualityHeuristics", () => {
     expect(heuristics?.mustFindCoverage).toBe(1);
     expect(heuristics?.prioritisation).toBe(1);
     expect(heuristics?.restraint).toBe(1);
+    expect(heuristics?.mustFindCoverage).toBeGreaterThanOrEqual(0);
+    expect(heuristics?.mustFindCoverage).toBeLessThanOrEqual(1);
+    expect(heuristics?.prioritisation).toBeGreaterThanOrEqual(0);
+    expect(heuristics?.prioritisation).toBeLessThanOrEqual(1);
+    expect(heuristics?.restraint).toBeGreaterThanOrEqual(0);
+    expect(heuristics?.restraint).toBeLessThanOrEqual(1);
   });
 
   test("penalises avoidable findings and incorrect finding count", () => {

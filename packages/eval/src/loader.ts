@@ -207,7 +207,12 @@ function isValidFixtureConfig(value: unknown): value is EvalFixtureConfig {
 
   if (
     candidate["maxFilesPerReview"] !== undefined &&
-    typeof candidate["maxFilesPerReview"] !== "number"
+    (
+      typeof candidate["maxFilesPerReview"] !== "number" ||
+      !Number.isFinite(candidate["maxFilesPerReview"]) ||
+      !Number.isInteger(candidate["maxFilesPerReview"]) ||
+      candidate["maxFilesPerReview"] < 1
+    )
   ) {
     return false;
   }
@@ -243,7 +248,12 @@ function isValidReviewQualityRubric(value: unknown): value is ReviewQualityRubri
       Array.isArray(candidate["findingCountRange"]) &&
       candidate["findingCountRange"].length === 2 &&
       typeof candidate["findingCountRange"][0] === "number" &&
-      typeof candidate["findingCountRange"][1] === "number"
+      typeof candidate["findingCountRange"][1] === "number" &&
+      Number.isFinite(candidate["findingCountRange"][0]) &&
+      Number.isFinite(candidate["findingCountRange"][1]) &&
+      candidate["findingCountRange"][0] >= 0 &&
+      candidate["findingCountRange"][1] >= 0 &&
+      candidate["findingCountRange"][0] <= candidate["findingCountRange"][1]
     )
   ) {
     return false;

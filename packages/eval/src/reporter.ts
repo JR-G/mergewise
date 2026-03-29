@@ -14,6 +14,7 @@ const RESET = "\x1b[0m";
 const ANSI_OVERHEAD = 9;
 const CYAN = "\x1b[36m";
 const BOLD = "\x1b[1m";
+const MAX_BENCHMARK_SUMMARY_CHARS = 200;
 
 function colourScore(value: number): string {
   if (value >= 0.8) return `${GREEN}${value.toFixed(2)}${RESET}`;
@@ -53,6 +54,14 @@ function printRunSummary(results: readonly EvalResult[]): void {
 
 function printSectionTitle(title: string): void {
   console.log(`\n${BOLD}${title}${RESET}`);
+}
+
+function truncateForConsole(value: string, maxChars: number): string {
+  const flattened = value.replace(/\s+/g, " ").trim();
+  if (flattened.length <= maxChars) {
+    return flattened;
+  }
+  return `${flattened.slice(0, maxChars - 1)}…`;
 }
 
 function compareResults(left: EvalResult, right: EvalResult): number {
@@ -135,8 +144,8 @@ export function printReport(results: readonly EvalResult[]): void {
     }
 
     if (result.reviewQuality) {
-      console.log(
-        `\n${CYAN}Benchmark diagnosis${RESET} [${result.fixtureId}/${result.variant}]: ${result.reviewQuality.summary}`,
+        console.log(
+        `\n${CYAN}Benchmark diagnosis${RESET} [${result.fixtureId}/${result.variant}]: ${truncateForConsole(result.reviewQuality.summary, MAX_BENCHMARK_SUMMARY_CHARS)}`,
       );
       for (const dimension of result.reviewQuality.dimensions) {
         console.log(
@@ -167,7 +176,7 @@ function summariseRuns(
 
   for (const results of allResults) {
     for (const result of results) {
-      const key = `${result.fixtureId}::${result.variant}`;
+      const key = `${result.fixtureId}::${result.variant}::${result.executionMode}`;
       const group = grouped.get(key);
       if (group) {
         group.push(result);

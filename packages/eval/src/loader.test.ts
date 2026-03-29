@@ -126,4 +126,73 @@ describe("loadFixture", () => {
       await rm(tempDir, { recursive: true, force: true });
     }
   });
+
+  it("throws for a fixture with invalid fixture.json", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "eval-test-malformed-fixture-json-"));
+    const fixtureDir = join(tempDir, "bad-fixture-json");
+    await mkdir(fixtureDir, { recursive: true });
+    await writeFile(
+      join(fixtureDir, "diff.json"),
+      JSON.stringify({ filePath: "test.ts", previousPath: null, hunks: [] }),
+    );
+    await writeFile(join(fixtureDir, "expectations.json"), "[]");
+    await writeFile(join(fixtureDir, "fixture.json"), "{ not valid json");
+
+    try {
+      expect(loadFixture("bad-fixture-json", tempDir)).rejects.toThrow(
+        /fixture\.json/,
+      );
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("throws for a fixture with invalid executionMode in fixture.json", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "eval-test-invalid-fixture-mode-"));
+    const fixtureDir = join(tempDir, "bad-fixture-mode");
+    await mkdir(fixtureDir, { recursive: true });
+    await writeFile(
+      join(fixtureDir, "diff.json"),
+      JSON.stringify({ filePath: "test.ts", previousPath: null, hunks: [] }),
+    );
+    await writeFile(join(fixtureDir, "expectations.json"), "[]");
+    await writeFile(join(fixtureDir, "fixture.json"), JSON.stringify({ executionMode: "future-mode" }));
+
+    try {
+      expect(loadFixture("bad-fixture-mode", tempDir)).rejects.toThrow(
+        /Invalid fixture\.json/,
+      );
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("throws for a fixture with malformed reviewQuality in fixture.json", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "eval-test-invalid-review-quality-"));
+    const fixtureDir = join(tempDir, "bad-review-quality");
+    await mkdir(fixtureDir, { recursive: true });
+    await writeFile(
+      join(fixtureDir, "diff.json"),
+      JSON.stringify({ filePath: "test.ts", previousPath: null, hunks: [] }),
+    );
+    await writeFile(join(fixtureDir, "expectations.json"), "[]");
+    await writeFile(
+      join(fixtureDir, "fixture.json"),
+      JSON.stringify({
+        executionMode: "pipeline",
+        reviewQuality: {
+          mustFind: [],
+          mustAvoid: [],
+        },
+      }),
+    );
+
+    try {
+      expect(loadFixture("bad-review-quality", tempDir)).rejects.toThrow(
+        /Invalid fixture\.json/,
+      );
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
 });
