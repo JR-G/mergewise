@@ -1,0 +1,35 @@
+{
+  "executionMode": "pipeline",
+  "prTitle": "Add user profile editor",
+  "prDescription": "Introduces a focused component with memoised derived data and explicit callbacks.",
+  "reviewQuality": {
+    "summary": "A well-structured React component uses focused callbacks, stable memoisation, and clear prop boundaries.",
+    "reviewGoal": "Reward silence. A strong reviewer should avoid generic architecture comments and unnecessary simplification suggestions.",
+    "mustFind": [],
+    "mustAvoid": [
+      {
+        "description": "Avoids calling the component a god component or over-splitting it",
+        "matchLineRange": [1, 77],
+        "matchRecommendationContainsAny": ["god", "split", "too many responsibilities", "extract hook"],
+        "required": false
+      },
+      {
+        "description": "Avoids telling the author to remove the existing memoisation and callback boundaries",
+        "matchLineRange": [20, 40],
+        "matchRecommendationContainsAny": ["remove useMemo", "remove useCallback", "unnecessary", "overkill"],
+        "required": false
+      }
+    ],
+    "findingCountRange": [0, 0],
+    "dimensions": [
+      {
+        "name": "restraint",
+        "description": "Did the reviewer stay silent instead of manufacturing feedback?"
+      },
+      {
+        "name": "correctness",
+        "description": "If any finding was produced, was it clearly justified by the changed code?"
+      }
+    ]
+  }
+}

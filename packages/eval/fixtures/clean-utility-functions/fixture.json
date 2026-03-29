@@ -1,0 +1,22 @@
+{
+  "executionMode": "pipeline",
+  "prTitle": "Add string utility helpers",
+  "prDescription": "Introduces a small group of focused string helpers with straightforward implementations.",
+  "reviewQuality": {
+    "summary": "A utility module contains short, well-named pure functions with no obvious structural smell.",
+    "reviewGoal": "Reward silence. The reviewer should not invent refactors for already-clean utility code.",
+    "mustFind": [],
+    "mustAvoid": [
+      {
+        "description": "Avoids generic clean-code complaints on focused utility helpers",
+        "matchLineRange": [1, 27],
+        "required": false
+      }
+    ],
+    "findingCountRange": [0, 0],
+    "dimensions": [
+      { "name": "restraint", "description": "Did the reviewer stay silent on clean utility code?" },
+      { "name": "correctness", "description": "If a comment appeared, was it clearly justified by the code?" }
+    ]
+  }
+}

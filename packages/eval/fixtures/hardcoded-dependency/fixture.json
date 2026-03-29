@@ -1,0 +1,39 @@
+{
+  "executionMode": "pipeline",
+  "prTitle": "Generate and distribute reports",
+  "prDescription": "Adds report generation that constructs concrete persistence, storage, and email dependencies inline.",
+  "reviewQuality": {
+    "summary": "The dominant issue is hardcoded concrete dependencies that make the workflow tightly coupled and hard to test.",
+    "reviewGoal": "Prefer one strong dependency-inversion comment over multiple redundant per-constructor comments.",
+    "mustFind": [
+      {
+        "description": "Flags the overall dependency inversion problem",
+        "matchLineRange": [11, 38],
+        "matchRecommendationContainsAny": ["Dependency Inversion", "DIP", "inject", "abstraction", "parameter", "hardcoded", "concrete"],
+        "required": true
+      }
+    ],
+    "mustAvoid": [
+      {
+        "description": "Avoids splitting the same dependency problem into many weaker comments",
+        "matchLineRange": [15, 31],
+        "matchRecommendationContainsAny": ["PrismaClient", "S3Client", "nodemailer"],
+        "required": false
+      }
+    ],
+    "findingCountRange": [1, 2],
+    "prioritise": [
+      {
+        "description": "The top comment should capture the whole dependency issue",
+        "matchLineRange": [11, 38],
+        "matchRecommendationContainsAny": ["Dependency Inversion", "inject", "abstraction", "hardcoded", "concrete"],
+        "required": true
+      }
+    ],
+    "dimensions": [
+      { "name": "prioritisation", "description": "Did the reviewer consolidate the main issue instead of fragmenting it?" },
+      { "name": "refactoring-depth", "description": "Did it suggest a credible abstraction or injection boundary?" },
+      { "name": "restraint", "description": "Did it avoid redundant constructor-by-constructor comments?" }
+    ]
+  }
+}

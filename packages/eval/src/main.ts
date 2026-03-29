@@ -1,9 +1,11 @@
 import { parseArgs } from "node:util";
 import type { ReviewClientConfig } from "@mergewise/llm-reviewer";
-import type { EvalResult, EvalVariant } from "./types";
+import type { EvalExecutionMode, EvalResult, EvalRunOptions, EvalVariant } from "./types";
 import { discoverFixtures, loadFixture } from "./loader";
 import { runFixture } from "./runner";
 import { printReport, printMultiRunReport, appendRunRecord } from "./reporter";
+
+type EvalSuite = "all" | "benchmark" | "regression";
 
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
@@ -12,6 +14,9 @@ const { values } = parseArgs({
     variant: { type: "string" },
     runs: { type: "string" },
     model: { type: "string" },
+    engine: { type: "string" },
+    "judge-model": { type: "string" },
+    suite: { type: "string" },
   },
   strict: true,
 });
@@ -32,6 +37,33 @@ const rawBaseUrl = process.env["LLM_EVAL_BASE_URL"]?.trim();
 const baseUrl = rawBaseUrl !== undefined && rawBaseUrl.length > 0 ? rawBaseUrl : undefined;
 const rawModel = process.env["LLM_EVAL_MODEL"]?.trim();
 const envModel = rawModel !== undefined && rawModel.length > 0 ? rawModel : "gpt-4.1";
+const rawJudgeModel = values["judge-model"]?.trim() ?? process.env["LLM_EVAL_JUDGE_MODEL"]?.trim();
+const judgeModel = rawJudgeModel && rawJudgeModel.length > 0 ? rawJudgeModel : undefined;
+const rawEngine = values.engine?.trim();
+const rawSuite = values.suite?.trim();
+
+if (
+  rawEngine !== undefined &&
+  rawEngine !== "legacy" &&
+  rawEngine !== "pipeline"
+) {
+  console.error(`--engine must be either "legacy" or "pipeline", got "${rawEngine}"`);
+  process.exit(1);
+}
+
+const executionMode: EvalExecutionMode | undefined = rawEngine;
+
+if (
+  rawSuite !== undefined &&
+  rawSuite !== "all" &&
+  rawSuite !== "benchmark" &&
+  rawSuite !== "regression"
+) {
+  console.error(`--suite must be one of "all", "benchmark", or "regression", got "${rawSuite}"`);
+  process.exit(1);
+}
+
+const suite = (rawSuite ?? "all") as EvalSuite;
 
 const MAX_MODELS = 5;
 
@@ -64,10 +96,13 @@ function buildVariantsForModel(
 ): EvalVariant[] {
   const clientConfig: ReviewClientConfig = { apiKey: key, baseUrl, model: modelName };
   const prefix = includeModelPrefix ? `${modelName}/` : "";
-  return [
-    { label: `${prefix}default`, clientConfig },
-    { label: `${prefix}no-catalogue`, clientConfig, antiPatterns: [] },
-  ];
+  const defaultVariant: EvalVariant = judgeModel
+    ? { label: `${prefix}default`, clientConfig, judgeModel }
+    : { label: `${prefix}default`, clientConfig };
+  const noCatalogueVariant: EvalVariant = judgeModel
+    ? { label: `${prefix}no-catalogue`, clientConfig, antiPatterns: [], judgeModel }
+    : { label: `${prefix}no-catalogue`, clientConfig, antiPatterns: [] };
+  return [defaultVariant, noCatalogueVariant];
 }
 
 const includeModelPrefix = models.length > 1;
@@ -84,11 +119,60 @@ if (variants.length === 0) {
 }
 
 const fixtureFilter = values.fixture;
-const fixtureNames = fixtureFilter
+const discoveredFixtureNames = fixtureFilter
   ? [fixtureFilter]
   : await discoverFixtures();
 
+async function selectFixtures(): Promise<ReadonlyMap<string, Awaited<ReturnType<typeof loadFixture>>>> {
+  const fixtures = new Map<string, Awaited<ReturnType<typeof loadFixture>>>();
+
+  if (suite === "all" || fixtureFilter) {
+    for (const fixtureName of discoveredFixtureNames) {
+      fixtures.set(fixtureName, await loadFixture(fixtureName));
+    }
+    return fixtures;
+  }
+
+  for (const fixtureName of discoveredFixtureNames) {
+    const fixture = await loadFixture(fixtureName);
+    const hasBenchmarkRubric = fixture.config.reviewQuality !== undefined;
+    if (suite === "benchmark" && hasBenchmarkRubric) {
+      fixtures.set(fixtureName, fixture);
+    }
+    if (suite === "regression" && !hasBenchmarkRubric) {
+      fixtures.set(fixtureName, fixture);
+    }
+  }
+
+  return fixtures;
+}
+
+const selectedFixtures = await selectFixtures();
+const fixtureNames = [...selectedFixtures.keys()];
+if (fixtureNames.length === 0) {
+  console.error(`No fixtures matched suite "${suite}"`);
+  process.exit(1);
+}
+
 const allResults: EvalResult[][] = [];
+const runOptions: EvalRunOptions = judgeModel
+  ? {
+    ...(executionMode ? { executionMode } : {}),
+    judgeClientConfig: { apiKey, baseUrl, model: judgeModel },
+  }
+  : {
+    ...(executionMode ? { executionMode } : {}),
+  };
+
+console.log(
+  `Eval configuration: suite=${suite}, fixtures=${fixtureNames.length}, engine=${executionMode ?? "pipeline"}, models=${models.join(", ")}${judgeModel ? `, judge=${judgeModel}` : ""}`,
+);
+
+if (suite === "benchmark" && !judgeModel) {
+  console.log(
+    "Benchmark note: running without `--judge-model` produces heuristic-only quality scores.",
+  );
+}
 
 for (let run = 0; run < runCount; run++) {
   if (runCount > 1) {
@@ -98,18 +182,13 @@ for (let run = 0; run < runCount; run++) {
   const results: EvalResult[] = [];
 
   for (const fixtureName of fixtureNames) {
-    let fixture;
-    try {
-      fixture = await loadFixture(fixtureName);
-    } catch (error) {
-      console.error(`Failed to load fixture "${fixtureName}":`, error);
-      continue;
-    }
+    const fixture = selectedFixtures.get(fixtureName);
+    if (!fixture) continue;
 
     for (const variant of variants) {
       console.log(`Running ${fixtureName} / ${variant.label}...`);
       try {
-        const result = await runFixture(fixture, variant);
+        const result = await runFixture(fixture, variant, runOptions);
         results.push(result);
       } catch (error) {
         console.error(

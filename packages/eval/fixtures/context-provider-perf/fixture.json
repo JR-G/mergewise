@@ -1,0 +1,38 @@
+{
+  "executionMode": "pipeline",
+  "prTitle": "Add auth context provider",
+  "prDescription": "Introduces an AuthProvider with inline validation and an inline provider value object.",
+  "reviewQuality": {
+    "summary": "The provider contains two real issues: unstable context value and validation logic mixed into state/update responsibilities.",
+    "reviewGoal": "A strong reviewer should catch both issues and prioritise them above smaller implementation nits.",
+    "mustFind": [
+      {
+        "description": "Flags the unstable provider value",
+        "matchLineRange": [21, 26],
+        "matchRecommendationContainsAny": ["useMemo", "stable", "object", "useCallback"],
+        "required": true
+      },
+      {
+        "description": "Flags the mixed validation logic in the provider",
+        "matchLineRange": [11, 18],
+        "matchRecommendationContainsAny": ["extract", "validation", "separate", "helper"],
+        "required": true
+      }
+    ],
+    "mustAvoid": [],
+    "findingCountRange": [2, 2],
+    "prioritise": [
+      {
+        "description": "The leading comments should be the two main provider issues",
+        "matchLineRange": [11, 26],
+        "matchRecommendationContainsAny": ["validation", "stable", "useMemo", "extract"],
+        "required": true
+      }
+    ],
+    "dimensions": [
+      { "name": "correctness", "description": "Did the review identify both genuine maintainability issues?" },
+      { "name": "prioritisation", "description": "Did it focus on the provider-level concerns rather than side chatter?" },
+      { "name": "specificity", "description": "Did the suggestions explain why these two issues matter in this component?" }
+    ]
+  }
+}

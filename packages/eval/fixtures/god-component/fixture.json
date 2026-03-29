@@ -1,0 +1,49 @@
+{
+  "executionMode": "pipeline",
+  "prTitle": "Add dashboard summary view",
+  "prDescription": "Introduces a dashboard that loads active users and metrics in one component.",
+  "reviewQuality": {
+    "summary": "A single React component now fetches multiple resources, derives UI state inline, and renders unrelated concerns together.",
+    "reviewGoal": "Prioritise the structural maintainability problem over incidental performance commentary. A strong review should focus on the mixed concerns and suggest a decomposition path.",
+    "mustFind": [
+      {
+        "description": "Flags the component as mixing fetching, transformation, and rendering responsibilities",
+        "matchLineRange": [1, 9],
+        "matchRecommendationContainsAny": ["extract", "split", "hook", "responsibilit", "concern"],
+        "required": true
+      }
+    ],
+    "mustAvoid": [
+      {
+        "description": "Avoids leading with a minor sorting/memoisation nit as the main comment",
+        "matchLineRange": [6, 7],
+        "matchCategory": "perf",
+        "matchRecommendationContainsAny": ["sort", "useMemo", "memo", "every render"],
+        "required": false
+      }
+    ],
+    "findingCountRange": [1, 2],
+    "prioritise": [
+      {
+        "description": "The top comment should be about the god-component concern",
+        "matchLineRange": [1, 9],
+        "matchRecommendationContainsAny": ["extract", "split", "hook", "responsibilit", "concern"],
+        "required": true
+      }
+    ],
+    "dimensions": [
+      {
+        "name": "correctness",
+        "description": "Did the review identify the real maintainability issue rather than a secondary optimisation?"
+      },
+      {
+        "name": "refactoring-depth",
+        "description": "Does the recommendation suggest a credible decomposition path, not just a label like SRP?"
+      },
+      {
+        "name": "restraint",
+        "description": "Did the review avoid over-commenting on lower-value issues once the main issue was covered?"
+      }
+    ]
+  }
+}

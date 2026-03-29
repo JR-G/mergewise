@@ -143,6 +143,8 @@ export interface ReviewPipelineConfig {
   readonly baseUrl?: string | undefined;
   readonly maxRetries?: number | undefined;
   readonly agentFriendliness?: boolean | undefined;
+  /** Disable pattern lookup guidance and tools for ablation-style evals. */
+  readonly knowledgeEnabled?: boolean | undefined;
 }
 
 /**

@@ -1,0 +1,23 @@
+{
+  "executionMode": "pipeline",
+  "prTitle": "Add route and status config",
+  "prDescription": "Defines route metadata, HTTP status constants, and rate-limit settings.",
+  "reviewQuality": {
+    "summary": "The diff is mostly static application configuration and constant data.",
+    "reviewGoal": "Stay quiet. A strong refactoring reviewer should not try to restructure static config for its own sake.",
+    "mustFind": [],
+    "mustAvoid": [
+      {
+        "description": "Avoids asking to extract or split static config objects",
+        "matchLineRange": [1, 30],
+        "matchRecommendationContainsAny": ["extract", "split", "SRP", "responsibility", "simplify"],
+        "required": false
+      }
+    ],
+    "findingCountRange": [0, 0],
+    "dimensions": [
+      { "name": "restraint", "description": "Did the reviewer avoid commenting on static config structures?" },
+      { "name": "correctness", "description": "If a comment appeared, was it grounded in real behavioural complexity?" }
+    ]
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "executionMode": "pipeline",
+  "prTitle": "Add order queue helpers",
+  "prDescription": "Introduces several query-shaped functions that mutate state and perform side effects.",
+  "reviewQuality": {
+    "summary": "Multiple helpers violate command-query separation and mutate order state while looking like reads.",
+    "reviewGoal": "A strong review should identify the command-query problem and avoid spending most of its attention on minor literals or loop style.",
+    "mustFind": [
+      {
+        "description": "Flags at least one query-with-side-effect function clearly",
+        "matchLineRange": [12, 46],
+        "matchRecommendationContainsAny": ["query", "side effect", "command", "CQS", "pure", "modifier"],
+        "required": true
+      }
+    ],
+    "mustAvoid": [
+      {
+        "description": "Avoids leading with the magic number or loop style instead of the command-query issue",
+        "matchLineRange": [24, 46],
+        "matchRecommendationContainsAny": ["magic", "constant", "reduce", "accumulat", "declarative", "functional"],
+        "required": false
+      }
+    ],
+    "findingCountRange": [1, 3],
+    "prioritise": [
+      {
+        "description": "The first comment should be about query-side-effects",
+        "matchLineRange": [12, 46],
+        "matchRecommendationContainsAny": ["query", "side effect", "command", "CQS", "pure"],
+        "required": true
+      }
+    ],
+    "dimensions": [
+      { "name": "prioritisation", "description": "Did the reviewer put the command-query issue ahead of lesser observations?" },
+      { "name": "specificity", "description": "Did it explain why these query-shaped APIs are dangerous to maintain?" }
+    ]
+  }
+}

@@ -14,9 +14,10 @@ function applyDefaults(config: Config): Config {
 interface User { id: string; name: string; active: boolean }
 
 function getUsers(includeInactive: boolean): User[] {
-  const allUsers: User[] = [];
-  if (includeInactive) {
-    return allUsers;
-  }
-  return allUsers.filter(u => u.active);
+  const allUsers: User[] = [
+    { id: "1", name: "Ada", active: true },
+    { id: "2", name: "Grace", active: false },
+    { id: "3", name: "Linus", active: true },
+  ];
+  return includeInactive ? allUsers : allUsers.filter((user) => user.active);
 }

@@ -7,8 +7,8 @@
   },
   {
     "description": "Flags boolean flag parameter in getUsers",
-    "matchLineRange": [8, 22],
-    "matchRecommendationContainsAny": ["separate", "predicate", "two function", "filter"],
+    "matchLineRange": [14, 24],
+    "matchRecommendationContainsAny": ["separate", "split", "two function", "flag", "active", "inactive"],
     "required": true
   }
 ]

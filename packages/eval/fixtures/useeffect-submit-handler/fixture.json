@@ -1,0 +1,39 @@
+{
+  "executionMode": "pipeline",
+  "prTitle": "Add contact form submit flow",
+  "prDescription": "Uses state and an effect to trigger submission side effects.",
+  "reviewQuality": {
+    "summary": "The main issue is that an effect is acting as an event handler via a boolean flag.",
+    "reviewGoal": "Prioritise the effect-as-event-handler problem and avoid drifting into weaker secondary comments.",
+    "mustFind": [
+      {
+        "description": "Flags effect-driven submit flow",
+        "matchLineRange": [5, 17],
+        "matchRecommendationContainsAny": ["handleSubmit", "event handler", "directly", "move"],
+        "required": true
+      }
+    ],
+    "mustAvoid": [
+      {
+        "description": "Avoids leading with a minor catch-clause typing issue",
+        "matchLineRange": [8, 12],
+        "matchRecommendationContainsAny": ["instanceof", "unknown", "type guard"],
+        "required": false
+      }
+    ],
+    "findingCountRange": [1, 1],
+    "prioritise": [
+      {
+        "description": "The main comment should be the effect misuse",
+        "matchLineRange": [5, 17],
+        "matchRecommendationContainsAny": ["event handler", "handleSubmit", "directly", "move"],
+        "required": true
+      }
+    ],
+    "dimensions": [
+      { "name": "prioritisation", "description": "Did the review lead with the real structural problem?" },
+      { "name": "specificity", "description": "Did it explain the engineering cost of the boolean-flag submit flow?" },
+      { "name": "restraint", "description": "Did it avoid turning the diff into multiple lower-value comments?" }
+    ]
+  }
+}
