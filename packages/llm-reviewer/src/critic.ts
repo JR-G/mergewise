@@ -22,9 +22,12 @@ ALWAYS DISCARD a finding if:
 - It says "extract to utility" or "extract to function" without citing 3+ concrete locations of duplicated code
 - It suggests a change but does not explain the concrete engineering cost of not changing
 - It duplicates another finding — same core suggestion, different words
+- It is a secondary optimisation or cleanup that is materially weaker than another finding already covering the main maintainability issue in the same file
 - It is generic advice that could apply to any codebase ("consider adding error handling", "this could be more modular", "add validation")
 - It does not relate to structural quality, design patterns, or maintainability
 - The suggested line range does not match the actual code at those lines
+- It attacks a well-structured helper component, local option list, config object, or static data block without concrete behavioural evidence
+- It treats a focused React component with stable callbacks or memoised derived data as over-engineered without showing real complexity cost
 
 NEVER DISCARD a finding about:
 - Missing error handling at I/O, network, or request-handler boundaries
@@ -38,6 +41,7 @@ KEEP a finding if:
 - It catches an idiomatic TypeScript/React anti-pattern (derived state via useState+useEffect, stale closures, imperative where declarative fits)
 - It identifies missing failure handling at a system boundary (I/O, network, external API)
 - It suggests a refactoring that would genuinely improve maintainability with a concrete reason tied to this specific code
+- It is clearly the single most important maintainability comment in the file, even if smaller secondary issues also exist
 
 When in doubt about a non-boundary finding, DISCARD. Fewer high-quality findings are better than many marginal ones.
 
