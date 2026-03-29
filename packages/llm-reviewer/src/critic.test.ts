@@ -8,7 +8,8 @@ import {
   toRepoFullName,
   toRuleId,
 } from "@mergewise/shared-types";
-import { parseCriticResponse, splitByVerdicts } from "./critic";
+import { criticFindings, parseCriticResponse, splitByVerdicts } from "./critic";
+import type { ReviewSignals } from "./signals";
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
   return {
@@ -25,6 +26,18 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
     recommendation: "Extract side effects into a separate function.",
     confidence: toConfidence(0.9),
     status: "posted",
+    ...overrides,
+  };
+}
+
+function makeReviewSignals(overrides: Partial<ReviewSignals> = {}): ReviewSignals {
+  return {
+    hasInlineProviderValue: false,
+    hasValidationMixedWithStateUpdates: false,
+    hasRepeatedForwardedProp: false,
+    forwardedPropName: null,
+    hasStaticConfigTable: false,
+    hasParameterMutation: false,
     ...overrides,
   };
 }
@@ -172,5 +185,57 @@ describe("splitByVerdicts", () => {
     expect(result.findings[0]!.findingId).toBe("dep-3");
     expect(result.filtered.length).toBe(2);
     expect(result.filtered[0]!.reason).toContain("single dependency-inversion finding");
+  });
+});
+
+describe("criticFindings", () => {
+  test("suppresses static-config refactors deterministically before critic call", async () => {
+    const findings = [
+      makeFinding({
+        evidence: "export const ROUTES: readonly RouteDefinition[] = [",
+        recommendation: "The static routes array should be grouped by concern instead of staying as a flat list.",
+      }),
+    ];
+
+    const client = {
+      complete: async () => {
+        throw new Error("critic should not be called");
+      },
+    } as const;
+
+    const result = await criticFindings(
+      findings,
+      new Map(),
+      client as never,
+      new Map([[toFilePath("src/index.ts"), makeReviewSignals({ hasStaticConfigTable: true })]]),
+    );
+
+    expect(result.result.findings).toEqual([]);
+    expect(result.result.filtered).toHaveLength(1);
+    expect(result.result.filtered[0]!.reason).toContain("config-table refactor");
+  });
+
+  test("suppresses prop-drilling findings when repeated forwarding signal is absent", async () => {
+    const findings = [
+      makeFinding({
+        recommendation: "This is prop drilling through intermediate components. Use context instead.",
+      }),
+    ];
+
+    const client = {
+      complete: async () => {
+        throw new Error("critic should not be called");
+      },
+    } as const;
+
+    const result = await criticFindings(
+      findings,
+      new Map(),
+      client as never,
+      new Map([[toFilePath("src/index.ts"), makeReviewSignals()]]),
+    );
+
+    expect(result.result.findings).toEqual([]);
+    expect(result.result.filtered[0]!.reason).toContain("prop-drilling finding");
   });
 });

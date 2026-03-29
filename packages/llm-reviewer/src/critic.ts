@@ -1,6 +1,7 @@
 import type { Finding } from "@mergewise/shared-types";
 import { mergeUsage, type CompletionUsage, type ReviewClient } from "./client";
 import type { CriticResult, FilteredFinding } from "./pipeline-types";
+import type { ReviewSignals } from "./signals";
 
 const MAX_FINDINGS_PER_CRITIC_BATCH = 50;
 const MAX_CRITIC_RESPONSE_TOKENS = 2048;
@@ -211,6 +212,83 @@ function collapseDependencyInversionDuplicates(
   return { findings: collapsedFindings, filtered: collapsedFiltered };
 }
 
+function looksLikeStaticConfigRefactor(finding: Finding): boolean {
+  const combinedText = `${finding.evidence} ${finding.recommendation}`.toLowerCase();
+  return [
+    "routes array",
+    "route table",
+    "static configuration",
+    "status map",
+    "config table",
+    "group routes",
+    "group by concern",
+    "resource type",
+    "flat list",
+  ].some((needle) => combinedText.includes(needle));
+}
+
+function looksLikePropDrillingFinding(finding: Finding): boolean {
+  const combinedText = `${finding.evidence} ${finding.recommendation}`.toLowerCase();
+  return [
+    "prop drilling",
+    "prop-drilling",
+    "forwarding",
+    "intermediate component",
+    "use context",
+  ].some((needle) => combinedText.includes(needle));
+}
+
+function looksLikeParameterMutationFinding(finding: Finding): boolean {
+  const combinedText = `${finding.evidence} ${finding.recommendation}`.toLowerCase();
+  return [
+    "mutating an input object",
+    "mutates the input",
+    "mutation leak",
+    "prefer returning a new object",
+    "mutating the input config",
+  ].some((needle) => combinedText.includes(needle));
+}
+
+function applySignalBasedSuppressions(
+  findings: readonly Finding[],
+  reviewSignalsByFile: ReadonlyMap<string, ReviewSignals>,
+): CriticResult {
+  const kept: Finding[] = [];
+  const filtered: FilteredFinding[] = [];
+
+  for (const finding of findings) {
+    const reviewSignals = reviewSignalsByFile.get(finding.filePath);
+
+    if (reviewSignals?.hasStaticConfigTable && looksLikeStaticConfigRefactor(finding)) {
+      filtered.push({
+        finding,
+        reason: "Suppressed config-table refactor on static configuration diff",
+      });
+      continue;
+    }
+
+    if (reviewSignals && !reviewSignals.hasRepeatedForwardedProp && looksLikePropDrillingFinding(finding)) {
+      filtered.push({
+        finding,
+        reason: "Suppressed prop-drilling finding without repeated forwarding signal",
+      });
+      continue;
+    }
+
+    if (reviewSignals && !reviewSignals.hasParameterMutation && looksLikeParameterMutationFinding(finding)) {
+      filtered.push({
+        finding,
+        reason: "Suppressed mutation finding without parameter-mutation signal",
+      });
+      continue;
+    }
+
+    kept.push(finding);
+  }
+
+  return { findings: kept, filtered };
+}
+
 /**
  * Splits findings into kept and filtered based on critic verdicts.
  */
@@ -321,20 +399,33 @@ export async function criticFindings(
   findings: readonly Finding[],
   fileContents: ReadonlyMap<string, string>,
   client: ReviewClient,
+  reviewSignalsByFile: ReadonlyMap<string, ReviewSignals> = new Map(),
 ): Promise<{ result: CriticResult; usage: CompletionUsage | undefined }> {
   if (findings.length === 0) {
     return { result: { findings: [], filtered: [] }, usage: undefined };
   }
 
+  const prefiltered = applySignalBasedSuppressions(findings, reviewSignalsByFile);
+  if (prefiltered.findings.length === 0) {
+    return { result: prefiltered, usage: undefined };
+  }
+
   const allVerdicts: CriticVerdict[] = [];
   let combinedUsage: CompletionUsage | undefined;
 
-  for (let offset = 0; offset < findings.length; offset += MAX_FINDINGS_PER_CRITIC_BATCH) {
-    const batch = findings.slice(offset, offset + MAX_FINDINGS_PER_CRITIC_BATCH);
+  for (let offset = 0; offset < prefiltered.findings.length; offset += MAX_FINDINGS_PER_CRITIC_BATCH) {
+    const batch = prefiltered.findings.slice(offset, offset + MAX_FINDINGS_PER_CRITIC_BATCH);
     const batchResult = await criticBatch(batch, offset, fileContents, client);
     allVerdicts.push(...batchResult.verdicts);
     combinedUsage = mergeUsage(combinedUsage, batchResult.usage);
   }
 
-  return { result: splitByVerdicts(findings, allVerdicts), usage: combinedUsage };
+  const criticResult = splitByVerdicts(prefiltered.findings, allVerdicts);
+  return {
+    result: {
+      findings: criticResult.findings,
+      filtered: [...prefiltered.filtered, ...criticResult.filtered],
+    },
+    usage: combinedUsage,
+  };
 }

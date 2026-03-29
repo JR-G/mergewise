@@ -16,7 +16,7 @@ import type {
 } from "./pipeline-types";
 import { triageFiles } from "./triage";
 import { criticFindings, collectFileContents } from "./critic";
-import { extractReviewSignals, extractStructuralSignals } from "./signals";
+import { extractReviewSignals, extractStructuralSignals, type ReviewSignals } from "./signals";
 import { buildSlimSystemPrompt, buildToolUseFilePrompt } from "./prompt-slim";
 import { parseLlmResponse } from "./schema";
 import { REVIEW_TOOLS, toOpenAiTools, executeToolCall, buildAvailablePatternsSummary, lookupPattern } from "./review-tools";
@@ -117,12 +117,87 @@ interface ReviewStageInput {
   readonly config: ReviewPipelineConfig;
 }
 
+interface ReviewedFileOutput {
+  readonly findings: readonly Finding[];
+  readonly usage: CompletionUsage | undefined;
+  readonly reviewSignals: ReviewSignals;
+}
+
+type ActiveReviewTool = (typeof REVIEW_TOOLS)[number];
+
+interface SingleDiffReviewInput {
+  readonly diff: FileDiff;
+  readonly pullRequest: PullRequestMetadata;
+  readonly client: ReviewClient;
+  readonly config: ReviewPipelineConfig;
+  readonly systemPrompt: string;
+  readonly enabledTools: readonly ActiveReviewTool[];
+  readonly openAiTools: ReturnType<typeof toOpenAiTools>;
+  readonly availablePatterns: string;
+  readonly perFileToolBudget: number;
+  readonly fullContent: string | null;
+}
+
+async function reviewSingleDiff(input: SingleDiffReviewInput): Promise<ReviewedFileOutput> {
+  const {
+    diff,
+    pullRequest,
+    client,
+    config,
+    systemPrompt,
+    enabledTools,
+    openAiTools,
+    availablePatterns,
+    perFileToolBudget,
+    fullContent,
+  } = input;
+  const signals = extractStructuralSignals(diff);
+  const reviewSignals = extractReviewSignals(diff);
+
+  const toolContext: ToolContext = {
+    filePath: diff.filePath,
+    fullContent,
+    toolkit: config.toolkit,
+    repoName: pullRequest.repo,
+  };
+
+  const userPrompt = buildToolUseFilePrompt({
+    fileDiff: diff,
+    signals,
+    reviewSignals,
+    prTitle: pullRequest.prTitle,
+    prDescription: pullRequest.prDescription,
+    availablePatterns,
+  });
+
+  const { content, usage } = await client.completeWithTools({
+    systemPrompt,
+    userPrompt,
+    tools: openAiTools,
+    onToolCall: (toolName, rawArgs) => executeToolCall(enabledTools, toolContext, toolName, rawArgs),
+    maxTokens: MAX_REVIEW_RESPONSE_TOKENS,
+    toolTokenBudget: perFileToolBudget,
+  });
+
+  return {
+    findings: parseLlmResponse(content, diff, pullRequest),
+    usage,
+    reviewSignals,
+  };
+}
+
 /**
  * Review stage: per-file review with retrieved knowledge context.
  */
 async function runReviewStage(
   input: ReviewStageInput,
-): Promise<{ findings: Finding[]; failedFiles: FileReviewFailure[]; usage: CompletionUsage | undefined; perFileUsage: FileTokenUsage[] }> {
+): Promise<{
+  findings: Finding[];
+  failedFiles: FileReviewFailure[];
+  usage: CompletionUsage | undefined;
+  perFileUsage: FileTokenUsage[];
+  reviewSignalsByFile: ReadonlyMap<string, ReviewSignals>;
+}> {
   const { diffs, pullRequest, codebaseContext, client, config } = input;
   const systemPrompt = buildSlimSystemPrompt({ agentFriendliness: config.agentFriendliness, toolUse: true });
   const enabledTools = config.knowledgeEnabled === false
@@ -135,6 +210,7 @@ async function runReviewStage(
   const allFindings: Finding[] = [];
   const failedFiles: FileReviewFailure[] = [];
   const perFileUsage: FileTokenUsage[] = [];
+  const reviewSignalsByFile = new Map<string, ReviewSignals>();
   let combinedUsage: CompletionUsage | undefined;
 
   const perFileToolBudget = Math.max(
@@ -151,34 +227,20 @@ async function runReviewStage(
     }
 
     try {
-      const signals = extractStructuralSignals(diff);
-      const reviewSignals = extractReviewSignals(diff);
-
-      const toolContext: ToolContext = {
-        filePath: diff.filePath,
-        fullContent,
-        toolkit: config.toolkit,
-        repoName: pullRequest.repo,
-      };
-
-      const userPrompt = buildToolUseFilePrompt({
-        fileDiff: diff,
-        signals,
-        reviewSignals,
-        prTitle: pullRequest.prTitle,
-        prDescription: pullRequest.prDescription,
-        availablePatterns,
-      });
-
-      const { content, usage } = await client.completeWithTools({
+      const reviewedFile = await reviewSingleDiff({
+        diff,
+        pullRequest,
+        client,
+        config,
         systemPrompt,
-        userPrompt,
-        tools: openAiTools,
-        onToolCall: (toolName, rawArgs) => executeToolCall(enabledTools, toolContext, toolName, rawArgs),
-        maxTokens: MAX_REVIEW_RESPONSE_TOKENS,
-        toolTokenBudget: perFileToolBudget,
+        enabledTools,
+        openAiTools,
+        availablePatterns,
+        perFileToolBudget,
+        fullContent,
       });
-      const findings = parseLlmResponse(content, diff, pullRequest);
+      const { findings, usage, reviewSignals } = reviewedFile;
+      reviewSignalsByFile.set(diff.filePath, reviewSignals);
       allFindings.push(...findings);
       combinedUsage = mergeUsage(combinedUsage, usage);
       perFileUsage.push({
@@ -193,7 +255,7 @@ async function runReviewStage(
     }
   }
 
-  return { findings: allFindings, failedFiles, usage: combinedUsage, perFileUsage };
+  return { findings: allFindings, failedFiles, usage: combinedUsage, perFileUsage, reviewSignalsByFile };
 }
 
 /**
@@ -203,13 +265,14 @@ async function runCriticStage(
   findings: readonly Finding[],
   codebaseContext: CodebaseContext,
   client: ReviewClient,
+  reviewSignalsByFile: ReadonlyMap<string, ReviewSignals>,
 ): Promise<{ result: CriticResult; usage: CompletionUsage | undefined }> {
   try {
     const fileContents = await collectFileContents(
       findings,
       (path) => codebaseContext.readFile(path),
     );
-    return await criticFindings(findings, fileContents, client);
+    return await criticFindings(findings, fileContents, client, reviewSignalsByFile);
   } catch {
     return { result: { findings, filtered: [] }, usage: undefined };
   }
@@ -255,7 +318,7 @@ export async function runReviewPipeline(
   });
 
   const criticOutput = await runCriticStage(
-    reviewOutput.findings, codebaseContext, clients.criticClient,
+    reviewOutput.findings, codebaseContext, clients.criticClient, reviewOutput.reviewSignalsByFile,
   );
 
   return {
