@@ -336,6 +336,51 @@ describe("criticFindings", () => {
     const result = await criticFindings(findings, new Map(), client as never);
 
     expect(totalReviewed).toBe(200);
-    expect(result.result.findings).toHaveLength(200);
+    expect(result.result.findings).toHaveLength(205);
+  });
+
+  test("preserves overflow findings when bounded findings are fully prefiltered", async () => {
+    const boundedStaticConfigFindings = Array.from({ length: 200 }, (_, index) =>
+      makeFinding({
+        findingId: `static-${index}`,
+        filePath: toFilePath("src/routes.ts"),
+        line: toLineNumber(index + 1),
+        evidence: "export const ROUTES: readonly RouteDefinition[] = [",
+        recommendation: "The static routes array should be grouped by concern instead of staying as a flat list.",
+      }),
+    );
+    const overflowFindings = Array.from({ length: 5 }, (_, index) =>
+      makeFinding({
+        findingId: `overflow-${index}`,
+        filePath: toFilePath("src/overflow.ts"),
+        line: toLineNumber(300 + index),
+      }),
+    );
+
+    let criticCalled = false;
+    const client = {
+      complete: async () => {
+        criticCalled = true;
+        throw new Error("critic should not be called");
+      },
+    } as const;
+
+    const result = await criticFindings(
+      [...boundedStaticConfigFindings, ...overflowFindings],
+      new Map(),
+      client as never,
+      new Map([[toFilePath("src/routes.ts"), makeReviewSignals({ hasStaticConfigTable: true })]]),
+    );
+
+    expect(criticCalled).toBe(false);
+    expect(result.result.findings).toHaveLength(5);
+    expect(result.result.findings.map((finding) => finding.findingId)).toEqual([
+      "overflow-0",
+      "overflow-1",
+      "overflow-2",
+      "overflow-3",
+      "overflow-4",
+    ]);
+    expect(result.result.filtered).toHaveLength(200);
   });
 });
