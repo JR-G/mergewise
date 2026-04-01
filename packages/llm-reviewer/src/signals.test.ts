@@ -256,6 +256,41 @@ describe("extractReviewSignals", () => {
     expect(signals.hasParameterMutation).toBe(false);
   });
 
+  test("returns zeroed review signals for an empty hunk", () => {
+    const diff = makeDiff("src/empty.ts", [makeHunk("@@ -0,0 +0,0 @@", [])]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals).toEqual({
+      hasInlineProviderValue: false,
+      hasValidationMixedWithStateUpdates: false,
+      hasRepeatedForwardedProp: false,
+      forwardedPropName: null,
+      hasStaticConfigTable: false,
+      hasParameterMutation: false,
+    });
+  });
+
+  test("returns zeroed review signals for deleted-only hunks", () => {
+    const diff = makeDiff("src/clean.ts", [
+      makeHunk("@@ -1,3 +0,0 @@", [
+        "-function applyDefaults(config: AppConfig) {",
+        "-  config.timeout ??= 1000",
+        "-  return config",
+        "-}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals).toEqual({
+      hasInlineProviderValue: false,
+      hasValidationMixedWithStateUpdates: false,
+      hasRepeatedForwardedProp: false,
+      forwardedPropName: null,
+      hasStaticConfigTable: false,
+      hasParameterMutation: false,
+    });
+  });
+
   test("returns zeroed review signals when no targeted patterns exist", () => {
     const diff = makeDiff("src/clean.ts", [
       makeHunk("@@ -0,0 +1,3 @@", [

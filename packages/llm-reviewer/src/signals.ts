@@ -46,6 +46,11 @@ const STATIC_CONFIG_ARRAY_PATTERN = /export\s+const\s+\w+:\s+readonly\s+\w+\[\]\
 const STATIC_CONFIG_OBJECT_PATTERN = /export\s+const\s+\w+\s*=\s*\{/;
 const STATE_UPDATE_PATTERN = /\b(?:setUser|setToken|setState)\s*\(/;
 const FUNCTION_DECLARATION_WITH_PARAMS_PATTERN = /function\s+\w+\(([^)]*)\)/g;
+const IDENTIFIER_PATTERN = /^[A-Za-z_]\w*$/;
+const WORD_CHAR_PATTERN = /[A-Za-z0-9_]/;
+const MAX_REVIEW_SIGNAL_LINES = 2_000;
+const MAX_REVIEW_SIGNAL_TEXT_LENGTH = 100_000;
+const MAX_TRACKED_IDENTIFIERS = 128;
 
 /**
  * Extracts structural signals from a file diff for LLM context.
@@ -180,7 +185,7 @@ export function extractStructuralSignals(diff: FileDiff): StructuralSignals {
  * @returns Review-specific signals for routing and suppression.
  */
 export function extractReviewSignals(diff: FileDiff): ReviewSignals {
-  const diffText = diff.hunks.flatMap((hunk) => hunk.lines).filter((line) => !line.startsWith("-")).join("\n");
+  const diffText = buildBoundedReviewSignalText(diff);
   const forwardedPropName = detectRepeatedForwardedProp(diffText);
   const parameterNames = extractFunctionParameterNames(diffText);
 
@@ -193,8 +198,7 @@ export function extractReviewSignals(diff: FileDiff): ReviewSignals {
     hasStaticConfigTable:
       STATIC_CONFIG_ARRAY_PATTERN.test(diffText) ||
       (STATIC_CONFIG_OBJECT_PATTERN.test(diffText) && diffText.includes("as const")),
-    hasParameterMutation: parameterNames.some((parameterName) =>
-      new RegExp(`\\b${parameterName}\\.\\w+\\s*(?:=(?!=)|\\?\\?=|\\|\\|=)`).test(diffText)),
+    hasParameterMutation: parameterNames.some((parameterName) => hasParameterPropertyMutation(diffText, parameterName)),
   };
 }
 
@@ -206,12 +210,15 @@ function detectRepeatedForwardedProp(diffText: string): string | null {
 
   for (const match of diffText.matchAll(FUNCTION_SIGNATURE_PROP_PATTERN)) {
     const propName = match[1];
-    if (!propName) continue;
+    if (!propName || !IDENTIFIER_PATTERN.test(propName)) continue;
+    if (!forwardedPropCounts.has(propName) && forwardedPropCounts.size >= MAX_TRACKED_IDENTIFIERS) {
+      break;
+    }
     forwardedPropCounts.set(propName, (forwardedPropCounts.get(propName) ?? 0) + 1);
   }
 
   for (const [propName, count] of forwardedPropCounts.entries()) {
-    const forwardingUses = diffText.match(new RegExp(`${propName}=\\{${propName}\\}`, "g"))?.length ?? 0;
+    const forwardingUses = countOccurrences(diffText, `${propName}={${propName}}`);
     if (count >= 3 && forwardingUses >= 2) {
       return propName;
     }
@@ -235,10 +242,111 @@ function extractFunctionParameterNames(diffText: string): readonly string[] {
       if (trimmedParameter.length === 0 || trimmedParameter.startsWith("{")) continue;
 
       const name = trimmedParameter.split(":")[0]?.trim();
-      if (!name || !/^[A-Za-z_]\w*$/.test(name)) continue;
+      if (!name || !IDENTIFIER_PATTERN.test(name)) continue;
       parameterNames.add(name);
+      if (parameterNames.size >= MAX_TRACKED_IDENTIFIERS) {
+        return [...parameterNames];
+      }
     }
   }
 
   return [...parameterNames];
+}
+
+/**
+ * Builds a bounded diff text string for review-signal extraction.
+ */
+function buildBoundedReviewSignalText(diff: FileDiff): string {
+  let diffText = "";
+  let includedLineCount = 0;
+
+  for (const hunk of diff.hunks) {
+    for (const line of hunk.lines) {
+      if (line.startsWith("-")) continue;
+      if (includedLineCount >= MAX_REVIEW_SIGNAL_LINES) {
+        return diffText;
+      }
+
+      const separator = diffText.length === 0 ? "" : "\n";
+      const nextLength = diffText.length + separator.length + line.length;
+      if (nextLength > MAX_REVIEW_SIGNAL_TEXT_LENGTH) {
+        return diffText;
+      }
+
+      diffText += `${separator}${line}`;
+      includedLineCount += 1;
+    }
+  }
+
+  return diffText;
+}
+
+/**
+ * Counts non-overlapping literal occurrences of a substring.
+ */
+function countOccurrences(haystack: string, needle: string): number {
+  if (needle.length === 0) return 0;
+
+  let matchCount = 0;
+  let searchIndex = 0;
+
+  while (searchIndex < haystack.length) {
+    const matchIndex = haystack.indexOf(needle, searchIndex);
+    if (matchIndex === -1) {
+      return matchCount;
+    }
+
+    matchCount += 1;
+    searchIndex = matchIndex + needle.length;
+  }
+
+  return matchCount;
+}
+
+/**
+ * Detects direct property assignment on a function parameter.
+ */
+function hasParameterPropertyMutation(diffText: string, parameterName: string): boolean {
+  const propertyAccessNeedle = `${parameterName}.`;
+  let searchIndex = 0;
+
+  while (searchIndex < diffText.length) {
+    const matchIndex = diffText.indexOf(propertyAccessNeedle, searchIndex);
+    if (matchIndex === -1) {
+      return false;
+    }
+
+    const precedingCharacter = matchIndex === 0 ? "" : diffText[matchIndex - 1] ?? "";
+    if (precedingCharacter.length > 0 && WORD_CHAR_PATTERN.test(precedingCharacter)) {
+      searchIndex = matchIndex + propertyAccessNeedle.length;
+      continue;
+    }
+
+    let cursor = matchIndex + propertyAccessNeedle.length;
+    const firstPropertyCharacter = diffText[cursor] ?? "";
+    if (!WORD_CHAR_PATTERN.test(firstPropertyCharacter)) {
+      searchIndex = cursor;
+      continue;
+    }
+
+    while (cursor < diffText.length && WORD_CHAR_PATTERN.test(diffText[cursor] ?? "")) {
+      cursor += 1;
+    }
+
+    while (cursor < diffText.length && /\s/.test(diffText[cursor] ?? "")) {
+      cursor += 1;
+    }
+
+    if (
+      diffText.startsWith("??=", cursor) ||
+      diffText.startsWith("||=", cursor) ||
+      (diffText[cursor] === "=" && diffText[cursor + 1] !== "=")
+    ) {
+      return true;
+    }
+
+    searchIndex = matchIndex + propertyAccessNeedle.length;
+  }
+
+  return false;
 }
