@@ -249,6 +249,28 @@ function looksLikeParameterMutationFinding(finding: Finding): boolean {
   ].some((needle) => combinedText.includes(needle));
 }
 
+function looksLikeFocusedReactDisplayDerivationFalsePositive(finding: Finding): boolean {
+  const combinedText = `${finding.evidence} ${finding.recommendation}`.toLowerCase();
+  const isReactFile = finding.filePath.endsWith(".tsx") || finding.filePath.endsWith(".jsx");
+  if (!isReactFile) return false;
+
+  const mixesUiAndLogic = [
+    "mixes ui rendering",
+    "business logic of filtering and sorting",
+    "violates srp",
+    "extract into a custom hook",
+  ].some((needle) => combinedText.includes(needle));
+
+  const displayDerivationCue = [
+    "usememo",
+    "filtering and sorting peers",
+    "filtered and sorted",
+    "display logic",
+  ].some((needle) => combinedText.includes(needle));
+
+  return mixesUiAndLogic && displayDerivationCue;
+}
+
 function applySignalBasedSuppressions(
   findings: readonly Finding[],
   reviewSignalsByFile: ReadonlyMap<string, ReviewSignals>,
@@ -279,6 +301,22 @@ function applySignalBasedSuppressions(
       filtered.push({
         finding,
         reason: "Suppressed mutation finding without parameter-mutation signal",
+      });
+      continue;
+    }
+
+    if (
+      reviewSignals &&
+      !reviewSignals.hasInlineProviderValue &&
+      !reviewSignals.hasValidationMixedWithStateUpdates &&
+      !reviewSignals.hasRepeatedForwardedProp &&
+      !reviewSignals.hasStaticConfigTable &&
+      !reviewSignals.hasParameterMutation &&
+      looksLikeFocusedReactDisplayDerivationFalsePositive(finding)
+    ) {
+      filtered.push({
+        finding,
+        reason: "Suppressed generic React mixed-concerns finding on focused memoised display derivation",
       });
       continue;
     }

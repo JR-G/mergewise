@@ -255,6 +255,12 @@ function buildReviewSignalsSection(reviewSignals: ReviewSignals): string[] {
     );
   }
 
+  if (reviewSignals.hasInlineProviderValue && reviewSignals.hasValidationMixedWithStateUpdates) {
+    lines.push(
+      "- Two independent provider issues are present here. If both materially affect maintainability, surface both rather than collapsing them into one generic comment.",
+    );
+  }
+
   return lines.length > 0 ? ["", "## Review signals", ...lines] : [];
 }
 

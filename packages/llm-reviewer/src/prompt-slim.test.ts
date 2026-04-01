@@ -290,6 +290,33 @@ describe("buildToolUseFilePrompt", () => {
     expect(result).toContain("Validation logic and state updates appear interleaved");
   });
 
+  test("nudges reviewer to surface both provider issues when both signals are present", () => {
+    const providerDiff: FileDiff = {
+      filePath: toFilePath("src/AuthProvider.tsx"),
+      previousPath: null,
+      hunks: [
+        {
+          header: "@@ -1,3 +1,5 @@",
+          lines: [
+            "+const login = () => {};",
+          ],
+        },
+      ],
+    };
+
+    const result = buildToolUseFilePrompt({
+      fileDiff: providerDiff,
+      signals: makeSignals({ hookCount: 2 }),
+      reviewSignals: makeReviewSignals({
+        hasInlineProviderValue: true,
+        hasValidationMixedWithStateUpdates: true,
+      }),
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("Two independent provider issues are present here");
+  });
+
   test("includes targeted hint for parameter mutation", () => {
     const mutationDiff: FileDiff = {
       filePath: toFilePath("src/config.ts"),

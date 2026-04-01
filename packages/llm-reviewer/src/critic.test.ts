@@ -238,4 +238,30 @@ describe("criticFindings", () => {
     expect(result.result.findings).toEqual([]);
     expect(result.result.filtered[0]!.reason).toContain("prop-drilling finding");
   });
+
+  test("suppresses generic React mixed-concerns comments on focused memoised display derivations", async () => {
+    const findings = [
+      makeFinding({
+        filePath: toFilePath("src/UserProfile.tsx"),
+        evidence: "const sortedPeers = useMemo(() => peers.filter(...).sort(...))",
+        recommendation: "The component mixes UI rendering with business logic of filtering and sorting peers. Extract this into a custom hook.",
+      }),
+    ];
+
+    const client = {
+      complete: async () => {
+        throw new Error("critic should not be called");
+      },
+    } as const;
+
+    const result = await criticFindings(
+      findings,
+      new Map(),
+      client as never,
+      new Map([[toFilePath("src/UserProfile.tsx"), makeReviewSignals()]]),
+    );
+
+    expect(result.result.findings).toEqual([]);
+    expect(result.result.filtered[0]!.reason).toContain("focused memoised display derivation");
+  });
 });
