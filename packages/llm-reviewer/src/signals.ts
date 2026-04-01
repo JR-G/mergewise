@@ -340,6 +340,7 @@ function hasParameterPropertyMutation(diffText: string, parameterName: string): 
     if (
       diffText.startsWith("??=", cursor) ||
       diffText.startsWith("||=", cursor) ||
+      diffText.startsWith("&&=", cursor) ||
       (diffText[cursor] === "=" && diffText[cursor + 1] !== "=")
     ) {
       return true;
