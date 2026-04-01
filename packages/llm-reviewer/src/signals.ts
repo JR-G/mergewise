@@ -42,13 +42,16 @@ const CLASS_DECLARATION_PATTERN = /(?:^|\s)class\s+\w+/;
 const TYPE_ASSERTION_PATTERN = /\bas\s+\w/g;
 const PARAM_LIST_PATTERN = /\(([^)]*)\)/;
 const PROVIDER_VALUE_PATTERN = /Provider\s+value=\{\{|\bProvider\s+value=\{[^\n]*\{/;
-const FUNCTION_SIGNATURE_PROP_PATTERN = /function\s+\w+\s*\(\{\s*(\w+)\s*\}\s*:\s*\{\s*\1\s*:/g;
 const STATIC_CONFIG_ARRAY_PATTERN = /export\s+const\s+\w+:\s+readonly\s+\w+\[\]\s*=\s*\[/;
-const STATIC_CONFIG_OBJECT_PATTERN = /export\s+const\s+\w+\s*=\s*\{/;
-const STATE_UPDATE_PATTERN = /\b(?:setUser|setToken|setState)\s*\(/;
-const FUNCTION_DECLARATION_WITH_PARAMS_PATTERN = /function\s+\w+\(([^)]*)\)/g;
+const STATIC_CONFIG_OBJECT_WITH_CONST_PATTERN = /export\s+const\s+\w+\s*=\s*\{[\s\S]{0,4000}?\}\s*as const\b/;
+const STATE_UPDATE_PATTERN = /\bset[A-Z]\w*\s*\(/;
 const IDENTIFIER_PATTERN = /^[A-Za-z_]\w*$/;
 const WORD_CHAR_PATTERN = /[A-Za-z0-9_]/;
+const FUNCTION_WITH_PARAMS_PATTERN = /^(?:export\s+)?function\s+\w+\(([^)]*)\)/;
+const ARROW_FUNCTION_WITH_PARAMS_PATTERN = /^(?:export\s+)?(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>/;
+const METHOD_WITH_PARAMS_PATTERN = /^(?:(?:public|private|protected|static|async)\s+)*(\w+)\(([^)]*)\)\s*(?::\s*[^{]+)?\{/;
+const DESTRUCTURED_FUNCTION_PROPS_PATTERN = /^(?:export\s+)?function\s+\w+\s*\(\{\s*([^}]*)\}\s*:\s*(?:\{[^)]*\}|[A-Za-z_]\w*)/;
+const DESTRUCTURED_ARROW_PROPS_PATTERN = /^(?:export\s+)?(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?\(\{\s*([^}]*)\}\s*:\s*(?:\{[^)]*\}|[A-Za-z_]\w*)\)\s*=>/;
 const MAX_REVIEW_SIGNAL_LINES = 2_000;
 const MAX_REVIEW_SIGNAL_TEXT_LENGTH = 100_000;
 const MAX_TRACKED_IDENTIFIERS = 128;
@@ -198,7 +201,7 @@ export function extractReviewSignals(diff: FileDiff): ReviewSignals {
     forwardedPropName,
     hasStaticConfigTable:
       STATIC_CONFIG_ARRAY_PATTERN.test(diffText) ||
-      (STATIC_CONFIG_OBJECT_PATTERN.test(diffText) && diffText.includes("as const")),
+      STATIC_CONFIG_OBJECT_WITH_CONST_PATTERN.test(diffText),
     hasParameterMutation: parameterNames.some((parameterName) => hasParameterPropertyMutation(diffText, parameterName)),
     hasMemoizedDisplayDerivation: hasMemoizedDisplayDerivation(diffText),
   };
@@ -210,13 +213,13 @@ export function extractReviewSignals(diff: FileDiff): ReviewSignals {
 function detectRepeatedForwardedProp(diffText: string): string | null {
   const forwardedPropCounts = new Map<string, number>();
 
-  for (const match of diffText.matchAll(FUNCTION_SIGNATURE_PROP_PATTERN)) {
-    const propName = match[1];
-    if (!propName || !IDENTIFIER_PATTERN.test(propName)) continue;
-    if (!forwardedPropCounts.has(propName) && forwardedPropCounts.size >= MAX_TRACKED_IDENTIFIERS) {
-      break;
+  for (const line of diffText.split("\n")) {
+    for (const propName of extractDestructuredPropNames(line)) {
+      if (!forwardedPropCounts.has(propName) && forwardedPropCounts.size >= MAX_TRACKED_IDENTIFIERS) {
+        break;
+      }
+      forwardedPropCounts.set(propName, (forwardedPropCounts.get(propName) ?? 0) + 1);
     }
-    forwardedPropCounts.set(propName, (forwardedPropCounts.get(propName) ?? 0) + 1);
   }
 
   for (const [propName, count] of forwardedPropCounts.entries()) {
@@ -235,8 +238,8 @@ function detectRepeatedForwardedProp(diffText: string): string | null {
 function extractFunctionParameterNames(diffText: string): readonly string[] {
   const parameterNames = new Set<string>();
 
-  for (const match of diffText.matchAll(FUNCTION_DECLARATION_WITH_PARAMS_PATTERN)) {
-    const rawParameterList = match[1];
+  for (const line of diffText.split("\n")) {
+    const rawParameterList = extractFunctionParameterList(line);
     if (!rawParameterList) continue;
 
     for (const rawParameter of rawParameterList.split(",")) {
@@ -265,17 +268,18 @@ function buildBoundedReviewSignalText(diff: FileDiff): string {
   for (const hunk of diff.hunks) {
     for (const line of hunk.lines) {
       if (line.startsWith("-")) continue;
+      const content = line.slice(1);
       if (includedLineCount >= MAX_REVIEW_SIGNAL_LINES) {
         return diffText;
       }
 
       const separator = diffText.length === 0 ? "" : "\n";
-      const nextLength = diffText.length + separator.length + line.length;
+      const nextLength = diffText.length + separator.length + content.length;
       if (nextLength > MAX_REVIEW_SIGNAL_TEXT_LENGTH) {
         return diffText;
       }
 
-      diffText += `${separator}${line}`;
+      diffText += `${separator}${content}`;
       includedLineCount += 1;
     }
   }
@@ -292,6 +296,59 @@ function hasMemoizedDisplayDerivation(diffText: string): boolean {
   }
 
   return [".filter(", ".sort(", ".map("].some((operation) => diffText.includes(operation));
+}
+
+/**
+ * Extracts a parameter list from common function-like forms.
+ */
+function extractFunctionParameterList(line: string): string | null {
+  const trimmedLine = line.trim();
+  const functionMatch = FUNCTION_WITH_PARAMS_PATTERN.exec(trimmedLine);
+  if (functionMatch?.[1]) {
+    return functionMatch[1];
+  }
+
+  const arrowMatch = ARROW_FUNCTION_WITH_PARAMS_PATTERN.exec(trimmedLine);
+  if (arrowMatch?.[1]) {
+    return arrowMatch[1];
+  }
+
+  const methodMatch = METHOD_WITH_PARAMS_PATTERN.exec(trimmedLine);
+  const methodName = methodMatch?.[1];
+  if (methodName && !["if", "for", "while", "switch", "catch"].includes(methodName) && methodMatch[2]) {
+    return methodMatch[2];
+  }
+
+  return null;
+}
+
+/**
+ * Extracts destructured prop names from typed React component signatures.
+ */
+function extractDestructuredPropNames(line: string): readonly string[] {
+  const trimmedLine = line.trim();
+  const functionMatch = DESTRUCTURED_FUNCTION_PROPS_PATTERN.exec(trimmedLine);
+  const arrowMatch = DESTRUCTURED_ARROW_PROPS_PATTERN.exec(trimmedLine);
+  const rawPropList = functionMatch?.[1] ?? arrowMatch?.[1];
+  if (!rawPropList) {
+    return [];
+  }
+
+  const propNames: string[] = [];
+  for (const rawProp of rawPropList.split(",")) {
+    const trimmedProp = rawProp.trim();
+    if (trimmedProp.length === 0) continue;
+
+    const propName = trimmedProp.split(/[:=?]/)[0]?.trim();
+    if (!propName || !IDENTIFIER_PATTERN.test(propName)) continue;
+
+    propNames.push(propName);
+    if (propNames.length >= MAX_TRACKED_IDENTIFIERS) {
+      break;
+    }
+  }
+
+  return propNames;
 }
 
 /**

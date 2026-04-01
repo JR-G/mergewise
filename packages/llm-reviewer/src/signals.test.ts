@@ -180,12 +180,44 @@ describe("extractReviewSignals", () => {
     expect(signals.hasInlineProviderValue).toBe(true);
   });
 
+  test("detects wrapped provider values across multiple diff lines", () => {
+    const diff = makeDiff("src/AuthProvider.tsx", [
+      makeHunk("@@ -0,0 +1,8 @@", [
+        "+return (",
+        "+  <AuthContext.Provider",
+        "+    value={{",
+        "+      user,",
+        "+      login,",
+        "+    }}",
+        "+  >",
+        "+);",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasInlineProviderValue).toBe(true);
+  });
+
   test("detects validation mixed with state updates", () => {
     const diff = makeDiff("src/AuthProvider.tsx", [
       makeHunk("@@ -0,0 +1,6 @@", [
         "+function login(email: string) {",
         "+  if (!email) throw new Error('missing email')",
         "+  setUser({ email })",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasValidationMixedWithStateUpdates).toBe(true);
+  });
+
+  test("detects validation mixed with non-hardcoded React setter names", () => {
+    const diff = makeDiff("src/AuthProvider.tsx", [
+      makeHunk("@@ -0,0 +1,6 @@", [
+        "+function login(email: string) {",
+        "+  if (!email) throw new Error('missing email')",
+        "+  setForm({ email })",
         "+}",
       ]),
     ]);
@@ -214,6 +246,26 @@ describe("extractReviewSignals", () => {
     expect(signals.forwardedPropName).toBe("theme");
   });
 
+  test("detects repeated forwarded props when signatures use type aliases", () => {
+    const diff = makeDiff("src/ThemeApp.tsx", [
+      makeHunk("@@ -0,0 +1,9 @@", [
+        "+function App({ theme }: AppProps) {",
+        "+  return <Layout theme={theme} />;",
+        "+}",
+        "+const Layout = ({ theme }: LayoutProps) => {",
+        "+  return <Sidebar theme={theme} />;",
+        "+};",
+        "+const Sidebar = ({ theme }: SidebarProps) => {",
+        "+  return <NavItem theme={theme} />;",
+        "+};",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasRepeatedForwardedProp).toBe(true);
+    expect(signals.forwardedPropName).toBe("theme");
+  });
+
   test("detects static configuration tables", () => {
     const diff = makeDiff("src/config/routes.ts", [
       makeHunk("@@ -0,0 +1,3 @@", [
@@ -227,10 +279,38 @@ describe("extractReviewSignals", () => {
     expect(signals.hasStaticConfigTable).toBe(true);
   });
 
+  test("does not treat unrelated as-const usage as a static config table", () => {
+    const diff = makeDiff("src/config/routes.ts", [
+      makeHunk("@@ -0,0 +1,5 @@", [
+        "+export const buildRoutes = {",
+        "+  load() { return registry }",
+        "+};",
+        "+const levels = ['info', 'warn'] as const;",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasStaticConfigTable).toBe(false);
+  });
+
   test("detects parameter mutation", () => {
     const diff = makeDiff("src/config.ts", [
       makeHunk("@@ -0,0 +1,4 @@", [
         "+function applyDefaults(config: AppConfig) {",
+        "+  config.timeout ??= 1000",
+        "+  return config",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasParameterMutation).toBe(true);
+  });
+
+  test("detects parameter mutation in arrow functions", () => {
+    const diff = makeDiff("src/config.ts", [
+      makeHunk("@@ -0,0 +1,4 @@", [
+        "+const applyDefaults = (config: AppConfig) => {",
         "+  config.timeout ??= 1000",
         "+  return config",
         "+}",
