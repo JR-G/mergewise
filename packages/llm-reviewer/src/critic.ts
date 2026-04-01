@@ -227,17 +227,6 @@ function looksLikeStaticConfigRefactor(finding: Finding): boolean {
   ].some((needle) => combinedText.includes(needle));
 }
 
-function looksLikePropDrillingFinding(finding: Finding): boolean {
-  const combinedText = `${finding.evidence} ${finding.recommendation}`.toLowerCase();
-  return [
-    "prop drilling",
-    "prop-drilling",
-    "forwarding",
-    "intermediate component",
-    "use context",
-  ].some((needle) => combinedText.includes(needle));
-}
-
 function looksLikeParameterMutationFinding(finding: Finding): boolean {
   const combinedText = `${finding.evidence} ${finding.recommendation}`.toLowerCase();
   return [
@@ -285,14 +274,6 @@ function applySignalBasedSuppressions(
       filtered.push({
         finding,
         reason: "Suppressed config-table refactor on static configuration diff",
-      });
-      continue;
-    }
-
-    if (reviewSignals && !reviewSignals.hasRepeatedForwardedProp && looksLikePropDrillingFinding(finding)) {
-      filtered.push({
-        finding,
-        reason: "Suppressed prop-drilling finding without repeated forwarding signal",
       });
       continue;
     }

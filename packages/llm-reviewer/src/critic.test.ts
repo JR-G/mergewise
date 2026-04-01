@@ -215,16 +215,23 @@ describe("criticFindings", () => {
     expect(result.result.filtered[0]!.reason).toContain("config-table refactor");
   });
 
-  test("suppresses prop-drilling findings when repeated forwarding signal is absent", async () => {
+  test("does not suppress prop-drilling findings solely because forwarding signal is absent", async () => {
     const findings = [
       makeFinding({
         recommendation: "This is prop drilling through intermediate components. Use context instead.",
       }),
     ];
 
+    let criticCalled = false;
     const client = {
       complete: async () => {
-        throw new Error("critic should not be called");
+        criticCalled = true;
+        return {
+          content: JSON.stringify({
+            verdicts: [{ index: 0, keep: true, reason: "Keep prop-drilling finding" }],
+          }),
+          usage: undefined,
+        };
       },
     } as const;
 
@@ -235,8 +242,9 @@ describe("criticFindings", () => {
       new Map([[toFilePath("src/index.ts"), makeReviewSignals()]]),
     );
 
-    expect(result.result.findings).toEqual([]);
-    expect(result.result.filtered[0]!.reason).toContain("prop-drilling finding");
+    expect(criticCalled).toBe(true);
+    expect(result.result.findings).toHaveLength(1);
+    expect(result.result.filtered).toEqual([]);
   });
 
   test("suppresses generic React mixed-concerns comments on focused memoised display derivations", async () => {
