@@ -241,6 +241,21 @@ describe("extractReviewSignals", () => {
     expect(signals.hasParameterMutation).toBe(true);
   });
 
+  test("does not treat equality checks as parameter mutation", () => {
+    const diff = makeDiff("src/config.ts", [
+      makeHunk("@@ -0,0 +1,5 @@", [
+        "+function validate(config: AppConfig) {",
+        "+  if (config.timeout === 1000 || config.timeout == 2000) {",
+        "+    return true",
+        "+  }",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasParameterMutation).toBe(false);
+  });
+
   test("returns zeroed review signals when no targeted patterns exist", () => {
     const diff = makeDiff("src/clean.ts", [
       makeHunk("@@ -0,0 +1,3 @@", [

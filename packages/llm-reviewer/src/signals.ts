@@ -194,7 +194,7 @@ export function extractReviewSignals(diff: FileDiff): ReviewSignals {
       STATIC_CONFIG_ARRAY_PATTERN.test(diffText) ||
       (STATIC_CONFIG_OBJECT_PATTERN.test(diffText) && diffText.includes("as const")),
     hasParameterMutation: parameterNames.some((parameterName) =>
-      new RegExp(`\\b${parameterName}\\.\\w+\\s*(?:=|\\?\\?=|\\|\\|=)`).test(diffText)),
+      new RegExp(`\\b${parameterName}\\.\\w+\\s*(?:=(?!=)|\\?\\?=|\\|\\|=)`).test(diffText)),
   };
 }
 

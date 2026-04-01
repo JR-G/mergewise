@@ -60,6 +60,29 @@ describe("retrieveKnowledge", () => {
     expect(result.some((doc) => doc.id === "prop-drilling")).toBe(true);
   });
 
+  test("does not return react-hooks doc for explicit unstable provider signal in .ts files", () => {
+    const result = retrieveKnowledge({
+      signals: makeSignals(),
+      reviewSignals: makeReviewSignals({ hasInlineProviderValue: true }),
+      fileExtension: ".ts",
+      classifications: [],
+    });
+    expect(result.some((doc) => doc.id === "react-hooks")).toBe(false);
+  });
+
+  test("does not return prop-drilling doc for explicit repeated prop forwarding signal in .ts files", () => {
+    const result = retrieveKnowledge({
+      signals: makeSignals(),
+      reviewSignals: makeReviewSignals({
+        hasRepeatedForwardedProp: true,
+        forwardedPropName: "theme",
+      }),
+      fileExtension: ".ts",
+      classifications: [],
+    });
+    expect(result.some((doc) => doc.id === "prop-drilling")).toBe(false);
+  });
+
   test("does not return react-hooks doc for .ts file", () => {
     const result = retrieveKnowledge({
       signals: makeSignals({ hookCount: 2 }),

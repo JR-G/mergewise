@@ -119,4 +119,12 @@ describe("deriveSignalTags", () => {
     expect(tags).toContain("static_config_table");
     expect(tags).toContain("parameter_mutation");
   });
+
+  test("does not return review-oriented tags when explicit review signals are default", () => {
+    const tags = deriveSignalTags(makeSignals(), makeReviewSignals());
+    expect(tags).not.toContain("unstable_provider_value");
+    expect(tags).not.toContain("repeated_prop_forwarding");
+    expect(tags).not.toContain("static_config_table");
+    expect(tags).not.toContain("parameter_mutation");
+  });
 });
