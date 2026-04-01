@@ -241,6 +241,17 @@ describe("extractReviewSignals", () => {
     expect(signals.hasParameterMutation).toBe(true);
   });
 
+  test("detects memoized display derivation", () => {
+    const diff = makeDiff("src/UserProfile.tsx", [
+      makeHunk("@@ -0,0 +1,4 @@", [
+        "+const sortedPeers = useMemo(() => peers.filter((peer) => peer.active).sort(sortPeers), [peers])",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasMemoizedDisplayDerivation).toBe(true);
+  });
+
   test("detects logical and-assignment parameter mutation", () => {
     const diff = makeDiff("src/config.ts", [
       makeHunk("@@ -0,0 +1,4 @@", [
@@ -281,6 +292,7 @@ describe("extractReviewSignals", () => {
       forwardedPropName: null,
       hasStaticConfigTable: false,
       hasParameterMutation: false,
+      hasMemoizedDisplayDerivation: false,
     });
   });
 
@@ -302,6 +314,7 @@ describe("extractReviewSignals", () => {
       forwardedPropName: null,
       hasStaticConfigTable: false,
       hasParameterMutation: false,
+      hasMemoizedDisplayDerivation: false,
     });
   });
 
@@ -322,6 +335,7 @@ describe("extractReviewSignals", () => {
       forwardedPropName: null,
       hasStaticConfigTable: false,
       hasParameterMutation: false,
+      hasMemoizedDisplayDerivation: false,
     });
   });
 });

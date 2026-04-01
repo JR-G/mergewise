@@ -31,6 +31,7 @@ export function makeReviewSignals(overrides: Partial<ReviewSignals> = {}): Revie
     forwardedPropName: null,
     hasStaticConfigTable: false,
     hasParameterMutation: false,
+    hasMemoizedDisplayDerivation: false,
     ...overrides,
   };
 }

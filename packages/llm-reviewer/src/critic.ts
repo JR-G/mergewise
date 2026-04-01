@@ -4,6 +4,7 @@ import type { CriticResult, FilteredFinding } from "./pipeline-types";
 import type { ReviewSignals } from "./signals";
 
 const MAX_FINDINGS_PER_CRITIC_BATCH = 50;
+const MAX_FINDINGS_FOR_CRITIC = 200;
 const MAX_CRITIC_RESPONSE_TOKENS = 2048;
 const CRITIC_TEMPERATURE = 0.1;
 const MAX_FILE_PATHS_FOR_CONTENT = 30;
@@ -214,28 +215,24 @@ function collapseDependencyInversionDuplicates(
 
 function looksLikeStaticConfigRefactor(finding: Finding): boolean {
   const combinedText = `${finding.evidence} ${finding.recommendation}`.toLowerCase();
-  return [
+  const configCue = [
     "routes array",
     "route table",
     "static configuration",
     "status map",
     "config table",
+  ].some((needle) => combinedText.includes(needle));
+  const refactorCue = [
     "group routes",
     "group by concern",
     "resource type",
     "flat list",
+    "centralize",
+    "extract",
+    "move",
+    "restructure",
   ].some((needle) => combinedText.includes(needle));
-}
-
-function looksLikeParameterMutationFinding(finding: Finding): boolean {
-  const combinedText = `${finding.evidence} ${finding.recommendation}`.toLowerCase();
-  return [
-    "mutating an input object",
-    "mutates the input",
-    "mutation leak",
-    "prefer returning a new object",
-    "mutating the input config",
-  ].some((needle) => combinedText.includes(needle));
+  return configCue && refactorCue;
 }
 
 function looksLikeFocusedReactDisplayDerivationFalsePositive(finding: Finding): boolean {
@@ -278,16 +275,9 @@ function applySignalBasedSuppressions(
       continue;
     }
 
-    if (reviewSignals && !reviewSignals.hasParameterMutation && looksLikeParameterMutationFinding(finding)) {
-      filtered.push({
-        finding,
-        reason: "Suppressed mutation finding without parameter-mutation signal",
-      });
-      continue;
-    }
-
     if (
       reviewSignals &&
+      reviewSignals.hasMemoizedDisplayDerivation &&
       !reviewSignals.hasInlineProviderValue &&
       !reviewSignals.hasValidationMixedWithStateUpdates &&
       !reviewSignals.hasRepeatedForwardedProp &&
@@ -424,7 +414,8 @@ export async function criticFindings(
     return { result: { findings: [], filtered: [] }, usage: undefined };
   }
 
-  const prefiltered = applySignalBasedSuppressions(findings, reviewSignalsByFile);
+  const boundedFindings = findings.slice(0, MAX_FINDINGS_FOR_CRITIC);
+  const prefiltered = applySignalBasedSuppressions(boundedFindings, reviewSignalsByFile);
   if (prefiltered.findings.length === 0) {
     return { result: prefiltered, usage: undefined };
   }

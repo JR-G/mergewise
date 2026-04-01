@@ -38,6 +38,7 @@ function makeReviewSignals(overrides: Partial<ReviewSignals> = {}): ReviewSignal
     forwardedPropName: null,
     hasStaticConfigTable: false,
     hasParameterMutation: false,
+    hasMemoizedDisplayDerivation: false,
     ...overrides,
   };
 }
@@ -266,10 +267,75 @@ describe("criticFindings", () => {
       findings,
       new Map(),
       client as never,
-      new Map([[toFilePath("src/UserProfile.tsx"), makeReviewSignals()]]),
+      new Map([[toFilePath("src/UserProfile.tsx"), makeReviewSignals({ hasMemoizedDisplayDerivation: true })]]),
     );
 
     expect(result.result.findings).toEqual([]);
     expect(result.result.filtered[0]!.reason).toContain("focused memoised display derivation");
+  });
+
+  test("does not suppress parameter-mutation findings solely because the signal is absent", async () => {
+    const findings = [
+      makeFinding({
+        evidence: "config.timeout ??= 1000",
+        recommendation: "This mutates an input config object. Prefer returning a new object instead.",
+      }),
+    ];
+
+    let criticCalled = false;
+    const client = {
+      complete: async () => {
+        criticCalled = true;
+        return {
+          content: JSON.stringify({
+            verdicts: [{ index: 0, keep: true, reason: "Keep mutation finding" }],
+          }),
+          usage: undefined,
+        };
+      },
+    } as const;
+
+    const result = await criticFindings(
+      findings,
+      new Map(),
+      client as never,
+      new Map([[toFilePath("src/index.ts"), makeReviewSignals()]]),
+    );
+
+    expect(criticCalled).toBe(true);
+    expect(result.result.findings).toHaveLength(1);
+    expect(result.result.filtered).toEqual([]);
+  });
+
+  test("caps critic input at a bounded size", async () => {
+    const findings = Array.from({ length: 205 }, (_, index) =>
+      makeFinding({
+        findingId: `finding-${index}`,
+        line: toLineNumber(index + 1),
+      }),
+    );
+
+    let totalReviewed = 0;
+    const client = {
+      complete: async (_systemPrompt: string, userPrompt: string) => {
+        const reviewedThisBatch = (userPrompt.match(/^\[/gm) ?? []).length;
+        totalReviewed += reviewedThisBatch;
+        return {
+          content: JSON.stringify({
+            verdicts: Array.from({ length: reviewedThisBatch }, (_, index) => ({
+              index,
+              keep: true,
+              reason: "Keep",
+            })),
+          }),
+          usage: undefined,
+        };
+      },
+    } as const;
+
+    const result = await criticFindings(findings, new Map(), client as never);
+
+    expect(totalReviewed).toBe(200);
+    expect(result.result.findings).toHaveLength(200);
   });
 });

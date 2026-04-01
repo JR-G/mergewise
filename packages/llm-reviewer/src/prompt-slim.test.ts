@@ -27,6 +27,7 @@ function makeReviewSignals(overrides: Partial<ReviewSignals> = {}): ReviewSignal
     forwardedPropName: null,
     hasStaticConfigTable: false,
     hasParameterMutation: false,
+    hasMemoizedDisplayDerivation: false,
     ...overrides,
   };
 }

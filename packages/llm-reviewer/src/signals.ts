@@ -29,6 +29,7 @@ export interface ReviewSignals {
   readonly forwardedPropName: string | null;
   readonly hasStaticConfigTable: boolean;
   readonly hasParameterMutation: boolean;
+  readonly hasMemoizedDisplayDerivation: boolean;
 }
 
 const HOOK_PATTERN = /\buse(?:State|Effect|Memo|Callback|Ref|Reducer|Context)\s*\(/g;
@@ -199,6 +200,7 @@ export function extractReviewSignals(diff: FileDiff): ReviewSignals {
       STATIC_CONFIG_ARRAY_PATTERN.test(diffText) ||
       (STATIC_CONFIG_OBJECT_PATTERN.test(diffText) && diffText.includes("as const")),
     hasParameterMutation: parameterNames.some((parameterName) => hasParameterPropertyMutation(diffText, parameterName)),
+    hasMemoizedDisplayDerivation: hasMemoizedDisplayDerivation(diffText),
   };
 }
 
@@ -279,6 +281,17 @@ function buildBoundedReviewSignalText(diff: FileDiff): string {
   }
 
   return diffText;
+}
+
+/**
+ * Detects memoized display-only derivations in React components.
+ */
+function hasMemoizedDisplayDerivation(diffText: string): boolean {
+  if (!diffText.includes("useMemo(") && !diffText.includes("useMemo (")) {
+    return false;
+  }
+
+  return [".filter(", ".sort(", ".map("].some((operation) => diffText.includes(operation));
 }
 
 /**
