@@ -361,6 +361,20 @@ describe("extractReviewSignals", () => {
     expect(signals.hasParameterMutation).toBe(false);
   });
 
+  test("does not treat chained property access as parameter mutation", () => {
+    const diff = makeDiff("src/config.ts", [
+      makeHunk("@@ -0,0 +1,5 @@", [
+        "+function applyDefaults(config: AppConfig) {",
+        "+  defaults.config.timeout ??= 1000",
+        "+  return config",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasParameterMutation).toBe(false);
+  });
+
   test("returns zeroed review signals for an empty hunk", () => {
     const diff = makeDiff("src/empty.ts", [makeHunk("@@ -0,0 +0,0 @@", [])]);
 

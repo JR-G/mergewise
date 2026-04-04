@@ -387,7 +387,10 @@ function hasParameterPropertyMutation(diffText: string, parameterName: string): 
     }
 
     const precedingCharacter = matchIndex === 0 ? "" : diffText[matchIndex - 1] ?? "";
-    if (precedingCharacter.length > 0 && WORD_CHAR_PATTERN.test(precedingCharacter)) {
+    if (
+      precedingCharacter.length > 0 &&
+      (WORD_CHAR_PATTERN.test(precedingCharacter) || precedingCharacter === ".")
+    ) {
       searchIndex = matchIndex + propertyAccessNeedle.length;
       continue;
     }
