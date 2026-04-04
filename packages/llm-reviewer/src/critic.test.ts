@@ -8,7 +8,8 @@ import {
   toRepoFullName,
   toRuleId,
 } from "@mergewise/shared-types";
-import { parseCriticResponse, splitByVerdicts } from "./critic";
+import { criticFindings, parseCriticResponse, splitByVerdicts } from "./critic";
+import type { ReviewSignals } from "./signals";
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
   return {
@@ -25,6 +26,19 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
     recommendation: "Extract side effects into a separate function.",
     confidence: toConfidence(0.9),
     status: "posted",
+    ...overrides,
+  };
+}
+
+function makeReviewSignals(overrides: Partial<ReviewSignals> = {}): ReviewSignals {
+  return {
+    hasInlineProviderValue: false,
+    hasValidationMixedWithStateUpdates: false,
+    hasRepeatedForwardedProp: false,
+    forwardedPropName: null,
+    hasStaticConfigTable: false,
+    hasParameterMutation: false,
+    hasMemoizedDisplayDerivation: false,
     ...overrides,
   };
 }
@@ -172,5 +186,207 @@ describe("splitByVerdicts", () => {
     expect(result.findings[0]!.findingId).toBe("dep-3");
     expect(result.filtered.length).toBe(2);
     expect(result.filtered[0]!.reason).toContain("single dependency-inversion finding");
+  });
+});
+
+describe("criticFindings", () => {
+  test("suppresses static-config refactors deterministically before critic call", async () => {
+    const findings = [
+      makeFinding({
+        evidence: "export const ROUTES: readonly RouteDefinition[] = [",
+        recommendation: "The static routes array should be grouped by concern instead of staying as a flat list.",
+      }),
+    ];
+
+    const client = {
+      complete: async () => {
+        throw new Error("critic should not be called");
+      },
+    } as const;
+
+    const result = await criticFindings(
+      findings,
+      new Map(),
+      client as never,
+      new Map([[toFilePath("src/index.ts"), makeReviewSignals({ hasStaticConfigTable: true })]]),
+    );
+
+    expect(result.result.findings).toEqual([]);
+    expect(result.result.filtered).toHaveLength(1);
+    expect(result.result.filtered[0]!.reason).toContain("config-table refactor");
+  });
+
+  test("does not suppress prop-drilling findings solely because forwarding signal is absent", async () => {
+    const findings = [
+      makeFinding({
+        recommendation: "This is prop drilling through intermediate components. Use context instead.",
+      }),
+    ];
+
+    let criticCalled = false;
+    const client = {
+      complete: async () => {
+        criticCalled = true;
+        return {
+          content: JSON.stringify({
+            verdicts: [{ index: 0, keep: true, reason: "Keep prop-drilling finding" }],
+          }),
+          usage: undefined,
+        };
+      },
+    } as const;
+
+    const result = await criticFindings(
+      findings,
+      new Map(),
+      client as never,
+      new Map([[toFilePath("src/index.ts"), makeReviewSignals()]]),
+    );
+
+    expect(criticCalled).toBe(true);
+    expect(result.result.findings).toHaveLength(1);
+    expect(result.result.filtered).toEqual([]);
+  });
+
+  test("suppresses generic React mixed-concerns comments on focused memoised display derivations", async () => {
+    const findings = [
+      makeFinding({
+        filePath: toFilePath("src/UserProfile.tsx"),
+        evidence: "const sortedPeers = useMemo(() => peers.filter(...).sort(...))",
+        recommendation: "The component mixes UI rendering with business logic of filtering and sorting peers. Extract this into a custom hook.",
+      }),
+    ];
+
+    const client = {
+      complete: async () => {
+        throw new Error("critic should not be called");
+      },
+    } as const;
+
+    const result = await criticFindings(
+      findings,
+      new Map(),
+      client as never,
+      new Map([[toFilePath("src/UserProfile.tsx"), makeReviewSignals({ hasMemoizedDisplayDerivation: true })]]),
+    );
+
+    expect(result.result.findings).toEqual([]);
+    expect(result.result.filtered[0]!.reason).toContain("focused memoised display derivation");
+  });
+
+  test("does not suppress parameter-mutation findings solely because the signal is absent", async () => {
+    const findings = [
+      makeFinding({
+        evidence: "config.timeout ??= 1000",
+        recommendation: "This mutates an input config object. Prefer returning a new object instead.",
+      }),
+    ];
+
+    let criticCalled = false;
+    const client = {
+      complete: async () => {
+        criticCalled = true;
+        return {
+          content: JSON.stringify({
+            verdicts: [{ index: 0, keep: true, reason: "Keep mutation finding" }],
+          }),
+          usage: undefined,
+        };
+      },
+    } as const;
+
+    const result = await criticFindings(
+      findings,
+      new Map(),
+      client as never,
+      new Map([[toFilePath("src/index.ts"), makeReviewSignals()]]),
+    );
+
+    expect(criticCalled).toBe(true);
+    expect(result.result.findings).toHaveLength(1);
+    expect(result.result.filtered).toEqual([]);
+  });
+
+  test("caps critic input at a bounded size", async () => {
+    const findings = Array.from({ length: 205 }, (_, index) =>
+      makeFinding({
+        findingId: `finding-${index}`,
+        line: toLineNumber(index + 1),
+      }),
+    );
+
+    let totalReviewed = 0;
+    const client = {
+      complete: async (_systemPrompt: string, userPrompt: string) => {
+        const reviewedThisBatch = (userPrompt.match(/^\[/gm) ?? []).length;
+        totalReviewed += reviewedThisBatch;
+        return {
+          content: JSON.stringify({
+            verdicts: Array.from({ length: reviewedThisBatch }, (_, index) => ({
+              index,
+              keep: true,
+              reason: "Keep",
+            })),
+          }),
+          usage: undefined,
+        };
+      },
+    } as const;
+
+    const result = await criticFindings(findings, new Map(), client as never);
+
+    expect(totalReviewed).toBe(200);
+    expect(result.result.findings).toHaveLength(205);
+  });
+
+  test("preserves overflow findings when bounded findings are fully prefiltered", async () => {
+    const boundedStaticConfigFindings = Array.from({ length: 200 }, (_, index) =>
+      makeFinding({
+        findingId: `static-${index}`,
+        filePath: toFilePath("src/routes.ts"),
+        line: toLineNumber(index + 1),
+        evidence: "export const ROUTES: readonly RouteDefinition[] = [",
+        recommendation: "The static routes array should be grouped by concern instead of staying as a flat list.",
+      }),
+    );
+    const overflowFindings = Array.from({ length: 5 }, (_, index) =>
+      makeFinding({
+        findingId: `overflow-${index}`,
+        filePath: toFilePath(index < 2 ? "src/routes.ts" : "src/overflow.ts"),
+        line: toLineNumber(300 + index),
+        evidence:
+          index < 2
+            ? "export const ROUTES: readonly RouteDefinition[] = ["
+            : "keep overflow finding",
+        recommendation:
+          index < 2
+            ? "The static routes array should be grouped by concern instead of staying as a flat list."
+            : "keep overflow finding",
+      }),
+    );
+
+    let criticCalled = false;
+    const client = {
+      complete: async () => {
+        criticCalled = true;
+        throw new Error("critic should not be called");
+      },
+    } as const;
+
+    const result = await criticFindings(
+      [...boundedStaticConfigFindings, ...overflowFindings],
+      new Map(),
+      client as never,
+      new Map([[toFilePath("src/routes.ts"), makeReviewSignals({ hasStaticConfigTable: true })]]),
+    );
+
+    expect(criticCalled).toBe(false);
+    expect(result.result.findings).toHaveLength(3);
+    expect(result.result.findings.map((finding) => finding.findingId)).toEqual([
+      "overflow-2",
+      "overflow-3",
+      "overflow-4",
+    ]);
+    expect(result.result.filtered).toHaveLength(202);
   });
 });

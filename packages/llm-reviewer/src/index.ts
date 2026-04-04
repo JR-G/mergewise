@@ -19,7 +19,12 @@ export { selectFilesForReview } from "./file-selection";
 export { buildSystemPrompt, buildFileReviewPrompt } from "./prompt";
 export { parseLlmResponse, extractAddedLineNumbers, extractAddedLineMap, deduplicateByProximity, isCommentLine, isPlausibleRewrite, sanitiseSuggestedRewrite, hasEvidenceLineOverlap } from "./schema";
 export type { AddedLineInfo, RawLlmFinding } from "./schema";
-export { extractStructuralSignals, type StructuralSignals } from "./signals";
+export {
+  extractStructuralSignals,
+  extractReviewSignals,
+  type StructuralSignals,
+  type ReviewSignals,
+} from "./signals";
 export { reviewFile } from "./review-file";
 export { createReviewClient, ReviewClient, mergeUsage } from "./client";
 export { applyConsensusFilter, extractWordTokens, jaccardSimilarity } from "./consensus";
@@ -199,4 +204,3 @@ async function analysePipeline(
     return [];
   }
 }
-

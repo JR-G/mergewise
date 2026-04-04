@@ -1,4 +1,4 @@
-import type { StructuralSignals } from "../signals";
+import type { ReviewSignals, StructuralSignals } from "../signals";
 import type { SignalTag } from "../pipeline-types";
 
 const HOOK_PRESENCE_THRESHOLD = 0;
@@ -17,7 +17,10 @@ const LARGE_COMPONENT_LINE_THRESHOLD = 50;
  * @param signals - Structural signals extracted from a file diff.
  * @returns Signal tags indicating which knowledge domains are relevant.
  */
-export function deriveSignalTags(signals: StructuralSignals): readonly SignalTag[] {
+export function deriveSignalTags(
+  signals: StructuralSignals,
+  reviewSignals?: ReviewSignals,
+): readonly SignalTag[] {
   const tags: SignalTag[] = [];
 
   if (signals.hookCount > HOOK_PRESENCE_THRESHOLD) tags.push("has_hooks");
@@ -30,6 +33,11 @@ export function deriveSignalTags(signals: StructuralSignals): readonly SignalTag
   if (signals.typeAssertionCount > 0) tags.push("has_type_assertions");
   if (signals.importCount > HIGH_IMPORT_THRESHOLD) tags.push("high_import_count");
   if (signals.componentLineCount > LARGE_COMPONENT_LINE_THRESHOLD) tags.push("large_component");
+  if (reviewSignals?.hasInlineProviderValue) tags.push("unstable_provider_value");
+  if (reviewSignals?.hasValidationMixedWithStateUpdates) tags.push("provider_validation_mix");
+  if (reviewSignals?.hasRepeatedForwardedProp) tags.push("repeated_prop_forwarding");
+  if (reviewSignals?.hasStaticConfigTable) tags.push("static_config_table");
+  if (reviewSignals?.hasParameterMutation) tags.push("parameter_mutation");
 
   return tags;
 }

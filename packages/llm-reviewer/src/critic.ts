@@ -1,8 +1,10 @@
 import type { Finding } from "@mergewise/shared-types";
 import { mergeUsage, type CompletionUsage, type ReviewClient } from "./client";
 import type { CriticResult, FilteredFinding } from "./pipeline-types";
+import type { ReviewSignals } from "./signals";
 
 const MAX_FINDINGS_PER_CRITIC_BATCH = 50;
+const MAX_FINDINGS_FOR_CRITIC = 200;
 const MAX_CRITIC_RESPONSE_TOKENS = 2048;
 const CRITIC_TEMPERATURE = 0.1;
 const MAX_FILE_PATHS_FOR_CONTENT = 30;
@@ -211,6 +213,91 @@ function collapseDependencyInversionDuplicates(
   return { findings: collapsedFindings, filtered: collapsedFiltered };
 }
 
+function looksLikeStaticConfigRefactor(finding: Finding): boolean {
+  const combinedText = `${finding.evidence} ${finding.recommendation}`.toLowerCase();
+  const configCue = [
+    "routes array",
+    "route table",
+    "static configuration",
+    "status map",
+    "config table",
+  ].some((needle) => combinedText.includes(needle));
+  const refactorCue = [
+    "group routes",
+    "group by concern",
+    "resource type",
+    "flat list",
+    "centralize",
+    "extract",
+    "move",
+    "restructure",
+  ].some((needle) => combinedText.includes(needle));
+  return configCue && refactorCue;
+}
+
+function looksLikeFocusedReactDisplayDerivationFalsePositive(finding: Finding): boolean {
+  const combinedText = `${finding.evidence} ${finding.recommendation}`.toLowerCase();
+  const isReactFile = finding.filePath.endsWith(".tsx") || finding.filePath.endsWith(".jsx");
+  if (!isReactFile) return false;
+
+  const mixesUiAndLogic = [
+    "mixes ui rendering",
+    "business logic of filtering and sorting",
+    "violates srp",
+    "extract into a custom hook",
+  ].some((needle) => combinedText.includes(needle));
+
+  const displayDerivationCue = [
+    "usememo",
+    "filtering and sorting peers",
+    "filtered and sorted",
+    "display logic",
+  ].some((needle) => combinedText.includes(needle));
+
+  return mixesUiAndLogic && displayDerivationCue;
+}
+
+function applySignalBasedSuppressions(
+  findings: readonly Finding[],
+  reviewSignalsByFile: ReadonlyMap<string, ReviewSignals>,
+): CriticResult {
+  const kept: Finding[] = [];
+  const filtered: FilteredFinding[] = [];
+
+  for (const finding of findings) {
+    const reviewSignals = reviewSignalsByFile.get(finding.filePath);
+
+    if (reviewSignals?.hasStaticConfigTable && looksLikeStaticConfigRefactor(finding)) {
+      filtered.push({
+        finding,
+        reason: "Suppressed config-table refactor on static configuration diff",
+      });
+      continue;
+    }
+
+    if (
+      reviewSignals &&
+      reviewSignals.hasMemoizedDisplayDerivation &&
+      !reviewSignals.hasInlineProviderValue &&
+      !reviewSignals.hasValidationMixedWithStateUpdates &&
+      !reviewSignals.hasRepeatedForwardedProp &&
+      !reviewSignals.hasStaticConfigTable &&
+      !reviewSignals.hasParameterMutation &&
+      looksLikeFocusedReactDisplayDerivationFalsePositive(finding)
+    ) {
+      filtered.push({
+        finding,
+        reason: "Suppressed generic React mixed-concerns finding on focused memoised display derivation",
+      });
+      continue;
+    }
+
+    kept.push(finding);
+  }
+
+  return { findings: kept, filtered };
+}
+
 /**
  * Splits findings into kept and filtered based on critic verdicts.
  */
@@ -321,20 +408,42 @@ export async function criticFindings(
   findings: readonly Finding[],
   fileContents: ReadonlyMap<string, string>,
   client: ReviewClient,
+  reviewSignalsByFile: ReadonlyMap<string, ReviewSignals> = new Map(),
 ): Promise<{ result: CriticResult; usage: CompletionUsage | undefined }> {
   if (findings.length === 0) {
     return { result: { findings: [], filtered: [] }, usage: undefined };
   }
 
+  const boundedFindings = findings.slice(0, MAX_FINDINGS_FOR_CRITIC);
+  const overflowFindings = findings.slice(MAX_FINDINGS_FOR_CRITIC);
+  const prefiltered = applySignalBasedSuppressions(boundedFindings, reviewSignalsByFile);
+  const overflowPrefiltered = applySignalBasedSuppressions(overflowFindings, reviewSignalsByFile);
+  if (prefiltered.findings.length === 0) {
+    return {
+      result: {
+        findings: overflowPrefiltered.findings,
+        filtered: [...prefiltered.filtered, ...overflowPrefiltered.filtered],
+      },
+      usage: undefined,
+    };
+  }
+
   const allVerdicts: CriticVerdict[] = [];
   let combinedUsage: CompletionUsage | undefined;
 
-  for (let offset = 0; offset < findings.length; offset += MAX_FINDINGS_PER_CRITIC_BATCH) {
-    const batch = findings.slice(offset, offset + MAX_FINDINGS_PER_CRITIC_BATCH);
+  for (let offset = 0; offset < prefiltered.findings.length; offset += MAX_FINDINGS_PER_CRITIC_BATCH) {
+    const batch = prefiltered.findings.slice(offset, offset + MAX_FINDINGS_PER_CRITIC_BATCH);
     const batchResult = await criticBatch(batch, offset, fileContents, client);
     allVerdicts.push(...batchResult.verdicts);
     combinedUsage = mergeUsage(combinedUsage, batchResult.usage);
   }
 
-  return { result: splitByVerdicts(findings, allVerdicts), usage: combinedUsage };
+  const criticResult = splitByVerdicts(prefiltered.findings, allVerdicts);
+  return {
+    result: {
+      findings: [...criticResult.findings, ...overflowPrefiltered.findings],
+      filtered: [...prefiltered.filtered, ...criticResult.filtered, ...overflowPrefiltered.filtered],
+    },
+    usage: combinedUsage,
+  };
 }

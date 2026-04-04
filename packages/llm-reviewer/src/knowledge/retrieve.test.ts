@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { KnowledgeDocument } from "../pipeline-types";
 import { retrieveKnowledge } from "./retrieve";
 import { KNOWLEDGE_REGISTRY } from "./registry";
-import { makeSignals } from "./test-helpers";
+import { makeReviewSignals, makeSignals } from "./test-helpers";
 
 function makeDocument(overrides: Partial<KnowledgeDocument> = {}): KnowledgeDocument {
   return {
@@ -35,6 +35,52 @@ describe("retrieveKnowledge", () => {
       classifications: [],
     });
     expect(result.some((doc) => doc.id === "react-hooks")).toBe(true);
+  });
+
+  test("returns react-hooks doc for explicit unstable provider signal", () => {
+    const result = retrieveKnowledge({
+      signals: makeSignals(),
+      reviewSignals: makeReviewSignals({ hasInlineProviderValue: true }),
+      fileExtension: ".tsx",
+      classifications: [],
+    });
+    expect(result.some((doc) => doc.id === "react-hooks")).toBe(true);
+  });
+
+  test("returns prop-drilling doc for explicit repeated prop forwarding signal", () => {
+    const result = retrieveKnowledge({
+      signals: makeSignals(),
+      reviewSignals: makeReviewSignals({
+        hasRepeatedForwardedProp: true,
+        forwardedPropName: "theme",
+      }),
+      fileExtension: ".tsx",
+      classifications: [],
+    });
+    expect(result.some((doc) => doc.id === "prop-drilling")).toBe(true);
+  });
+
+  test("does not return react-hooks doc for explicit unstable provider signal in .ts files", () => {
+    const result = retrieveKnowledge({
+      signals: makeSignals(),
+      reviewSignals: makeReviewSignals({ hasInlineProviderValue: true }),
+      fileExtension: ".ts",
+      classifications: [],
+    });
+    expect(result.some((doc) => doc.id === "react-hooks")).toBe(false);
+  });
+
+  test("does not return prop-drilling doc for explicit repeated prop forwarding signal in .ts files", () => {
+    const result = retrieveKnowledge({
+      signals: makeSignals(),
+      reviewSignals: makeReviewSignals({
+        hasRepeatedForwardedProp: true,
+        forwardedPropName: "theme",
+      }),
+      fileExtension: ".ts",
+      classifications: [],
+    });
+    expect(result.some((doc) => doc.id === "prop-drilling")).toBe(false);
   });
 
   test("does not return react-hooks doc for .ts file", () => {

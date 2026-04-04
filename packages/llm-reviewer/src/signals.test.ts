@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { extractStructuralSignals } from "./signals";
+import { extractReviewSignals, extractStructuralSignals } from "./signals";
 import { makeDiff, makeHunk } from "./test-helpers";
 
 describe("extractStructuralSignals", () => {
@@ -165,5 +165,285 @@ describe("extractStructuralSignals", () => {
 
     const signals = extractStructuralSignals(diff);
     expect(signals.typeAssertionCount).toBe(2);
+  });
+});
+
+describe("extractReviewSignals", () => {
+  test("detects inline provider values", () => {
+    const diff = makeDiff("src/AuthProvider.tsx", [
+      makeHunk("@@ -0,0 +1,3 @@", [
+        "+return <AuthContext.Provider value={{ user, login }}>{children}</AuthContext.Provider>;",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasInlineProviderValue).toBe(true);
+  });
+
+  test("detects wrapped provider values across multiple diff lines", () => {
+    const diff = makeDiff("src/AuthProvider.tsx", [
+      makeHunk("@@ -0,0 +1,8 @@", [
+        "+return (",
+        "+  <AuthContext.Provider",
+        "+    value={{",
+        "+      user,",
+        "+      login,",
+        "+    }}",
+        "+  >",
+        "+);",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasInlineProviderValue).toBe(true);
+  });
+
+  test("detects validation mixed with state updates", () => {
+    const diff = makeDiff("src/AuthProvider.tsx", [
+      makeHunk("@@ -0,0 +1,6 @@", [
+        "+function login(email: string) {",
+        "+  if (!email) throw new Error('missing email')",
+        "+  setUser({ email })",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasValidationMixedWithStateUpdates).toBe(true);
+  });
+
+  test("detects validation mixed with non-hardcoded React setter names", () => {
+    const diff = makeDiff("src/AuthProvider.tsx", [
+      makeHunk("@@ -0,0 +1,6 @@", [
+        "+function login(email: string) {",
+        "+  if (!email) throw new Error('missing email')",
+        "+  setForm({ email })",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasValidationMixedWithStateUpdates).toBe(true);
+  });
+
+  test("detects repeated forwarded props and preserves the prop name", () => {
+    const diff = makeDiff("src/ThemeApp.tsx", [
+      makeHunk("@@ -0,0 +1,9 @@", [
+        "+function App({ theme }: { theme: Theme }) {",
+        "+  return <Layout theme={theme} />;",
+        "+}",
+        "+function Layout({ theme }: { theme: Theme }) {",
+        "+  return <Sidebar theme={theme} />;",
+        "+}",
+        "+function Sidebar({ theme }: { theme: Theme }) {",
+        "+  return <NavItem theme={theme} />;",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasRepeatedForwardedProp).toBe(true);
+    expect(signals.forwardedPropName).toBe("theme");
+  });
+
+  test("detects repeated forwarded props when signatures use type aliases", () => {
+    const diff = makeDiff("src/ThemeApp.tsx", [
+      makeHunk("@@ -0,0 +1,9 @@", [
+        "+function App({ theme }: AppProps) {",
+        "+  return <Layout theme={theme} />;",
+        "+}",
+        "+const Layout = ({ theme }: LayoutProps) => {",
+        "+  return <Sidebar theme={theme} />;",
+        "+};",
+        "+const Sidebar = ({ theme }: SidebarProps) => {",
+        "+  return <NavItem theme={theme} />;",
+        "+};",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasRepeatedForwardedProp).toBe(true);
+    expect(signals.forwardedPropName).toBe("theme");
+  });
+
+  test("detects static configuration tables", () => {
+    const diff = makeDiff("src/config/routes.ts", [
+      makeHunk("@@ -0,0 +1,3 @@", [
+        "+export const ROUTES: readonly RouteDefinition[] = [",
+        "+  { method: 'get', path: '/health', handler: handleHealthCheck, requiresAuth: false },",
+        "+];",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasStaticConfigTable).toBe(true);
+  });
+
+  test("does not treat unrelated as-const usage as a static config table", () => {
+    const diff = makeDiff("src/config/routes.ts", [
+      makeHunk("@@ -0,0 +1,5 @@", [
+        "+export const buildRoutes = {",
+        "+  load() { return registry }",
+        "+};",
+        "+const levels = ['info', 'warn'] as const;",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasStaticConfigTable).toBe(false);
+  });
+
+  test("detects parameter mutation", () => {
+    const diff = makeDiff("src/config.ts", [
+      makeHunk("@@ -0,0 +1,4 @@", [
+        "+function applyDefaults(config: AppConfig) {",
+        "+  config.timeout ??= 1000",
+        "+  return config",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasParameterMutation).toBe(true);
+  });
+
+  test("detects parameter mutation in arrow functions", () => {
+    const diff = makeDiff("src/config.ts", [
+      makeHunk("@@ -0,0 +1,4 @@", [
+        "+const applyDefaults = (config: AppConfig) => {",
+        "+  config.timeout ??= 1000",
+        "+  return config",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasParameterMutation).toBe(true);
+  });
+
+  test("detects memoized display derivation", () => {
+    const diff = makeDiff("src/UserProfile.tsx", [
+      makeHunk("@@ -0,0 +1,4 @@", [
+        "+const sortedPeers = useMemo(() => peers.filter((peer) => peer.active).sort(sortPeers), [peers])",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasMemoizedDisplayDerivation).toBe(true);
+  });
+
+  test("detects logical and-assignment parameter mutation", () => {
+    const diff = makeDiff("src/config.ts", [
+      makeHunk("@@ -0,0 +1,4 @@", [
+        "+function applyDefaults(config: AppConfig) {",
+        "+  config.timeout &&= 1000",
+        "+  return config",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasParameterMutation).toBe(true);
+  });
+
+  test("detects compound-assignment parameter mutation", () => {
+    const diff = makeDiff("src/config.ts", [
+      makeHunk("@@ -0,0 +1,4 @@", [
+        "+function applyDefaults(config: AppConfig) {",
+        "+  config.timeout += 500",
+        "+  return config",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasParameterMutation).toBe(true);
+  });
+
+  test("does not treat equality checks as parameter mutation", () => {
+    const diff = makeDiff("src/config.ts", [
+      makeHunk("@@ -0,0 +1,5 @@", [
+        "+function validate(config: AppConfig) {",
+        "+  if (config.timeout === 1000 || config.timeout == 2000) {",
+        "+    return true",
+        "+  }",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasParameterMutation).toBe(false);
+  });
+
+  test("does not treat chained property access as parameter mutation", () => {
+    const diff = makeDiff("src/config.ts", [
+      makeHunk("@@ -0,0 +1,5 @@", [
+        "+function applyDefaults(config: AppConfig) {",
+        "+  defaults.config.timeout ??= 1000",
+        "+  return config",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasParameterMutation).toBe(false);
+  });
+
+  test("returns zeroed review signals for an empty hunk", () => {
+    const diff = makeDiff("src/empty.ts", [makeHunk("@@ -0,0 +0,0 @@", [])]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals).toEqual({
+      hasInlineProviderValue: false,
+      hasValidationMixedWithStateUpdates: false,
+      hasRepeatedForwardedProp: false,
+      forwardedPropName: null,
+      hasStaticConfigTable: false,
+      hasParameterMutation: false,
+      hasMemoizedDisplayDerivation: false,
+    });
+  });
+
+  test("returns zeroed review signals for deleted-only hunks", () => {
+    const diff = makeDiff("src/clean.ts", [
+      makeHunk("@@ -1,3 +0,0 @@", [
+        "-function applyDefaults(config: AppConfig) {",
+        "-  config.timeout ??= 1000",
+        "-  return config",
+        "-}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals).toEqual({
+      hasInlineProviderValue: false,
+      hasValidationMixedWithStateUpdates: false,
+      hasRepeatedForwardedProp: false,
+      forwardedPropName: null,
+      hasStaticConfigTable: false,
+      hasParameterMutation: false,
+      hasMemoizedDisplayDerivation: false,
+    });
+  });
+
+  test("returns zeroed review signals when no targeted patterns exist", () => {
+    const diff = makeDiff("src/clean.ts", [
+      makeHunk("@@ -0,0 +1,3 @@", [
+        "+export function sum(a: number, b: number) {",
+        "+  return a + b",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals).toEqual({
+      hasInlineProviderValue: false,
+      hasValidationMixedWithStateUpdates: false,
+      hasRepeatedForwardedProp: false,
+      forwardedPropName: null,
+      hasStaticConfigTable: false,
+      hasParameterMutation: false,
+      hasMemoizedDisplayDerivation: false,
+    });
   });
 });

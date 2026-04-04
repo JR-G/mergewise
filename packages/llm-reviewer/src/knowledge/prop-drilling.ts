@@ -12,7 +12,12 @@ export const PROP_DRILLING_KNOWLEDGE: KnowledgeDocument = {
   id: "prop-drilling",
   title: "Prop Drilling Through Intermediate Components",
   category: "clean",
-  triggerSignals: ["has_hooks", "large_component", "high_import_count"],
+  triggerSignals: [
+    "has_hooks",
+    "large_component",
+    "high_import_count",
+    "repeated_prop_forwarding",
+  ],
   triggerClassifications: [
     "prop-drilling",
     "state-management",
