@@ -352,8 +352,16 @@ describe("criticFindings", () => {
     const overflowFindings = Array.from({ length: 5 }, (_, index) =>
       makeFinding({
         findingId: `overflow-${index}`,
-        filePath: toFilePath("src/overflow.ts"),
+        filePath: toFilePath(index < 2 ? "src/routes.ts" : "src/overflow.ts"),
         line: toLineNumber(300 + index),
+        evidence:
+          index < 2
+            ? "export const ROUTES: readonly RouteDefinition[] = ["
+            : "keep overflow finding",
+        recommendation:
+          index < 2
+            ? "The static routes array should be grouped by concern instead of staying as a flat list."
+            : "keep overflow finding",
       }),
     );
 
@@ -373,14 +381,12 @@ describe("criticFindings", () => {
     );
 
     expect(criticCalled).toBe(false);
-    expect(result.result.findings).toHaveLength(5);
+    expect(result.result.findings).toHaveLength(3);
     expect(result.result.findings.map((finding) => finding.findingId)).toEqual([
-      "overflow-0",
-      "overflow-1",
       "overflow-2",
       "overflow-3",
       "overflow-4",
     ]);
-    expect(result.result.filtered).toHaveLength(200);
+    expect(result.result.filtered).toHaveLength(202);
   });
 });

@@ -346,6 +346,20 @@ describe("extractReviewSignals", () => {
     expect(signals.hasParameterMutation).toBe(true);
   });
 
+  test("detects compound-assignment parameter mutation", () => {
+    const diff = makeDiff("src/config.ts", [
+      makeHunk("@@ -0,0 +1,4 @@", [
+        "+function applyDefaults(config: AppConfig) {",
+        "+  config.timeout += 500",
+        "+  return config",
+        "+}",
+      ]),
+    ]);
+
+    const signals = extractReviewSignals(diff);
+    expect(signals.hasParameterMutation).toBe(true);
+  });
+
   test("does not treat equality checks as parameter mutation", () => {
     const diff = makeDiff("src/config.ts", [
       makeHunk("@@ -0,0 +1,5 @@", [

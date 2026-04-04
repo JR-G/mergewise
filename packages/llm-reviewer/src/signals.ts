@@ -47,6 +47,23 @@ const STATIC_CONFIG_OBJECT_WITH_CONST_PATTERN = /export\s+const\s+\w+\s*=\s*\{[\
 const STATE_UPDATE_PATTERN = /\bset[A-Z]\w*\s*\(/;
 const IDENTIFIER_PATTERN = /^[A-Za-z_]\w*$/;
 const WORD_CHAR_PATTERN = /[A-Za-z0-9_]/;
+const PARAMETER_PROPERTY_MUTATION_OPERATORS = [
+  ">>>=",
+  "<<=",
+  ">>=",
+  "**=",
+  "??=",
+  "||=",
+  "&&=",
+  "+=",
+  "-=",
+  "*=",
+  "/=",
+  "%=",
+  "&=",
+  "^=",
+  "|=",
+] as const;
 const FUNCTION_WITH_PARAMS_PATTERN = /^(?:export\s+)?function\s+\w+\(([^)]*)\)/;
 const ARROW_FUNCTION_WITH_PARAMS_PATTERN = /^(?:export\s+)?(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>/;
 const METHOD_WITH_PARAMS_PATTERN = /^(?:(?:public|private|protected|static|async)\s+)*(\w+)\(([^)]*)\)\s*(?::\s*[^{]+)?\{/;
@@ -411,9 +428,7 @@ function hasParameterPropertyMutation(diffText: string, parameterName: string): 
     }
 
     if (
-      diffText.startsWith("??=", cursor) ||
-      diffText.startsWith("||=", cursor) ||
-      diffText.startsWith("&&=", cursor) ||
+      PARAMETER_PROPERTY_MUTATION_OPERATORS.some((operator) => diffText.startsWith(operator, cursor)) ||
       (diffText[cursor] === "=" && diffText[cursor + 1] !== "=")
     ) {
       return true;

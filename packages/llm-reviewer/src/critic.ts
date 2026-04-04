@@ -417,11 +417,12 @@ export async function criticFindings(
   const boundedFindings = findings.slice(0, MAX_FINDINGS_FOR_CRITIC);
   const overflowFindings = findings.slice(MAX_FINDINGS_FOR_CRITIC);
   const prefiltered = applySignalBasedSuppressions(boundedFindings, reviewSignalsByFile);
+  const overflowPrefiltered = applySignalBasedSuppressions(overflowFindings, reviewSignalsByFile);
   if (prefiltered.findings.length === 0) {
     return {
       result: {
-        findings: overflowFindings,
-        filtered: prefiltered.filtered,
+        findings: overflowPrefiltered.findings,
+        filtered: [...prefiltered.filtered, ...overflowPrefiltered.filtered],
       },
       usage: undefined,
     };
@@ -440,8 +441,8 @@ export async function criticFindings(
   const criticResult = splitByVerdicts(prefiltered.findings, allVerdicts);
   return {
     result: {
-      findings: [...criticResult.findings, ...overflowFindings],
-      filtered: [...prefiltered.filtered, ...criticResult.filtered],
+      findings: [...criticResult.findings, ...overflowPrefiltered.findings],
+      filtered: [...prefiltered.filtered, ...criticResult.filtered, ...overflowPrefiltered.filtered],
     },
     usage: combinedUsage,
   };
