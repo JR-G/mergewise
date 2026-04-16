@@ -4,6 +4,7 @@ export type {
   DebtGraph,
   DebtFinding,
   DebtProfile,
+  IndexedSymbol,
   HotspotEntry,
   ScanSummary,
 } from "./graph-types";

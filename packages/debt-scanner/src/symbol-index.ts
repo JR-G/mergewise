@@ -1,13 +1,16 @@
 import { relative } from "node:path";
 import ts from "typescript";
-import { toFilePath, toLineNumber, type SymbolEntry } from "@mergewise/shared-types";
+import { toFilePath, toLineNumber } from "@mergewise/shared-types";
+import type { IndexedSymbol } from "./graph-types";
 
 const TSX_PATTERN = /\.tsx$/i;
 const MAX_SYMBOLS_PER_FILE = 200;
 const MAX_SYMBOL_NAME_LENGTH = 120;
+const MAX_SYMBOL_SNIPPET_LINES = 40;
+const MAX_SYMBOL_SNIPPET_CHARS = 4_000;
 
 interface SymbolAccumulator {
-  readonly entries: SymbolEntry[];
+  readonly entries: IndexedSymbol[];
   readonly seenKeys: Set<string>;
 }
 
@@ -22,9 +25,9 @@ export async function indexSymbols(
   filePaths: readonly string[],
   repoPath: string,
   concurrency = 50,
-): Promise<readonly SymbolEntry[]> {
+): Promise<readonly IndexedSymbol[]> {
   const batches = chunk(filePaths, concurrency);
-  const symbols: SymbolEntry[] = [];
+  const symbols: IndexedSymbol[] = [];
 
   for (const batch of batches) {
     const results = await Promise.all(batch.map((filePath) => indexFileSymbols(filePath, repoPath)));
@@ -39,7 +42,7 @@ export async function indexSymbols(
 async function indexFileSymbols(
   filePath: string,
   repoPath: string,
-): Promise<readonly SymbolEntry[]> {
+): Promise<readonly IndexedSymbol[]> {
   const fileContent = await readFileContent(filePath);
   if (fileContent === null) return [];
 
@@ -73,6 +76,7 @@ function collectStatementSymbols(
       kind: "function",
       nameNode: statement.name,
       statement,
+      snippetNode: statement,
     });
     return;
   }
@@ -86,6 +90,7 @@ function collectStatementSymbols(
       kind: "class",
       nameNode: statement.name,
       statement,
+      snippetNode: statement,
     });
     return;
   }
@@ -99,6 +104,7 @@ function collectStatementSymbols(
       kind: "interface",
       nameNode: statement.name,
       statement,
+      snippetNode: statement,
     });
     return;
   }
@@ -112,6 +118,7 @@ function collectStatementSymbols(
       kind: "type",
       nameNode: statement.name,
       statement,
+      snippetNode: statement,
     });
     return;
   }
@@ -129,6 +136,7 @@ function collectVariableSymbols(
 ): void {
   const exported = hasExportModifier(statement);
   const symbolKind = isConstDeclaration(statement) ? "constant" : "variable";
+  const snippet = buildSnippet(sourceFile, statement);
 
   for (const declaration of statement.declarationList.declarations) {
     if (accumulator.entries.length >= MAX_SYMBOLS_PER_FILE) {
@@ -143,6 +151,7 @@ function collectVariableSymbols(
       file: relativePath,
       line: getLineNumber(sourceFile, declaration.name),
       exported,
+      snippet,
     });
   }
 }
@@ -153,9 +162,10 @@ function pushNamedSymbol(
     readonly sourceFile: ts.SourceFile;
     readonly relativePath: ReturnType<typeof toFilePath>;
     readonly name: string;
-    readonly kind: SymbolEntry["kind"];
+    readonly kind: IndexedSymbol["kind"];
     readonly nameNode: ts.Node;
     readonly statement: ts.Statement;
+    readonly snippetNode: ts.Node;
   },
 ): void {
   pushSymbol(input.accumulator, {
@@ -164,12 +174,13 @@ function pushNamedSymbol(
     file: input.relativePath,
     line: getLineNumber(input.sourceFile, input.nameNode),
     exported: hasExportModifier(input.statement),
+    snippet: buildSnippet(input.sourceFile, input.snippetNode),
   });
 }
 
 function pushSymbol(
   accumulator: SymbolAccumulator,
-  symbol: SymbolEntry,
+  symbol: IndexedSymbol,
 ): void {
   const trimmedName = symbol.name.trim();
   if (trimmedName.length === 0) {
@@ -191,6 +202,23 @@ function pushSymbol(
 
 function getLineNumber(sourceFile: ts.SourceFile, node: ts.Node): ReturnType<typeof toLineNumber> {
   return toLineNumber(sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1);
+}
+
+function buildSnippet(sourceFile: ts.SourceFile, node: ts.Node): string {
+  const startLine = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line;
+  const endLine = sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line;
+  const sourceLines = sourceFile.text.split("\n");
+  const slice = sourceLines.slice(startLine, Math.min(endLine + 1, startLine + MAX_SYMBOL_SNIPPET_LINES));
+  let snippet = slice.join("\n").trimEnd();
+
+  if (endLine - startLine + 1 > MAX_SYMBOL_SNIPPET_LINES) {
+    snippet += "\n... [truncated]";
+  }
+  if (snippet.length > MAX_SYMBOL_SNIPPET_CHARS) {
+    snippet = `${snippet.slice(0, MAX_SYMBOL_SNIPPET_CHARS)}\n... [truncated]`;
+  }
+
+  return snippet;
 }
 
 function hasExportModifier(node: ts.Node): boolean {

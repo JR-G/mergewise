@@ -1,7 +1,13 @@
-import type { FileGraphContext, ReviewToolkit, ReusableSymbolMatch } from "@mergewise/llm-reviewer";
-import type { FilePath, SymbolEntry, SymbolKind } from "@mergewise/shared-types";
+import type {
+  FileGraphContext,
+  ReviewToolkit,
+  ReusableExampleMatch,
+  ReusableMatchRelation,
+  ReusableSymbolMatch,
+} from "@mergewise/llm-reviewer";
+import type { FilePath, SymbolKind } from "@mergewise/shared-types";
 
-import type { DebtGraph, HotspotEntry } from "./graph-types";
+import type { DebtGraph, HotspotEntry, IndexedSymbol } from "./graph-types";
 import { buildPrGraphContext } from "./graph-context";
 
 const MAX_CALLERS = 50;
@@ -14,7 +20,7 @@ interface Indexes {
 }
 
 interface SymbolSearchInput {
-  readonly symbols: readonly SymbolEntry[];
+  readonly symbols: readonly IndexedSymbol[];
   readonly indexes: Indexes;
   readonly filePath: FilePath;
   readonly query: string;
@@ -26,6 +32,12 @@ interface SymbolSearchContext {
   readonly currentDirectory: string;
   readonly directImports: ReadonlySet<string>;
   readonly importedBy: ReadonlySet<string>;
+}
+
+interface RankedSymbolMatch {
+  readonly symbol: IndexedSymbol;
+  readonly relation: ReusableMatchRelation;
+  readonly score: number;
 }
 
 /**
@@ -42,7 +54,7 @@ interface SymbolSearchContext {
 export function buildReviewToolkit(
   graph: DebtGraph,
   hotspots: readonly HotspotEntry[],
-  symbols: readonly SymbolEntry[] = [],
+  symbols: readonly IndexedSymbol[] = [],
 ): ReviewToolkit {
   const indexes = buildIndexes(graph);
 
@@ -62,6 +74,9 @@ export function buildReviewToolkit(
     },
     findReusableSymbols(filePath: FilePath, query: string, limit?: number): readonly ReusableSymbolMatch[] {
       return searchReusableSymbols({ symbols, indexes, filePath, query, limit });
+    },
+    findReusableExamples(filePath: FilePath, query: string, limit?: number): readonly ReusableExampleMatch[] {
+      return searchReusableExamples({ symbols, indexes, filePath, query, limit });
     },
   };
 }
@@ -94,12 +109,47 @@ function buildIndexes(graph: DebtGraph): Indexes {
 }
 
 function searchReusableSymbols(input: SymbolSearchInput): readonly ReusableSymbolMatch[] {
+  const rankedMatches = rankReusableSymbols(input);
+  const cappedLimit = capSymbolLimit(input.limit);
+
+  return rankedMatches
+    .slice(0, cappedLimit)
+    .map((match) => ({
+      name: match.symbol.name,
+      kind: match.symbol.kind,
+      filePath: match.symbol.file,
+      line: match.symbol.line,
+      exported: match.symbol.exported,
+      relation: match.relation,
+      score: match.score,
+    }));
+}
+
+function searchReusableExamples(input: SymbolSearchInput): readonly ReusableExampleMatch[] {
+  const rankedMatches = rankReusableSymbols(input)
+    .filter((match) => match.symbol.snippet.trim().length > 0);
+  const cappedLimit = capSymbolLimit(input.limit);
+
+  return rankedMatches
+    .slice(0, cappedLimit)
+    .map((match) => ({
+      name: match.symbol.name,
+      kind: match.symbol.kind,
+      filePath: match.symbol.file,
+      line: match.symbol.line,
+      exported: match.symbol.exported,
+      relation: match.relation,
+      score: match.score,
+      snippet: match.symbol.snippet,
+    }));
+}
+
+function rankReusableSymbols(input: SymbolSearchInput): readonly RankedSymbolMatch[] {
   const trimmedQuery = input.query.trim();
   if (trimmedQuery.length === 0) {
     return [];
   }
 
-  const cappedLimit = Math.max(1, Math.min(Math.floor(input.limit ?? DEFAULT_SYMBOL_LIMIT), MAX_SYMBOL_LIMIT));
   const queryTokens = tokenize(trimmedQuery);
   const searchContext: SymbolSearchContext = {
     currentFile: input.filePath,
@@ -108,7 +158,7 @@ function searchReusableSymbols(input: SymbolSearchInput): readonly ReusableSymbo
     importedBy: new Set(input.indexes.reverseImports.get(input.filePath) ?? []),
   };
 
-  const matches = input.symbols.flatMap((symbol): ReusableSymbolMatch[] => {
+  const matches = input.symbols.flatMap((symbol): RankedSymbolMatch[] => {
     const symbolTokens = tokenize(symbol.name);
     const sharedTokenCount = countSharedTokens(queryTokens, symbolTokens);
     const includesQuery = normalise(symbol.name).includes(normalise(trimmedQuery));
@@ -131,37 +181,29 @@ function searchReusableSymbols(input: SymbolSearchInput): readonly ReusableSymbo
     const exportedScore = symbol.exported ? 4 : 0;
     const kindScore = symbolKindBonus(symbol.kind);
 
-    return [{
-      name: symbol.name,
-      kind: symbol.kind,
-      filePath: symbol.file,
-      line: symbol.line,
-      exported: symbol.exported,
-      relation,
-      score: nameScore + relationScore + exportedScore + kindScore,
-    }];
+    return [{ symbol, relation, score: nameScore + relationScore + exportedScore + kindScore }];
   });
 
   matches.sort((left, right) => {
     if (right.score !== left.score) {
       return right.score - left.score;
     }
-    if (left.filePath !== right.filePath) {
-      return left.filePath.localeCompare(right.filePath);
+    if (left.symbol.file !== right.symbol.file) {
+      return left.symbol.file.localeCompare(right.symbol.file);
     }
-    if (left.line !== right.line) {
-      return left.line - right.line;
+    if (left.symbol.line !== right.symbol.line) {
+      return left.symbol.line - right.symbol.line;
     }
-    return left.name.localeCompare(right.name);
+    return left.symbol.name.localeCompare(right.symbol.name);
   });
 
-  return matches.slice(0, cappedLimit);
+  return matches;
 }
 
 function resolveRelation(
   symbolFile: FilePath,
   searchContext: SymbolSearchContext,
-): ReusableSymbolMatch["relation"] {
+): ReusableMatchRelation {
   if (symbolFile === searchContext.currentFile) {
     return "current-file";
   }
@@ -175,6 +217,10 @@ function resolveRelation(
     return "same-directory";
   }
   return "repo";
+}
+
+function capSymbolLimit(limit: number | undefined): number {
+  return Math.max(1, Math.min(Math.floor(limit ?? DEFAULT_SYMBOL_LIMIT), MAX_SYMBOL_LIMIT));
 }
 
 function countSharedTokens(left: ReadonlySet<string>, right: ReadonlySet<string>): number {

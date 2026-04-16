@@ -72,4 +72,45 @@ describe("indexSymbols", () => {
 
     expect(symbols.length).toBe(200);
   });
+
+  test("captures declaration snippets for indexed symbols", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "symbol-index-"));
+    const filePath = join(tempDir, "src.ts");
+    await Bun.write(
+      filePath,
+      [
+        "export function loadUser(): User {",
+        "  return { id: \"1\" };",
+        "}",
+        "export const userLabel = \"user\";",
+      ].join("\n"),
+    );
+
+    const symbols = await indexSymbols([filePath], tempDir);
+    const functionSymbol = symbols.find((symbol) => symbol.name === "loadUser");
+    const constantSymbol = symbols.find((symbol) => symbol.name === "userLabel");
+
+    expect(functionSymbol?.snippet).toContain("export function loadUser(): User {");
+    expect(functionSymbol?.snippet).toContain("return { id: \"1\" };");
+    expect(constantSymbol?.snippet).toBe("export const userLabel = \"user\";");
+  });
+
+  test("truncates oversized declaration snippets", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "symbol-index-"));
+    const filePath = join(tempDir, "large.ts");
+    const lines = [
+      "export function buildThing(): string {",
+      ...Array.from({ length: 60 }, (_, index) => `  const line${index} = "${"x".repeat(120)}";`),
+      "  return line0;",
+      "}",
+    ];
+    await Bun.write(filePath, lines.join("\n"));
+
+    const symbols = await indexSymbols([filePath], tempDir);
+    const symbol = symbols.find((entry) => entry.name === "buildThing");
+
+    expect(symbol).toBeDefined();
+    expect(symbol!.snippet).toContain("... [truncated]");
+    expect(symbol!.snippet.length).toBeLessThanOrEqual(4_016);
+  });
 });

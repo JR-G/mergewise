@@ -7,9 +7,10 @@ import type {
   DebtEdge,
   HotspotEntry,
   ScanSummary,
+  IndexedSymbol,
 } from "./graph-types";
 import type { StructuralSignals } from "@mergewise/llm-reviewer";
-import { toFilePath, toLineNumber, type SymbolEntry } from "@mergewise/shared-types";
+import { toFilePath, toLineNumber } from "@mergewise/shared-types";
 
 export interface DebtStore {
   saveScan(profile: DebtProfile): string;
@@ -80,6 +81,7 @@ const SCHEMA_SYMBOLS = `CREATE TABLE IF NOT EXISTS symbols (
   file_path TEXT NOT NULL,
   line INTEGER NOT NULL,
   exported INTEGER NOT NULL,
+  snippet TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (scan_id, name, file_path, line, kind)
 )`;
 
@@ -135,6 +137,11 @@ interface SymbolRow {
   file_path: string;
   line: number;
   exported: number;
+  snippet: string;
+}
+
+interface TableInfoRow {
+  name: string;
 }
 
 function toSummary(row: ScanRow): ScanSummary {
@@ -195,13 +202,14 @@ function toFinding(row: FindingRow): DebtFinding {
   };
 }
 
-function toSymbol(row: SymbolRow): SymbolEntry {
+function toSymbol(row: SymbolRow): IndexedSymbol {
   return {
     name: row.name,
     kind: row.kind,
     file: toFilePath(row.file_path),
     line: toLineNumber(row.line),
     exported: row.exported === 1,
+    snippet: row.snippet,
   };
 }
 
@@ -214,6 +222,15 @@ function initSchema(database: Database): void {
   database.run(SCHEMA_HOTSPOTS);
   database.run(SCHEMA_FINDINGS);
   database.run(SCHEMA_SYMBOLS);
+  ensureSnippetColumn(database);
+}
+
+function ensureSnippetColumn(database: Database): void {
+  const rows = database.query("PRAGMA table_info(symbols)").all() as TableInfoRow[];
+  const hasSnippetColumn = rows.some((row) => row.name === "snippet");
+  if (!hasSnippetColumn) {
+    database.run("ALTER TABLE symbols ADD COLUMN snippet TEXT NOT NULL DEFAULT ''");
+  }
 }
 
 interface ReconstructQueries {
@@ -311,8 +328,8 @@ function prepareStatements(database: Database): Statements {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
     insertSymbol: database.prepare(
-      `INSERT OR IGNORE INTO symbols (scan_id, name, kind, file_path, line, exported)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO symbols (scan_id, name, kind, file_path, line, exported, snippet)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ),
     queryScans: database.prepare("SELECT * FROM scans ORDER BY scanned_at DESC LIMIT 100"),
     queryScansByRepo: database.prepare("SELECT * FROM scans WHERE repo_path = ? ORDER BY scanned_at DESC LIMIT 100"),
@@ -331,7 +348,7 @@ function prepareStatements(database: Database): Statements {
       "SELECT node_id, pattern_id, category, title, recommendation, confidence, line_start, line_end FROM findings WHERE scan_id = ? LIMIT 2000",
     ),
     querySymbols: database.prepare(
-      "SELECT name, kind, file_path, line, exported FROM symbols WHERE scan_id = ? ORDER BY file_path ASC, line ASC LIMIT 50000",
+      "SELECT name, kind, file_path, line, exported, snippet FROM symbols WHERE scan_id = ? ORDER BY file_path ASC, line ASC LIMIT 50000",
     ),
   };
 }
@@ -394,6 +411,7 @@ function executeSave(stmts: Statements, database: Database, profile: DebtProfile
         symbol.file,
         symbol.line,
         symbol.exported ? 1 : 0,
+        symbol.snippet,
       );
     }
   })();

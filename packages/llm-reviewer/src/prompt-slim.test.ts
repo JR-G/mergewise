@@ -118,6 +118,7 @@ describe("buildSlimSystemPrompt with toolUse option", () => {
     expect(prompt).toContain("read_file_section");
     expect(prompt).toContain("get_callers");
     expect(prompt).toContain("find_reusable_symbols");
+    expect(prompt).toContain("find_reusable_examples");
     expect(prompt).toContain("lookup_pattern");
     expect(prompt).toContain("get_repo_preferences");
   });
@@ -179,6 +180,17 @@ describe("buildToolUseFilePrompt", () => {
     });
     expect(result).toContain("srp: SRP Violations");
     expect(result).toContain("god-function: God Functions");
+  });
+
+  test("instructs the reviewer to inspect concrete repo examples before inventing abstractions", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      signals: makeSignals(),
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("concrete repository examples");
+    expect(result).toContain("inspect a concrete example");
   });
 
   test("includes targeted hint for inline provider values", () => {

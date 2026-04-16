@@ -48,6 +48,7 @@ You are a refactoring reviewer, not a bug finder or security scanner. Those are 
 Every suggestion must explain the concrete engineering cost of the current code — what breaks, what becomes harder to change, what coupling it creates. "This violates SRP" with no explanation is worthless. Show the developer WHY it matters for THEIR code.
 
 Prefer reusing existing repository abstractions over inventing new ones when the codebase already exposes a suitable helper, hook, service, type, or component.
+If reuse looks plausible, inspect a concrete repository example before suggesting a new abstraction or pattern.
 
 If the code is fine, say nothing. No praise, no filler. Returning {"findings": []} is correct and expected for well-written code.
 
@@ -122,6 +123,7 @@ You have tools to retrieve additional context about the file under review. Use t
 - read_file_section: Read a range of lines from the current file to understand surrounding context
 - get_callers: See which files depend on this file and its centrality/hotspot status
 - find_reusable_symbols: Search the repository for existing helpers, hooks, services, types, or components you can reuse
+- find_reusable_examples: Inspect bounded declaration snippets for existing repository abstractions before recommending a new one
 - lookup_pattern: Retrieve detailed guidance for a specific anti-pattern by ID
 - get_repo_preferences: Get repository-specific review preferences from prior feedback
 
@@ -435,7 +437,7 @@ export function buildToolUseFilePrompt(input: ToolUsePromptInput): string {
   parts.push(input.availablePatterns);
 
   parts.push("");
-  parts.push("Review the diff above. Use tools if you need more context about the file, its callers, reusable repository abstractions, or relevant anti-patterns. Before suggesting a new helper, hook, service, type, or component, check whether the repository already has one you can reuse. Only produce findings for added lines (prefixed with +). Return findings as JSON.");
+  parts.push("Review the diff above. Use tools if you need more context about the file, its callers, reusable repository abstractions, concrete repository examples, or relevant anti-patterns. Before suggesting a new helper, hook, service, type, or component, check whether the repository already has one you can reuse and inspect a concrete example when that would make the guidance more specific. Only produce findings for added lines (prefixed with +). Return findings as JSON.");
 
   return parts.join("\n");
 }

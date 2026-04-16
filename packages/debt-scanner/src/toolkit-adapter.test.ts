@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
-import { toFilePath, toLineNumber, type SymbolEntry } from "@mergewise/shared-types";
+import { toFilePath, toLineNumber } from "@mergewise/shared-types";
 import { buildReviewToolkit } from "./toolkit-adapter";
-import type { DebtGraph, DebtNode, DebtEdge, HotspotEntry } from "./graph-types";
+import type { DebtGraph, DebtNode, DebtEdge, HotspotEntry, IndexedSymbol } from "./graph-types";
 
 function makeNode(filePath: string, centrality: number): DebtNode {
   return {
@@ -43,14 +43,15 @@ function makeHotspot(filePath: string, score: number): HotspotEntry {
 function makeSymbol(
   name: string,
   filePath: string,
-  overrides: Partial<SymbolEntry> = {},
-): SymbolEntry {
+  overrides: Partial<IndexedSymbol> = {},
+): IndexedSymbol {
   return {
     name,
     kind: "function",
     file: toFilePath(filePath),
     line: toLineNumber(10),
     exported: true,
+    snippet: `export function ${name}(): void {\n  return;\n}`,
     ...overrides,
   };
 }
@@ -222,4 +223,40 @@ describe("buildReviewToolkit", () => {
     expect(matches).toEqual([]);
   });
 
+  test("returns reusable examples with ranked declaration snippets", () => {
+    const graph = makeGraph(
+      [
+        makeNode("src/feature.ts", 0.7),
+        makeNode("src/shared/hooks.ts", 0.4),
+      ],
+      [
+        { source: "src/feature.ts", target: "src/shared/hooks.ts", kind: "imports" },
+      ],
+    );
+    const toolkit = buildReviewToolkit(graph, [], [
+      makeSymbol("useUserFilters", "src/shared/hooks.ts", {
+        snippet: [
+          "export function useUserFilters(): FilterState {",
+          "  return createFilterState();",
+          "}",
+        ].join("\n"),
+      }),
+    ]);
+
+    const matches = toolkit.findReusableExamples!(toFilePath("src/feature.ts"), "user filters", 5);
+
+    expect(matches[0]?.filePath).toBe(toFilePath("src/shared/hooks.ts"));
+    expect(matches[0]?.relation).toBe("imports");
+    expect(matches[0]?.snippet).toContain("createFilterState");
+  });
+
+  test("skips reusable examples without snippets", () => {
+    const toolkit = buildReviewToolkit(makeGraph([], []), [], [
+      makeSymbol("useUserFilters", "src/shared/hooks.ts", { snippet: "" }),
+    ]);
+
+    const matches = toolkit.findReusableExamples!(toFilePath("src/feature.ts"), "user filters", 5);
+
+    expect(matches).toEqual([]);
+  });
 });

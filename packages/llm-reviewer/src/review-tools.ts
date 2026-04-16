@@ -10,6 +10,8 @@ const MAX_READ_CHARS = 50_000;
 const MAX_CALLERS_IN_RESULT = 10;
 const MAX_LEARNINGS_IN_RESULT = 5;
 const MAX_REUSABLE_SYMBOLS_IN_RESULT = 10;
+const MAX_REUSABLE_EXAMPLES_IN_RESULT = 5;
+const MAX_REUSABLE_EXAMPLE_SNIPPET_CHARS = 2_000;
 
 /**
  * Context provided to tool execute functions.
@@ -153,6 +155,52 @@ export const findReusableSymbols: ReviewTool<typeof findReusableSymbolsSchema> =
   },
 };
 
+const findReusableExamplesSchema = z.object({
+  query: z.string().min(1).max(80),
+  kind: z.string().optional(),
+  limit: z.number().int().min(1).max(MAX_REUSABLE_EXAMPLES_IN_RESULT).optional(),
+});
+
+export const findReusableExamples: ReviewTool<typeof findReusableExamplesSchema> = {
+  name: "find_reusable_examples",
+  description:
+    "Retrieve bounded declaration snippets for existing repository abstractions so you can compare against local code before suggesting a refactor.",
+  schema: findReusableExamplesSchema,
+  execute: (args, context) => {
+    const matches = context.toolkit?.findReusableExamples?.(
+      context.filePath,
+      args.query,
+      args.limit,
+    );
+    if (!matches || matches.length === 0) {
+      return "No reusable examples found";
+    }
+
+    const filteredMatches = typeof args.kind === "string"
+      ? matches.filter((match) => match.kind === args.kind)
+      : matches;
+    if (filteredMatches.length === 0) {
+      return "No reusable examples found";
+    }
+
+    return JSON.stringify({
+      query: args.query,
+      matches: filteredMatches
+        .slice(0, MAX_REUSABLE_EXAMPLES_IN_RESULT)
+        .map((match) => ({
+          name: match.name,
+          kind: match.kind,
+          filePath: match.filePath,
+          line: match.line,
+          exported: match.exported,
+          relation: match.relation,
+          score: match.score,
+          snippet: truncateReusableExampleSnippet(match.snippet),
+        })),
+    });
+  },
+};
+
 const lookupPatternSchema = z.object({
   patternId: z.string(),
 });
@@ -201,9 +249,18 @@ export const REVIEW_TOOLS: readonly ReviewTool<z.ZodObject>[] = [
   readFileSection,
   getCallers,
   findReusableSymbols,
+  findReusableExamples,
   lookupPattern,
   getRepoPreferences,
 ];
+
+function truncateReusableExampleSnippet(snippet: string): string {
+  if (snippet.length <= MAX_REUSABLE_EXAMPLE_SNIPPET_CHARS) {
+    return snippet;
+  }
+
+  return `${snippet.slice(0, MAX_REUSABLE_EXAMPLE_SNIPPET_CHARS)}\n... [truncated]`;
+}
 
 /**
  * Converts provider-agnostic tool definitions to OpenAI's ChatCompletionTool format.
