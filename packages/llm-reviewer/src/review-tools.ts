@@ -9,6 +9,7 @@ const MAX_READ_LINES = 500;
 const MAX_READ_CHARS = 50_000;
 const MAX_CALLERS_IN_RESULT = 10;
 const MAX_LEARNINGS_IN_RESULT = 5;
+const MAX_REUSABLE_SYMBOLS_IN_RESULT = 10;
 
 /**
  * Context provided to tool execute functions.
@@ -107,6 +108,51 @@ export const getCallers: ReviewTool<typeof emptySchema> = {
   },
 };
 
+const findReusableSymbolsSchema = z.object({
+  query: z.string().min(1).max(80),
+  kind: z.string().optional(),
+  limit: z.number().int().min(1).max(MAX_REUSABLE_SYMBOLS_IN_RESULT).optional(),
+});
+
+export const findReusableSymbols: ReviewTool<typeof findReusableSymbolsSchema> = {
+  name: "find_reusable_symbols",
+  description:
+    "Search the repository symbol index for existing helpers, hooks, services, types, or components that may already solve the current problem.",
+  schema: findReusableSymbolsSchema,
+  execute: (args, context) => {
+    const matches = context.toolkit?.findReusableSymbols?.(
+      context.filePath,
+      args.query,
+      args.limit,
+    );
+    if (!matches || matches.length === 0) {
+      return "No reusable symbols found";
+    }
+
+    const filteredMatches = typeof args.kind === "string"
+      ? matches.filter((match) => match.kind === args.kind)
+      : matches;
+    if (filteredMatches.length === 0) {
+      return "No reusable symbols found";
+    }
+
+    return JSON.stringify({
+      query: args.query,
+      matches: filteredMatches
+        .slice(0, MAX_REUSABLE_SYMBOLS_IN_RESULT)
+        .map((match) => ({
+          name: match.name,
+          kind: match.kind,
+          filePath: match.filePath,
+          line: match.line,
+          exported: match.exported,
+          relation: match.relation,
+          score: match.score,
+        })),
+    });
+  },
+};
+
 const lookupPatternSchema = z.object({
   patternId: z.string(),
 });
@@ -154,6 +200,7 @@ export const getRepoPreferences: ReviewTool<typeof emptySchema> = {
 export const REVIEW_TOOLS: readonly ReviewTool<z.ZodObject>[] = [
   readFileSection,
   getCallers,
+  findReusableSymbols,
   lookupPattern,
   getRepoPreferences,
 ];

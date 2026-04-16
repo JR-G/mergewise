@@ -5,6 +5,7 @@ import { buildGraph } from "./graph-builder";
 import { computeCentrality } from "./centrality";
 import { rankHotspots } from "./hotspot-ranker";
 import { scanWithLlm } from "./llm-scanner";
+import { indexSymbols } from "./symbol-index";
 import type { DebtProfile, DebtFinding } from "./graph-types";
 import type { DebtStore } from "./store";
 
@@ -41,6 +42,10 @@ export async function scan(options: ScanOptions): Promise<DebtProfile> {
   const nodes = await analyseFiles(filePaths, repoPath);
   onProgress?.("analyse", `Analysed ${nodes.length} files`);
 
+  onProgress?.("symbols", "Indexing repository symbols...");
+  const symbols = await indexSymbols(filePaths, repoPath);
+  onProgress?.("symbols", `Indexed ${symbols.length} symbols`);
+
   onProgress?.("graph", "Building dependency graph...");
   const graph = await buildGraph(nodes, repoPath);
   onProgress?.("graph", `Built graph with ${graph.nodes.size} nodes and ${graph.edges.length} edges`);
@@ -76,6 +81,7 @@ export async function scan(options: ScanOptions): Promise<DebtProfile> {
     graph,
     findings,
     hotspots,
+    symbols,
   };
 
   if (options.store) {

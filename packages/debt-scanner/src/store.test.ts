@@ -1,4 +1,5 @@
 import { describe, expect, test, afterEach } from "bun:test";
+import { toFilePath, toLineNumber } from "@mergewise/shared-types";
 import { openStore } from "./store";
 import type { DebtProfile, DebtGraph, DebtFinding, HotspotEntry } from "./graph-types";
 import { tmpdir } from "node:os";
@@ -65,6 +66,13 @@ function makeProfile(overrides: Partial<DebtProfile> = {}): DebtProfile {
     graph,
     findings,
     hotspots,
+    symbols: [{
+      name: "buildWidget",
+      kind: "function",
+      file: toFilePath("src/index.ts"),
+      line: toLineNumber(12),
+      exported: true,
+    }],
     ...overrides,
   };
 }
@@ -108,6 +116,7 @@ describe("store", () => {
     expect(loaded!.scannedAt).toBe(profile.scannedAt);
     expect(loaded!.hotspots).toEqual(profile.hotspots);
     expect(loaded!.findings).toEqual(profile.findings);
+    expect(loaded!.symbols).toEqual(profile.symbols);
     expect(loaded!.graph.nodes.size).toBe(profile.graph.nodes.size);
     expect(loaded!.graph.edges).toEqual(profile.graph.edges);
 

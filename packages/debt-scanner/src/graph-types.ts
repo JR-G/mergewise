@@ -1,4 +1,5 @@
 import type { StructuralSignals } from "@mergewise/llm-reviewer";
+import type { SymbolEntry } from "@mergewise/shared-types";
 
 export interface DebtNode {
   readonly id: string;
@@ -46,6 +47,7 @@ export interface DebtProfile {
   readonly graph: DebtGraph;
   readonly findings: readonly DebtFinding[];
   readonly hotspots: readonly HotspotEntry[];
+  readonly symbols?: readonly SymbolEntry[];
   readonly totalFiles?: number;
   readonly totalEdges?: number;
 }

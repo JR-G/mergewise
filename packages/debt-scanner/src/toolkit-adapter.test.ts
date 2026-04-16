@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { toFilePath } from "@mergewise/shared-types";
+import { toFilePath, toLineNumber, type SymbolEntry } from "@mergewise/shared-types";
 import { buildReviewToolkit } from "./toolkit-adapter";
 import type { DebtGraph, DebtNode, DebtEdge, HotspotEntry } from "./graph-types";
 
@@ -37,6 +37,21 @@ function makeHotspot(filePath: string, score: number): HotspotEntry {
     centrality: score,
     signalDensity: 1,
     lineCount: 100,
+  };
+}
+
+function makeSymbol(
+  name: string,
+  filePath: string,
+  overrides: Partial<SymbolEntry> = {},
+): SymbolEntry {
+  return {
+    name,
+    kind: "function",
+    file: toFilePath(filePath),
+    line: toLineNumber(10),
+    exported: true,
+    ...overrides,
   };
 }
 
@@ -173,6 +188,38 @@ describe("buildReviewToolkit", () => {
     const result = toolkit.getCallers!(toFilePath("src/nan.ts"));
 
     expect(result.centrality).toBeNaN();
+  });
+
+  test("finds reusable symbols from directly imported files first", () => {
+    const graph = makeGraph(
+      [
+        makeNode("src/feature.ts", 0.7),
+        makeNode("src/shared/hooks.ts", 0.4),
+        makeNode("src/other.ts", 0.2),
+      ],
+      [
+        { source: "src/feature.ts", target: "src/shared/hooks.ts", kind: "imports" },
+      ],
+    );
+    const toolkit = buildReviewToolkit(graph, [], [
+      makeSymbol("useUserFilters", "src/shared/hooks.ts"),
+      makeSymbol("useUserFiltersLegacy", "src/other.ts"),
+    ]);
+
+    const matches = toolkit.findReusableSymbols!(toFilePath("src/feature.ts"), "user filters", 5);
+
+    expect(matches[0]?.filePath).toBe(toFilePath("src/shared/hooks.ts"));
+    expect(matches[0]?.relation).toBe("imports");
+  });
+
+  test("returns empty reusable symbol matches when query is blank", () => {
+    const toolkit = buildReviewToolkit(makeGraph([], []), [], [
+      makeSymbol("useUserFilters", "src/shared/hooks.ts"),
+    ]);
+
+    const matches = toolkit.findReusableSymbols!(toFilePath("src/feature.ts"), "   ", 5);
+
+    expect(matches).toEqual([]);
   });
 
 });

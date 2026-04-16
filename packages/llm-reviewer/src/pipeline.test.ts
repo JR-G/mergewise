@@ -35,6 +35,8 @@ function makeConfig(overrides: Partial<ReviewPipelineConfig> = {}): ReviewPipeli
   return {
     reviewModel: "test-model",
     apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:1/v1",
+    maxRetries: 0,
     ...overrides,
   };
 }

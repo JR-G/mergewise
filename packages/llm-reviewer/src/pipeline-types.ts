@@ -1,4 +1,4 @@
-import type { FilePath, Finding, RepoFullName } from "@mergewise/shared-types";
+import type { FilePath, Finding, RepoFullName, SymbolKind } from "@mergewise/shared-types";
 import type { CompletionUsage } from "./client";
 
 /**
@@ -100,6 +100,19 @@ export interface ReviewLearnings {
 }
 
 /**
+ * Candidate reusable symbol surfaced from repository indexing.
+ */
+export interface ReusableSymbolMatch {
+  readonly name: string;
+  readonly kind: SymbolKind;
+  readonly filePath: FilePath;
+  readonly line: number;
+  readonly exported: boolean;
+  readonly relation: "current-file" | "imports" | "imported-by" | "same-directory" | "repo";
+  readonly score: number;
+}
+
+/**
  * Optional tools for enriching review context.
  *
  * @remarks
@@ -107,6 +120,11 @@ export interface ReviewLearnings {
  */
 export interface ReviewToolkit {
   readonly getCallers?: ((filePath: FilePath) => FileGraphContext) | undefined;
+  readonly findReusableSymbols?: ((
+    filePath: FilePath,
+    query: string,
+    limit?: number,
+  ) => readonly ReusableSymbolMatch[]) | undefined;
   readonly getRepoLearnings?: ((
     repoName: RepoFullName,
     filePaths: readonly FilePath[],

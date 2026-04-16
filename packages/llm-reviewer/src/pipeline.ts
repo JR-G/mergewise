@@ -160,11 +160,16 @@ async function reviewSingleDiff(input: SingleDiffReviewInput): Promise<ReviewedF
     toolkit: config.toolkit,
     repoName: pullRequest.repo,
   };
+  const graphContext = config.toolkit?.getCallers?.(diff.filePath);
+  const learnings = config.toolkit?.getRepoLearnings?.(pullRequest.repo, [diff.filePath]);
 
   const userPrompt = buildToolUseFilePrompt({
     fileDiff: diff,
+    fullContent,
     signals,
     reviewSignals,
+    ...(graphContext ? { graphContext } : {}),
+    ...(learnings ? { learnings } : {}),
     prTitle: pullRequest.prTitle,
     prDescription: pullRequest.prDescription,
     availablePatterns,

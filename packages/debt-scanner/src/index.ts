@@ -13,6 +13,7 @@ export { buildGraph } from "./graph-builder";
 export { computeCentrality } from "./centrality";
 export { rankHotspots, computeSignalDensity } from "./hotspot-ranker";
 export { scanWithLlm } from "./llm-scanner";
+export { indexSymbols } from "./symbol-index";
 export { scan, type ScanOptions } from "./scanner";
 export { formatJsonReport, formatMarkdownReport, formatComparisonMarkdown, formatComparisonJson } from "./report";
 export { openStore, type DebtStore } from "./store";

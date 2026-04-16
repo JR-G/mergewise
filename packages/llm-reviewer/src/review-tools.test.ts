@@ -5,6 +5,7 @@ import type { ToolContext, ReviewTool } from "./review-tools";
 import {
   readFileSection,
   getCallers,
+  findReusableSymbols,
   lookupPattern,
   getRepoPreferences,
   REVIEW_TOOLS,
@@ -162,6 +163,75 @@ describe("getCallers", () => {
     const result = getCallers.execute({}, context);
 
     expect(result).toContain("No graph context available");
+  });
+});
+
+describe("findReusableSymbols", () => {
+  test("returns formatted reusable symbols when toolkit provides matches", () => {
+    const context = makeContext({
+      toolkit: {
+        findReusableSymbols: () => ([
+          {
+            name: "useUserFilters",
+            kind: "function",
+            filePath: toFilePath("src/shared/hooks.ts"),
+            line: 12,
+            exported: true,
+            relation: "imports",
+            score: 42,
+          },
+        ]),
+      },
+    });
+
+    const result = findReusableSymbols.execute({ query: "user filters" }, context);
+    const parsed = JSON.parse(result) as {
+      query: string;
+      matches: Record<string, unknown>[];
+    };
+
+    expect(parsed.query).toBe("user filters");
+    expect(parsed.matches[0]?.["name"]).toBe("useUserFilters");
+    expect(parsed.matches[0]?.["relation"]).toBe("imports");
+  });
+
+  test("applies kind filtering after toolkit lookup", () => {
+    const context = makeContext({
+      toolkit: {
+        findReusableSymbols: () => ([
+          {
+            name: "UserService",
+            kind: "class",
+            filePath: toFilePath("src/shared/UserService.ts"),
+            line: 5,
+            exported: true,
+            relation: "repo",
+            score: 20,
+          },
+          {
+            name: "useUserService",
+            kind: "function",
+            filePath: toFilePath("src/shared/hooks.ts"),
+            line: 12,
+            exported: true,
+            relation: "imports",
+            score: 40,
+          },
+        ]),
+      },
+    });
+
+    const result = findReusableSymbols.execute({ query: "user service", kind: "function" }, context);
+    const parsed = JSON.parse(result) as { matches: Record<string, unknown>[] };
+
+    expect(parsed.matches).toHaveLength(1);
+    expect(parsed.matches[0]?.["name"]).toBe("useUserService");
+  });
+
+  test("returns fallback when toolkit is undefined", () => {
+    const result = findReusableSymbols.execute({ query: "user filters" }, makeContext());
+
+    expect(result).toContain("No reusable symbols found");
   });
 });
 
@@ -379,6 +449,16 @@ describe("toOpenAiTools", () => {
     const params = openAiTools[0]!.function.parameters as Record<string, unknown>;
 
     expect(params["type"]).toBe("object");
+  });
+
+  test("produces valid JSON Schema for reusable symbol lookup parameters", () => {
+    const openAiTools = toOpenAiTools([findReusableSymbols]);
+    const params = openAiTools[0]!.function.parameters as Record<string, unknown>;
+    const properties = params["properties"] as Record<string, Record<string, unknown>>;
+
+    expect(properties["query"]).toBeDefined();
+    expect(properties["kind"]).toBeDefined();
+    expect(properties["limit"]).toBeDefined();
   });
 });
 

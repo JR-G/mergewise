@@ -47,6 +47,8 @@ You are a refactoring reviewer, not a bug finder or security scanner. Those are 
 
 Every suggestion must explain the concrete engineering cost of the current code — what breaks, what becomes harder to change, what coupling it creates. "This violates SRP" with no explanation is worthless. Show the developer WHY it matters for THEIR code.
 
+Prefer reusing existing repository abstractions over inventing new ones when the codebase already exposes a suitable helper, hook, service, type, or component.
+
 If the code is fine, say nothing. No praise, no filler. Returning {"findings": []} is correct and expected for well-written code.
 
 Default to the smallest useful review. Most files should produce 0 or 1 findings. Add a second finding only when it is independently high-value and not just a weaker side effect of the main issue.
@@ -119,6 +121,7 @@ You have tools to retrieve additional context about the file under review. Use t
 
 - read_file_section: Read a range of lines from the current file to understand surrounding context
 - get_callers: See which files depend on this file and its centrality/hotspot status
+- find_reusable_symbols: Search the repository for existing helpers, hooks, services, types, or components you can reuse
 - lookup_pattern: Retrieve detailed guidance for a specific anti-pattern by ID
 - get_repo_preferences: Get repository-specific review preferences from prior feedback
 
@@ -264,6 +267,30 @@ function buildReviewSignalsSection(reviewSignals: ReviewSignals): string[] {
   return lines.length > 0 ? ["", "## Review signals", ...lines] : [];
 }
 
+function buildGraphContextSection(graphContext: FileGraphContext): string[] {
+  const callerList = graphContext.callers.slice(0, MAX_CALLERS_IN_PROMPT).join(", ");
+
+  return [
+    "",
+    "## Codebase context",
+    ...(callerList.length > 0 ? [`Callers: ${callerList}`] : []),
+    `Centrality: ${graphContext.centrality}`,
+    ...(graphContext.isHotspot ? ["This file is a change hotspot."] : []),
+  ];
+}
+
+function buildLearningsSection(learnings: ReviewLearnings): string[] {
+  if (learnings.preferences.length === 0) {
+    return [];
+  }
+
+  return [
+    "",
+    "## Repository preferences",
+    ...learnings.preferences.slice(0, MAX_LEARNINGS_IN_PROMPT).map((preference) => `- ${preference}`),
+  ];
+}
+
 /**
  * Configuration for building a dynamic file review prompt.
  */
@@ -355,13 +382,17 @@ export function buildDynamicFilePrompt(input: DynamicPromptInput): string {
  * Configuration for building a tool-use file review prompt.
  *
  * @remarks
- * Unlike {@link DynamicPromptInput}, this excludes all context that is
- * now available via tool calls (file content, knowledge, graph, learnings).
+ * Keeps the shipped prompt compact while still allowing bounded direct
+ * context (file windows, graph summary, repository preferences). Tools are
+ * available for deeper follow-up beyond what is injected here.
  */
 export interface ToolUsePromptInput {
   readonly fileDiff: FileDiff;
+  readonly fullContent?: string | null;
   readonly signals: StructuralSignals;
   readonly reviewSignals?: ReviewSignals | undefined;
+  readonly graphContext?: FileGraphContext | undefined;
+  readonly learnings?: ReviewLearnings | undefined;
   readonly prTitle?: string | undefined;
   readonly prDescription?: string | undefined;
   readonly availablePatterns: string;
@@ -371,9 +402,9 @@ export interface ToolUsePromptInput {
  * Builds a lean user prompt for tool-use review.
  *
  * @remarks
- * Includes only the diff, structural signals, and available patterns summary.
- * Full file content, knowledge docs, graph context, and learnings are
- * available via tool calls — not stuffed into the prompt.
+ * Includes the diff, bounded file context, structural signals, optional
+ * graph/learnings context, and available patterns summary. Tools remain
+ * available for deeper follow-up without requiring a second prompt path.
  */
 export function buildToolUseFilePrompt(input: ToolUsePromptInput): string {
   const parts: string[] = [];
@@ -383,16 +414,28 @@ export function buildToolUseFilePrompt(input: ToolUsePromptInput): string {
 
   parts.push(...formatDiffSection(input.fileDiff.hunks));
 
+  if (input.fullContent) {
+    parts.push(...buildFileContextSection(input.fullContent, input.fileDiff.hunks));
+  }
+
   parts.push(...buildSignalsSection(input.signals));
   if (input.reviewSignals) {
     parts.push(...buildReviewSignalsSection(input.reviewSignals));
+  }
+
+  if (input.graphContext) {
+    parts.push(...buildGraphContextSection(input.graphContext));
+  }
+
+  if (input.learnings) {
+    parts.push(...buildLearningsSection(input.learnings));
   }
 
   parts.push("");
   parts.push(input.availablePatterns);
 
   parts.push("");
-  parts.push("Review the diff above. Use tools if you need more context about the file, its callers, or relevant anti-patterns. Only produce findings for added lines (prefixed with +). Return findings as JSON.");
+  parts.push("Review the diff above. Use tools if you need more context about the file, its callers, reusable repository abstractions, or relevant anti-patterns. Before suggesting a new helper, hook, service, type, or component, check whether the repository already has one you can reuse. Only produce findings for added lines (prefixed with +). Return findings as JSON.");
 
   return parts.join("\n");
 }
