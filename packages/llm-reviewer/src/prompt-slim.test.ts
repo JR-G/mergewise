@@ -399,6 +399,18 @@ describe("buildToolUseFilePrompt", () => {
     expect(result).toContain("Prefer existing hooks over new local helpers");
   });
 
+  test("truncates long repository preferences in tool-use prompts", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      signals: makeSignals(),
+      learnings: { preferences: ["x".repeat(600)] },
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("## Repository preferences");
+    expect(result).toContain("... [truncated]");
+  });
+
   test("excludes full file content", () => {
     const result = buildToolUseFilePrompt({
       fileDiff: makeDiff(),

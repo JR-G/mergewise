@@ -259,4 +259,30 @@ describe("buildReviewToolkit", () => {
 
     expect(matches).toEqual([]);
   });
+
+  test("bounds reusable symbol results for invalid and oversized limits", () => {
+    const symbols = Array.from({ length: 12 }, (_, index) =>
+      makeSymbol(`useUserFilters${index}`, `src/shared/hooks-${index}.ts`),
+    );
+    const toolkit = buildReviewToolkit(makeGraph([], []), [], symbols);
+
+    expect(toolkit.findReusableSymbols!(toFilePath("src/feature.ts"), "user filters", 0)).toEqual([]);
+    expect(toolkit.findReusableSymbols!(toFilePath("src/feature.ts"), "user filters", -1)).toEqual([]);
+    expect(toolkit.findReusableSymbols!(toFilePath("src/feature.ts"), "user filters", Number.NaN)).toEqual([]);
+    expect(toolkit.findReusableSymbols!(toFilePath("src/feature.ts"), "user filters", 2.7)).toHaveLength(2);
+    expect(toolkit.findReusableSymbols!(toFilePath("src/feature.ts"), "user filters", 999)).toHaveLength(10);
+  });
+
+  test("bounds reusable example results for invalid and oversized limits", () => {
+    const symbols = Array.from({ length: 12 }, (_, index) =>
+      makeSymbol(`useUserFilters${index}`, `src/shared/hooks-${index}.ts`),
+    );
+    const toolkit = buildReviewToolkit(makeGraph([], []), [], symbols);
+
+    expect(toolkit.findReusableExamples!(toFilePath("src/feature.ts"), "user filters", 0)).toEqual([]);
+    expect(toolkit.findReusableExamples!(toFilePath("src/feature.ts"), "user filters", -1)).toEqual([]);
+    expect(toolkit.findReusableExamples!(toFilePath("src/feature.ts"), "user filters", Number.NaN)).toEqual([]);
+    expect(toolkit.findReusableExamples!(toFilePath("src/feature.ts"), "user filters", 2.7)).toHaveLength(2);
+    expect(toolkit.findReusableExamples!(toFilePath("src/feature.ts"), "user filters", 999)).toHaveLength(10);
+  });
 });

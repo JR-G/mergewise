@@ -15,6 +15,9 @@ const MAX_FULL_FILE_LINES = 2000;
 const WINDOWED_COVERAGE_THRESHOLD = 0.9;
 const MAX_CALLERS_IN_PROMPT = 10;
 const MAX_LEARNINGS_IN_PROMPT = 5;
+const MAX_LEARNING_CHARS = 300;
+const MAX_LEARNINGS_SECTION_CHARS = 1_500;
+const TRUNCATED_TEXT_SUFFIX = "... [truncated]";
 
 /** @internal Exported for testing only. */
 export const MAX_DIFF_CHARS = 50_000;
@@ -286,11 +289,19 @@ function buildLearningsSection(learnings: ReviewLearnings): string[] {
     return [];
   }
 
-  return [
-    "",
-    "## Repository preferences",
-    ...learnings.preferences.slice(0, MAX_LEARNINGS_IN_PROMPT).map((preference) => `- ${preference}`),
-  ];
+  const lines = ["", "## Repository preferences"];
+  let remainingChars = MAX_LEARNINGS_SECTION_CHARS - countSectionChars(lines);
+
+  for (const preference of learnings.preferences.slice(0, MAX_LEARNINGS_IN_PROMPT)) {
+    const line = `- ${truncatePromptText(preference, MAX_LEARNING_CHARS)}`;
+    if (line.length > remainingChars) {
+      break;
+    }
+    lines.push(line);
+    remainingChars -= line.length + 1;
+  }
+
+  return lines.length > 2 ? lines : [];
 }
 
 /**
@@ -367,11 +378,7 @@ export function buildDynamicFilePrompt(input: DynamicPromptInput): string {
   }
 
   if (input.learnings && input.learnings.preferences.length > 0) {
-    parts.push("");
-    parts.push("## Repository preferences");
-    for (const preference of input.learnings.preferences.slice(0, MAX_LEARNINGS_IN_PROMPT)) {
-      parts.push(`- ${preference}`);
-    }
+    parts.push(...buildLearningsSection(input.learnings));
   }
 
   parts.push("");
@@ -440,4 +447,17 @@ export function buildToolUseFilePrompt(input: ToolUsePromptInput): string {
   parts.push("Review the diff above. Use tools if you need more context about the file, its callers, reusable repository abstractions, concrete repository examples, or relevant anti-patterns. Before suggesting a new helper, hook, service, type, or component, check whether the repository already has one you can reuse and inspect a concrete example when that would make the guidance more specific. Only produce findings for added lines (prefixed with +). Return findings as JSON.");
 
   return parts.join("\n");
+}
+
+function truncatePromptText(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  const contentLimit = Math.max(0, maxChars - TRUNCATED_TEXT_SUFFIX.length);
+  return `${value.slice(0, contentLimit)}${TRUNCATED_TEXT_SUFFIX}`;
+}
+
+function countSectionChars(lines: readonly string[]): number {
+  return lines.reduce((total, line) => total + line.length + 1, 0);
 }

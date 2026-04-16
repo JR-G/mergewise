@@ -5,6 +5,7 @@ import type { IndexedSymbol } from "./graph-types";
 
 const TSX_PATTERN = /\.tsx$/i;
 const MAX_SYMBOLS_PER_FILE = 200;
+const MAX_TOTAL_SYMBOLS = 50_000;
 const MAX_SYMBOL_NAME_LENGTH = 120;
 const MAX_SYMBOL_SNIPPET_LINES = 40;
 const MAX_SYMBOL_SNIPPET_CHARS = 4_000;
@@ -26,13 +27,20 @@ export async function indexSymbols(
   repoPath: string,
   concurrency = 50,
 ): Promise<readonly IndexedSymbol[]> {
-  const batches = chunk(filePaths, concurrency);
+  const batches = chunk(dedupeFilePaths(filePaths), concurrency);
   const symbols: IndexedSymbol[] = [];
 
   for (const batch of batches) {
     const results = await Promise.all(batch.map((filePath) => indexFileSymbols(filePath, repoPath)));
     for (const result of results) {
-      symbols.push(...result);
+      const remaining = MAX_TOTAL_SYMBOLS - symbols.length;
+      if (remaining <= 0) {
+        return symbols;
+      }
+      symbols.push(...result.slice(0, remaining));
+      if (symbols.length >= MAX_TOTAL_SYMBOLS) {
+        return symbols;
+      }
     }
   }
 
@@ -245,4 +253,19 @@ function chunk<T>(array: readonly T[], size: number): T[][] {
     result.push(array.slice(index, index + effectiveSize));
   }
   return result;
+}
+
+function dedupeFilePaths(filePaths: readonly string[]): string[] {
+  const uniqueFilePaths: string[] = [];
+  const seenPaths = new Set<string>();
+
+  for (const filePath of filePaths) {
+    if (seenPaths.has(filePath)) {
+      continue;
+    }
+    seenPaths.add(filePath);
+    uniqueFilePaths.push(filePath);
+  }
+
+  return uniqueFilePaths;
 }

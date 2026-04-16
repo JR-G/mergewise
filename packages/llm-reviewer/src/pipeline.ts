@@ -7,10 +7,12 @@ import type {
 import { createReviewClient, mergeUsage, type CompletionUsage, type ReviewClient } from "./client";
 import type {
   CriticResult,
+  FileGraphContext,
   FileReviewFailure,
   FileTokenUsage,
   ReviewPipelineConfig,
   ReviewPipelineResult,
+  ReviewLearnings,
   TokenUsageSummary,
   TriageResult,
 } from "./pipeline-types";
@@ -33,6 +35,8 @@ const DEFAULT_MAX_FILES = 20;
 const MAX_REVIEW_RESPONSE_TOKENS = 4096;
 const DEFAULT_TOKEN_BUDGET = 30_000;
 const MIN_PER_FILE_TOOL_BUDGET = 5_000;
+const MAX_PROMPT_FULL_CONTENT_CHARS = 50_000;
+const MAX_TOOLKIT_ERROR_CHARS = 200;
 
 interface PipelineClients {
   readonly triageClient: ReviewClient;
@@ -160,12 +164,13 @@ async function reviewSingleDiff(input: SingleDiffReviewInput): Promise<ReviewedF
     toolkit: config.toolkit,
     repoName: pullRequest.repo,
   };
-  const graphContext = config.toolkit?.getCallers?.(diff.filePath);
-  const learnings = config.toolkit?.getRepoLearnings?.(pullRequest.repo, [diff.filePath]);
+  const graphContext = getGraphContext(config, diff.filePath);
+  const learnings = getRepoLearnings(config, pullRequest, diff.filePath);
+  const promptFullContent = truncatePromptFullContent(fullContent);
 
   const userPrompt = buildToolUseFilePrompt({
     fileDiff: diff,
-    fullContent,
+    fullContent: promptFullContent,
     signals,
     reviewSignals,
     ...(graphContext ? { graphContext } : {}),
@@ -189,6 +194,46 @@ async function reviewSingleDiff(input: SingleDiffReviewInput): Promise<ReviewedF
     usage,
     reviewSignals,
   };
+}
+
+function getGraphContext(
+  config: ReviewPipelineConfig,
+  filePath: FileDiff["filePath"],
+): FileGraphContext | undefined {
+  try {
+    return config.toolkit?.getCallers?.(filePath);
+  } catch (error) {
+    console.error(`[llm-reviewer] toolkit.getCallers failed for ${filePath}: ${formatToolkitError(error)}`);
+    return undefined;
+  }
+}
+
+function getRepoLearnings(
+  config: ReviewPipelineConfig,
+  pullRequest: PullRequestMetadata,
+  filePath: FileDiff["filePath"],
+): ReviewLearnings | undefined {
+  try {
+    return config.toolkit?.getRepoLearnings?.(pullRequest.repo, [filePath]);
+  } catch (error) {
+    console.error(`[llm-reviewer] toolkit.getRepoLearnings failed for ${filePath}: ${formatToolkitError(error)}`);
+    return undefined;
+  }
+}
+
+function truncatePromptFullContent(fullContent: string | null): string | null {
+  if (fullContent === null || fullContent.length <= MAX_PROMPT_FULL_CONTENT_CHARS) {
+    return fullContent;
+  }
+
+  const truncationSuffix = "\n... [truncated]";
+  const contentLimit = Math.max(0, MAX_PROMPT_FULL_CONTENT_CHARS - truncationSuffix.length);
+  return `${fullContent.slice(0, contentLimit)}${truncationSuffix}`;
+}
+
+function formatToolkitError(error: unknown): string {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  return rawMessage.slice(0, MAX_TOOLKIT_ERROR_CHARS);
 }
 
 /**

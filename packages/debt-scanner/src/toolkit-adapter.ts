@@ -13,6 +13,13 @@ import { buildPrGraphContext } from "./graph-context";
 const MAX_CALLERS = 50;
 const DEFAULT_SYMBOL_LIMIT = 5;
 const MAX_SYMBOL_LIMIT = 10;
+const RELATION_SCORES: Readonly<Record<ReusableMatchRelation, number>> = {
+  "current-file": 20,
+  "imports": 14,
+  "imported-by": 10,
+  "same-directory": 6,
+  "repo": 0,
+};
 
 interface Indexes {
   readonly reverseImports: ReadonlyMap<string, readonly string[]>;
@@ -169,15 +176,7 @@ function rankReusableSymbols(input: SymbolSearchInput): readonly RankedSymbolMat
     }
 
     const relation = resolveRelation(symbol.file, searchContext);
-    const relationScore = relation === "current-file"
-      ? 20
-      : relation === "imports"
-        ? 14
-        : relation === "imported-by"
-          ? 10
-          : relation === "same-directory"
-            ? 6
-            : 0;
+    const relationScore = RELATION_SCORES[relation];
     const exportedScore = symbol.exported ? 4 : 0;
     const kindScore = symbolKindBonus(symbol.kind);
 
@@ -220,7 +219,19 @@ function resolveRelation(
 }
 
 function capSymbolLimit(limit: number | undefined): number {
-  return Math.max(1, Math.min(Math.floor(limit ?? DEFAULT_SYMBOL_LIMIT), MAX_SYMBOL_LIMIT));
+  if (limit === undefined) {
+    return DEFAULT_SYMBOL_LIMIT;
+  }
+  if (!Number.isFinite(limit)) {
+    return 0;
+  }
+
+  const boundedLimit = Math.floor(limit);
+  if (boundedLimit <= 0) {
+    return 0;
+  }
+
+  return Math.min(boundedLimit, MAX_SYMBOL_LIMIT);
 }
 
 function countSharedTokens(left: ReadonlySet<string>, right: ReadonlySet<string>): number {

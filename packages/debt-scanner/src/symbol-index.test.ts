@@ -73,6 +73,25 @@ describe("indexSymbols", () => {
     expect(symbols.length).toBe(200);
   });
 
+  test("bounds total symbol count across repository files", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "symbol-index-"));
+    const filePaths = await Promise.all(
+      Array.from({ length: 251 }, async (_, fileIndex) => {
+        const filePath = join(tempDir, `file-${fileIndex}.ts`);
+        const lines = Array.from(
+          { length: 200 },
+          (_, symbolIndex) => `export const symbol${fileIndex}_${symbolIndex} = ${symbolIndex};`,
+        );
+        await Bun.write(filePath, lines.join("\n"));
+        return filePath;
+      }),
+    );
+
+    const symbols = await indexSymbols(filePaths, tempDir);
+
+    expect(symbols.length).toBe(50_000);
+  });
+
   test("captures declaration snippets for indexed symbols", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "symbol-index-"));
     const filePath = join(tempDir, "src.ts");
@@ -112,5 +131,32 @@ describe("indexSymbols", () => {
     expect(symbol).toBeDefined();
     expect(symbol!.snippet).toContain("... [truncated]");
     expect(symbol!.snippet.length).toBeLessThanOrEqual(4_016);
+  });
+
+  test("handles malformed files without crashing", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "symbol-index-"));
+    const malformedPath = join(tempDir, "broken.ts");
+    await Bun.write(
+      malformedPath,
+      [
+        "export function broken(",
+        "  return 1;",
+      ].join("\n"),
+    );
+
+    const symbols = await indexSymbols([malformedPath], tempDir);
+
+    expect(Array.isArray(symbols)).toBe(true);
+  });
+
+  test("deduplicates duplicate file paths before indexing", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "symbol-index-"));
+    const filePath = join(tempDir, "src.ts");
+    await Bun.write(filePath, "export const onlyOnce = 1;");
+
+    const symbols = await indexSymbols([filePath, filePath], tempDir);
+
+    expect(symbols).toHaveLength(1);
+    expect(symbols[0]?.name).toBe("onlyOnce");
   });
 });

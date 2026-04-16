@@ -101,4 +101,23 @@ describe("runReviewPipeline", () => {
     expect(result.criticReport.findings).toEqual([]);
     expect(result.criticReport.filtered).toEqual([]);
   });
+
+  test("degrades when toolkit context lookup throws", async () => {
+    const diffs = [makeDiff("src/index.ts", 3)];
+    const config = makeConfig({
+      toolkit: {
+        getCallers: () => {
+          throw new Error("getCallers failed");
+        },
+        getRepoLearnings: () => {
+          throw new Error("getRepoLearnings failed");
+        },
+      },
+    });
+
+    const result = await runReviewPipeline(diffs, PULL_REQUEST, makeCodebaseContext(), config);
+
+    expect(result.failedFiles.some((failure) => failure.error.includes("getCallers failed"))).toBe(false);
+    expect(result.failedFiles.some((failure) => failure.error.includes("getRepoLearnings failed"))).toBe(false);
+  });
 });

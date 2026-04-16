@@ -367,7 +367,10 @@ function executeSave(stmts: Statements, database: Database, profile: DebtProfile
   const edges = profile.graph.edges
     .filter((edge) => persistedNodeIds.has(edge.source) && persistedNodeIds.has(edge.target))
     .slice(0, MAX_PERSISTED_EDGES);
-  const symbols = (profile.symbols ?? []).slice(0, MAX_PERSISTED_SYMBOLS);
+  const symbols = (profile.symbols ?? [])
+    .slice()
+    .sort(compareSymbols)
+    .slice(0, MAX_PERSISTED_SYMBOLS);
 
   database.transaction(() => {
     stmts.insertScan.run(
@@ -436,4 +439,22 @@ function executeLatest(stmts: Statements, repoPath: string): DebtProfile | null 
   const scanRow = stmts.queryLatestByRepo.get(repoPath) as ScanRow | undefined;
   if (!scanRow) return null;
   return reconstructProfile(scanRow, stmts);
+}
+
+function compareSymbols(left: IndexedSymbol, right: IndexedSymbol): number {
+  const fileComparison = left.file.localeCompare(right.file);
+  if (fileComparison !== 0) {
+    return fileComparison;
+  }
+
+  if (left.line !== right.line) {
+    return left.line - right.line;
+  }
+
+  const nameComparison = left.name.localeCompare(right.name);
+  if (nameComparison !== 0) {
+    return nameComparison;
+  }
+
+  return left.kind.localeCompare(right.kind);
 }
