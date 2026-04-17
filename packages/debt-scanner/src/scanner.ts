@@ -5,7 +5,8 @@ import { buildGraph } from "./graph-builder";
 import { computeCentrality } from "./centrality";
 import { rankHotspots } from "./hotspot-ranker";
 import { scanWithLlm } from "./llm-scanner";
-import type { DebtProfile, DebtFinding } from "./graph-types";
+import { indexSymbols } from "./symbol-index";
+import type { DebtProfile, DebtFinding, IndexedSymbol } from "./graph-types";
 import type { DebtStore } from "./store";
 
 export interface ScanOptions {
@@ -20,6 +21,7 @@ export interface ScanOptions {
 
 const DEFAULT_TOP_COUNT = 20;
 const MAX_TOP_COUNT = 100;
+const MAX_PROGRESS_ERROR_CHARS = 200;
 
 /**
  * Runs the full three-tier debt scan pipeline.
@@ -40,6 +42,18 @@ export async function scan(options: ScanOptions): Promise<DebtProfile> {
   onProgress?.("analyse", "Analysing AST and extracting signals...");
   const nodes = await analyseFiles(filePaths, repoPath);
   onProgress?.("analyse", `Analysed ${nodes.length} files`);
+
+  onProgress?.("symbols", "Indexing repository symbols...");
+  let symbols: readonly IndexedSymbol[] = [];
+  try {
+    symbols = await indexSymbols(filePaths, repoPath);
+    onProgress?.("symbols", `Indexed ${symbols.length} symbols`);
+  } catch (error) {
+    onProgress?.(
+      "symbols",
+      `Symbol indexing failed; continuing without symbols: ${formatErrorDetail(error)}`,
+    );
+  }
 
   onProgress?.("graph", "Building dependency graph...");
   const graph = await buildGraph(nodes, repoPath);
@@ -76,6 +90,7 @@ export async function scan(options: ScanOptions): Promise<DebtProfile> {
     graph,
     findings,
     hotspots,
+    symbols,
   };
 
   if (options.store) {
@@ -84,4 +99,9 @@ export async function scan(options: ScanOptions): Promise<DebtProfile> {
   }
 
   return profile;
+}
+
+function formatErrorDetail(error: unknown): string {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  return rawMessage.slice(0, MAX_PROGRESS_ERROR_CHARS);
 }

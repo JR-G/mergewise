@@ -36,7 +36,7 @@ export { retrieveKnowledge } from "./knowledge/retrieve";
 export { deriveSignalTags } from "./knowledge/signal-tags";
 export { buildSlimSystemPrompt, buildDynamicFilePrompt, buildToolUseFilePrompt } from "./prompt-slim";
 export type { ToolUsePromptInput } from "./prompt-slim";
-export { REVIEW_TOOLS, toOpenAiTools, executeToolCall, buildAvailablePatternsSummary } from "./review-tools";
+export { REVIEW_TOOLS, toOpenAiTools, executeToolCall, buildAvailablePatternsSummary, findReusableSymbols, findReusableExamples } from "./review-tools";
 export type { ReviewTool, ToolContext } from "./review-tools";
 export { formatKnowledgeSection } from "./knowledge/format";
 export { KNOWLEDGE_REGISTRY } from "./knowledge/registry";
@@ -55,6 +55,9 @@ export type {
   ReviewToolkit,
   FileGraphContext,
   ReviewLearnings,
+  ReusableExampleMatch,
+  ReusableMatchRelation,
+  ReusableSymbolMatch,
   FileTokenUsage,
   TokenUsageSummary,
 } from "./pipeline-types";

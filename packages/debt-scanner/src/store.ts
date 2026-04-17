@@ -7,8 +7,10 @@ import type {
   DebtEdge,
   HotspotEntry,
   ScanSummary,
+  IndexedSymbol,
 } from "./graph-types";
 import type { StructuralSignals } from "@mergewise/llm-reviewer";
+import { toFilePath, toLineNumber } from "@mergewise/shared-types";
 
 export interface DebtStore {
   saveScan(profile: DebtProfile): string;
@@ -72,6 +74,17 @@ const SCHEMA_FINDINGS = `CREATE TABLE IF NOT EXISTS findings (
   PRIMARY KEY (scan_id, node_id, pattern_id, line_start)
 )`;
 
+const SCHEMA_SYMBOLS = `CREATE TABLE IF NOT EXISTS symbols (
+  scan_id TEXT NOT NULL REFERENCES scans(id),
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  line INTEGER NOT NULL,
+  exported INTEGER NOT NULL,
+  snippet TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (scan_id, name, file_path, line, kind)
+)`;
+
 interface ScanRow {
   id: string;
   repo_path: string;
@@ -116,6 +129,19 @@ interface FindingRow {
   confidence: number;
   line_start: number;
   line_end: number;
+}
+
+interface SymbolRow {
+  name: string;
+  kind: string;
+  file_path: string;
+  line: number;
+  exported: number;
+  snippet: string;
+}
+
+interface TableInfoRow {
+  name: string;
 }
 
 function toSummary(row: ScanRow): ScanSummary {
@@ -176,6 +202,17 @@ function toFinding(row: FindingRow): DebtFinding {
   };
 }
 
+function toSymbol(row: SymbolRow): IndexedSymbol {
+  return {
+    name: row.name,
+    kind: row.kind,
+    file: toFilePath(row.file_path),
+    line: toLineNumber(row.line),
+    exported: row.exported === 1,
+    snippet: row.snippet,
+  };
+}
+
 function initSchema(database: Database): void {
   database.run("PRAGMA journal_mode = WAL;");
   database.run("PRAGMA foreign_keys = ON;");
@@ -184,6 +221,16 @@ function initSchema(database: Database): void {
   database.run(SCHEMA_EDGES);
   database.run(SCHEMA_HOTSPOTS);
   database.run(SCHEMA_FINDINGS);
+  database.run(SCHEMA_SYMBOLS);
+  ensureSnippetColumn(database);
+}
+
+function ensureSnippetColumn(database: Database): void {
+  const rows = database.query("PRAGMA table_info(symbols)").all() as TableInfoRow[];
+  const hasSnippetColumn = rows.some((row) => row.name === "snippet");
+  if (!hasSnippetColumn) {
+    database.run("ALTER TABLE symbols ADD COLUMN snippet TEXT NOT NULL DEFAULT ''");
+  }
 }
 
 interface ReconstructQueries {
@@ -191,6 +238,7 @@ interface ReconstructQueries {
   readonly queryEdges: ReturnType<Database["prepare"]>;
   readonly queryHotspots: ReturnType<Database["prepare"]>;
   readonly queryFindings: ReturnType<Database["prepare"]>;
+  readonly querySymbols: ReturnType<Database["prepare"]>;
 }
 
 function reconstructProfile(
@@ -201,6 +249,7 @@ function reconstructProfile(
   const edgeRows = queries.queryEdges.all(scanRow.id) as EdgeRow[];
   const hotspotRows = queries.queryHotspots.all(scanRow.id) as HotspotRow[];
   const findingRows = queries.queryFindings.all(scanRow.id) as FindingRow[];
+  const symbolRows = queries.querySymbols.all(scanRow.id) as SymbolRow[];
 
   const nodes = new Map<string, DebtNode>();
   for (const row of nodeRows) {
@@ -214,6 +263,7 @@ function reconstructProfile(
     graph: { nodes, edges: edgeRows.map(toEdge) },
     findings: findingRows.map(toFinding),
     hotspots: hotspotRows.map(toHotspot),
+    symbols: symbolRows.map(toSymbol),
     totalFiles: scanRow.total_files,
     totalEdges: scanRow.total_edges,
   };
@@ -243,6 +293,7 @@ interface Statements {
   insertEdge: ReturnType<Database["prepare"]>;
   insertHotspot: ReturnType<Database["prepare"]>;
   insertFinding: ReturnType<Database["prepare"]>;
+  insertSymbol: ReturnType<Database["prepare"]>;
   queryScans: ReturnType<Database["prepare"]>;
   queryScansByRepo: ReturnType<Database["prepare"]>;
   queryScanById: ReturnType<Database["prepare"]>;
@@ -251,6 +302,7 @@ interface Statements {
   queryEdges: ReturnType<Database["prepare"]>;
   queryHotspots: ReturnType<Database["prepare"]>;
   queryFindings: ReturnType<Database["prepare"]>;
+  querySymbols: ReturnType<Database["prepare"]>;
 }
 
 function prepareStatements(database: Database): Statements {
@@ -275,6 +327,10 @@ function prepareStatements(database: Database): Statements {
       `INSERT OR IGNORE INTO findings (scan_id, node_id, pattern_id, category, title, recommendation, confidence, line_start, line_end)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
+    insertSymbol: database.prepare(
+      `INSERT OR IGNORE INTO symbols (scan_id, name, kind, file_path, line, exported, snippet)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ),
     queryScans: database.prepare("SELECT * FROM scans ORDER BY scanned_at DESC LIMIT 100"),
     queryScansByRepo: database.prepare("SELECT * FROM scans WHERE repo_path = ? ORDER BY scanned_at DESC LIMIT 100"),
     queryScanById: database.prepare("SELECT * FROM scans WHERE id = ? LIMIT 1"),
@@ -291,11 +347,15 @@ function prepareStatements(database: Database): Statements {
     queryFindings: database.prepare(
       "SELECT node_id, pattern_id, category, title, recommendation, confidence, line_start, line_end FROM findings WHERE scan_id = ? LIMIT 2000",
     ),
+    querySymbols: database.prepare(
+      "SELECT name, kind, file_path, line, exported, snippet FROM symbols WHERE scan_id = ? ORDER BY file_path ASC, line ASC LIMIT 50000",
+    ),
   };
 }
 
 const MAX_PERSISTED_NODES = 10_000;
 const MAX_PERSISTED_EDGES = 50_000;
+const MAX_PERSISTED_SYMBOLS = 50_000;
 
 function executeSave(stmts: Statements, database: Database, profile: DebtProfile): string {
   const scanId = randomUUID();
@@ -307,6 +367,10 @@ function executeSave(stmts: Statements, database: Database, profile: DebtProfile
   const edges = profile.graph.edges
     .filter((edge) => persistedNodeIds.has(edge.source) && persistedNodeIds.has(edge.target))
     .slice(0, MAX_PERSISTED_EDGES);
+  const symbols = (profile.symbols ?? [])
+    .slice()
+    .sort(compareSymbols)
+    .slice(0, MAX_PERSISTED_SYMBOLS);
 
   database.transaction(() => {
     stmts.insertScan.run(
@@ -341,6 +405,18 @@ function executeSave(stmts: Statements, database: Database, profile: DebtProfile
         finding.lineRange[0], finding.lineRange[1],
       );
     }
+
+    for (const symbol of symbols) {
+      stmts.insertSymbol.run(
+        scanId,
+        symbol.name,
+        symbol.kind,
+        symbol.file,
+        symbol.line,
+        symbol.exported ? 1 : 0,
+        symbol.snippet,
+      );
+    }
   })();
 
   return scanId;
@@ -363,4 +439,22 @@ function executeLatest(stmts: Statements, repoPath: string): DebtProfile | null 
   const scanRow = stmts.queryLatestByRepo.get(repoPath) as ScanRow | undefined;
   if (!scanRow) return null;
   return reconstructProfile(scanRow, stmts);
+}
+
+function compareSymbols(left: IndexedSymbol, right: IndexedSymbol): number {
+  const fileComparison = left.file.localeCompare(right.file);
+  if (fileComparison !== 0) {
+    return fileComparison;
+  }
+
+  if (left.line !== right.line) {
+    return left.line - right.line;
+  }
+
+  const nameComparison = left.name.localeCompare(right.name);
+  if (nameComparison !== 0) {
+    return nameComparison;
+  }
+
+  return left.kind.localeCompare(right.kind);
 }

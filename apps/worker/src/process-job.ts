@@ -131,7 +131,7 @@ function loadReviewToolkit(
     loggers.infoLogger(
       `[worker] graph_context trace=${traceId} repo=${repoFullName} hotspots=${latestProfile.hotspots.length} nodes=${latestProfile.graph.nodes.size}`,
     );
-    return buildReviewToolkit(latestProfile.graph, latestProfile.hotspots);
+    return buildReviewToolkit(latestProfile.graph, latestProfile.hotspots, latestProfile.symbols ?? []);
   } catch (graphError) {
     const detail = graphError instanceof Error ? graphError.message : String(graphError);
     loggers.errorLogger(

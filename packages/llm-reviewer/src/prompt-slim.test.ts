@@ -117,6 +117,8 @@ describe("buildSlimSystemPrompt with toolUse option", () => {
     expect(prompt).toContain("## Available tools");
     expect(prompt).toContain("read_file_section");
     expect(prompt).toContain("get_callers");
+    expect(prompt).toContain("find_reusable_symbols");
+    expect(prompt).toContain("find_reusable_examples");
     expect(prompt).toContain("lookup_pattern");
     expect(prompt).toContain("get_repo_preferences");
   });
@@ -178,6 +180,17 @@ describe("buildToolUseFilePrompt", () => {
     });
     expect(result).toContain("srp: SRP Violations");
     expect(result).toContain("god-function: God Functions");
+  });
+
+  test("instructs the reviewer to inspect concrete repo examples before inventing abstractions", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      signals: makeSignals(),
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("concrete repository examples");
+    expect(result).toContain("inspect a concrete example");
   });
 
   test("includes targeted hint for inline provider values", () => {
@@ -344,6 +357,60 @@ describe("buildToolUseFilePrompt", () => {
     expect(result).toContain("Function parameter mutation detected");
   });
 
+  test("includes bounded file context when provided", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      fullContent: "const a = 1;\nconst b = 2;\nconst c = 3;\nconst d = 4;\n",
+      signals: makeSignals(),
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("## Full file content");
+    expect(result).toContain("// line 1: const a = 1;");
+  });
+
+  test("includes graph context when provided", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      signals: makeSignals(),
+      graphContext: {
+        filePath: toFilePath("src/index.ts"),
+        callers: [toFilePath("src/app.ts"), toFilePath("src/main.ts")],
+        centrality: 0.9,
+        isHotspot: true,
+      },
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("## Codebase context");
+    expect(result).toContain("src/app.ts");
+    expect(result).toContain("change hotspot");
+  });
+
+  test("includes repository preferences when provided", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      signals: makeSignals(),
+      learnings: { preferences: ["Prefer existing hooks over new local helpers"] },
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("## Repository preferences");
+    expect(result).toContain("Prefer existing hooks over new local helpers");
+  });
+
+  test("truncates long repository preferences in tool-use prompts", () => {
+    const result = buildToolUseFilePrompt({
+      fileDiff: makeDiff(),
+      signals: makeSignals(),
+      learnings: { preferences: ["x".repeat(600)] },
+      availablePatterns: "",
+    });
+
+    expect(result).toContain("## Repository preferences");
+    expect(result).toContain("... [truncated]");
+  });
+
   test("excludes full file content", () => {
     const result = buildToolUseFilePrompt({
       fileDiff: makeDiff(),
@@ -400,6 +467,7 @@ describe("buildToolUseFilePrompt", () => {
       availablePatterns: "",
     });
     expect(result).toContain("Use tools if you need more context");
+    expect(result).toContain("Before suggesting a new helper");
     expect(result).toContain("Return findings as JSON");
   });
 

@@ -1,4 +1,4 @@
-import type { FilePath, Finding, RepoFullName } from "@mergewise/shared-types";
+import type { FilePath, Finding, RepoFullName, SymbolKind } from "@mergewise/shared-types";
 import type { CompletionUsage } from "./client";
 
 /**
@@ -99,6 +99,40 @@ export interface ReviewLearnings {
   readonly preferences: readonly string[];
 }
 
+export type ReusableMatchRelation =
+  | "current-file"
+  | "imports"
+  | "imported-by"
+  | "same-directory"
+  | "repo";
+
+/**
+ * Candidate reusable symbol surfaced from repository indexing.
+ */
+export interface ReusableSymbolMatch {
+  readonly name: string;
+  readonly kind: SymbolKind;
+  readonly filePath: FilePath;
+  readonly line: number;
+  readonly exported: boolean;
+  readonly relation: ReusableMatchRelation;
+  readonly score: number;
+}
+
+/**
+ * Candidate reusable code example surfaced from repository indexing.
+ */
+export interface ReusableExampleMatch {
+  readonly name: string;
+  readonly kind: SymbolKind;
+  readonly filePath: FilePath;
+  readonly line: number;
+  readonly exported: boolean;
+  readonly relation: ReusableMatchRelation;
+  readonly score: number;
+  readonly snippet: string;
+}
+
 /**
  * Optional tools for enriching review context.
  *
@@ -107,6 +141,16 @@ export interface ReviewLearnings {
  */
 export interface ReviewToolkit {
   readonly getCallers?: ((filePath: FilePath) => FileGraphContext) | undefined;
+  readonly findReusableSymbols?: ((
+    filePath: FilePath,
+    query: string,
+    limit?: number,
+  ) => readonly ReusableSymbolMatch[]) | undefined;
+  readonly findReusableExamples?: ((
+    filePath: FilePath,
+    query: string,
+    limit?: number,
+  ) => readonly ReusableExampleMatch[]) | undefined;
   readonly getRepoLearnings?: ((
     repoName: RepoFullName,
     filePaths: readonly FilePath[],

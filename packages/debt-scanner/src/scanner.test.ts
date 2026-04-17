@@ -111,7 +111,9 @@ describe("scan", () => {
     expect(profile.scannedAt).toBeDefined();
     expect(Array.isArray(profile.findings)).toBe(true);
     expect(profile.findings).toEqual([]);
+    expect(Array.isArray(profile.symbols)).toBe(true);
     expect(stages).toContain("collect");
+    expect(stages).toContain("symbols");
     expect(stages).toContain("rank");
   });
 

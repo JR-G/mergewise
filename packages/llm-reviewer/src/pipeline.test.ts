@@ -35,6 +35,8 @@ function makeConfig(overrides: Partial<ReviewPipelineConfig> = {}): ReviewPipeli
   return {
     reviewModel: "test-model",
     apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:1/v1",
+    maxRetries: 0,
     ...overrides,
   };
 }
@@ -98,5 +100,24 @@ describe("runReviewPipeline", () => {
 
     expect(result.criticReport.findings).toEqual([]);
     expect(result.criticReport.filtered).toEqual([]);
+  });
+
+  test("degrades when toolkit context lookup throws", async () => {
+    const diffs = [makeDiff("src/index.ts", 3)];
+    const config = makeConfig({
+      toolkit: {
+        getCallers: () => {
+          throw new Error("getCallers failed");
+        },
+        getRepoLearnings: () => {
+          throw new Error("getRepoLearnings failed");
+        },
+      },
+    });
+
+    const result = await runReviewPipeline(diffs, PULL_REQUEST, makeCodebaseContext(), config);
+
+    expect(result.failedFiles.some((failure) => failure.error.includes("getCallers failed"))).toBe(false);
+    expect(result.failedFiles.some((failure) => failure.error.includes("getRepoLearnings failed"))).toBe(false);
   });
 });

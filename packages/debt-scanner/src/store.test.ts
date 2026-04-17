@@ -1,4 +1,6 @@
+import { Database } from "bun:sqlite";
 import { describe, expect, test, afterEach } from "bun:test";
+import { toFilePath, toLineNumber } from "@mergewise/shared-types";
 import { openStore } from "./store";
 import type { DebtProfile, DebtGraph, DebtFinding, HotspotEntry } from "./graph-types";
 import { tmpdir } from "node:os";
@@ -65,6 +67,14 @@ function makeProfile(overrides: Partial<DebtProfile> = {}): DebtProfile {
     graph,
     findings,
     hotspots,
+    symbols: [{
+      name: "buildWidget",
+      kind: "function",
+      file: toFilePath("src/index.ts"),
+      line: toLineNumber(12),
+      exported: true,
+      snippet: "export function buildWidget(): Widget {\n  return createWidget();\n}",
+    }],
     ...overrides,
   };
 }
@@ -108,6 +118,7 @@ describe("store", () => {
     expect(loaded!.scannedAt).toBe(profile.scannedAt);
     expect(loaded!.hotspots).toEqual(profile.hotspots);
     expect(loaded!.findings).toEqual(profile.findings);
+    expect(loaded!.symbols).toEqual(profile.symbols);
     expect(loaded!.graph.nodes.size).toBe(profile.graph.nodes.size);
     expect(loaded!.graph.edges).toEqual(profile.graph.edges);
 
@@ -192,5 +203,52 @@ describe("store", () => {
     expect(loaded).not.toBeNull();
     expect(loaded!.repoPath).toBe("/test/repo");
     storeB.close();
+  });
+
+  test("migrates legacy symbol rows by adding a snippet column", () => {
+    const dbPath = trackDb();
+    const database = new Database(dbPath, { create: true });
+    database.run(`CREATE TABLE scans (
+      id TEXT PRIMARY KEY,
+      repo_path TEXT NOT NULL,
+      scanned_at TEXT NOT NULL,
+      total_files INTEGER NOT NULL,
+      total_edges INTEGER NOT NULL,
+      total_findings INTEGER NOT NULL,
+      hotspot_count INTEGER NOT NULL
+    )`);
+    database.run(`CREATE TABLE symbols (
+      scan_id TEXT NOT NULL REFERENCES scans(id),
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      line INTEGER NOT NULL,
+      exported INTEGER NOT NULL,
+      PRIMARY KEY (scan_id, name, file_path, line, kind)
+    )`);
+    database.run(
+      "INSERT INTO scans (id, repo_path, scanned_at, total_files, total_edges, total_findings, hotspot_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["legacy-scan", "/test/repo", "2026-03-01T12:00:00.000Z", 0, 0, 0, 0],
+    );
+    database.run(
+      "INSERT INTO symbols (scan_id, name, kind, file_path, line, exported) VALUES (?, ?, ?, ?, ?, ?)",
+      ["legacy-scan", "buildWidget", "function", "src/index.ts", 12, 1],
+    );
+    database.close();
+
+    const store = openStore(dbPath);
+    const loaded = store.loadScan("legacy-scan");
+
+    expect(loaded).not.toBeNull();
+    expect(loaded!.symbols).toEqual([{
+      name: "buildWidget",
+      kind: "function",
+      file: toFilePath("src/index.ts"),
+      line: toLineNumber(12),
+      exported: true,
+      snippet: "",
+    }]);
+
+    store.close();
   });
 });

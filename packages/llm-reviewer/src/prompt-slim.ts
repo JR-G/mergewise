@@ -15,6 +15,9 @@ const MAX_FULL_FILE_LINES = 2000;
 const WINDOWED_COVERAGE_THRESHOLD = 0.9;
 const MAX_CALLERS_IN_PROMPT = 10;
 const MAX_LEARNINGS_IN_PROMPT = 5;
+const MAX_LEARNING_CHARS = 300;
+const MAX_LEARNINGS_SECTION_CHARS = 1_500;
+const TRUNCATED_TEXT_SUFFIX = "... [truncated]";
 
 /** @internal Exported for testing only. */
 export const MAX_DIFF_CHARS = 50_000;
@@ -46,6 +49,9 @@ You are a refactoring reviewer, not a bug finder or security scanner. Those are 
    Suggest: Delete the unnecessary code.
 
 Every suggestion must explain the concrete engineering cost of the current code — what breaks, what becomes harder to change, what coupling it creates. "This violates SRP" with no explanation is worthless. Show the developer WHY it matters for THEIR code.
+
+Prefer reusing existing repository abstractions over inventing new ones when the codebase already exposes a suitable helper, hook, service, type, or component.
+If reuse looks plausible, inspect a concrete repository example before suggesting a new abstraction or pattern.
 
 If the code is fine, say nothing. No praise, no filler. Returning {"findings": []} is correct and expected for well-written code.
 
@@ -119,6 +125,8 @@ You have tools to retrieve additional context about the file under review. Use t
 
 - read_file_section: Read a range of lines from the current file to understand surrounding context
 - get_callers: See which files depend on this file and its centrality/hotspot status
+- find_reusable_symbols: Search the repository for existing helpers, hooks, services, types, or components you can reuse
+- find_reusable_examples: Inspect bounded declaration snippets for existing repository abstractions before recommending a new one
 - lookup_pattern: Retrieve detailed guidance for a specific anti-pattern by ID
 - get_repo_preferences: Get repository-specific review preferences from prior feedback
 
@@ -264,6 +272,38 @@ function buildReviewSignalsSection(reviewSignals: ReviewSignals): string[] {
   return lines.length > 0 ? ["", "## Review signals", ...lines] : [];
 }
 
+function buildGraphContextSection(graphContext: FileGraphContext): string[] {
+  const callerList = graphContext.callers.slice(0, MAX_CALLERS_IN_PROMPT).join(", ");
+
+  return [
+    "",
+    "## Codebase context",
+    ...(callerList.length > 0 ? [`Callers: ${callerList}`] : []),
+    `Centrality: ${graphContext.centrality}`,
+    ...(graphContext.isHotspot ? ["This file is a change hotspot."] : []),
+  ];
+}
+
+function buildLearningsSection(learnings: ReviewLearnings): string[] {
+  if (learnings.preferences.length === 0) {
+    return [];
+  }
+
+  const lines = ["", "## Repository preferences"];
+  let remainingChars = MAX_LEARNINGS_SECTION_CHARS - countSectionChars(lines);
+
+  for (const preference of learnings.preferences.slice(0, MAX_LEARNINGS_IN_PROMPT)) {
+    const line = `- ${truncatePromptText(preference, MAX_LEARNING_CHARS)}`;
+    if (line.length > remainingChars) {
+      break;
+    }
+    lines.push(line);
+    remainingChars -= line.length + 1;
+  }
+
+  return lines.length > 2 ? lines : [];
+}
+
 /**
  * Configuration for building a dynamic file review prompt.
  */
@@ -338,11 +378,7 @@ export function buildDynamicFilePrompt(input: DynamicPromptInput): string {
   }
 
   if (input.learnings && input.learnings.preferences.length > 0) {
-    parts.push("");
-    parts.push("## Repository preferences");
-    for (const preference of input.learnings.preferences.slice(0, MAX_LEARNINGS_IN_PROMPT)) {
-      parts.push(`- ${preference}`);
-    }
+    parts.push(...buildLearningsSection(input.learnings));
   }
 
   parts.push("");
@@ -355,13 +391,17 @@ export function buildDynamicFilePrompt(input: DynamicPromptInput): string {
  * Configuration for building a tool-use file review prompt.
  *
  * @remarks
- * Unlike {@link DynamicPromptInput}, this excludes all context that is
- * now available via tool calls (file content, knowledge, graph, learnings).
+ * Keeps the shipped prompt compact while still allowing bounded direct
+ * context (file windows, graph summary, repository preferences). Tools are
+ * available for deeper follow-up beyond what is injected here.
  */
 export interface ToolUsePromptInput {
   readonly fileDiff: FileDiff;
+  readonly fullContent?: string | null;
   readonly signals: StructuralSignals;
   readonly reviewSignals?: ReviewSignals | undefined;
+  readonly graphContext?: FileGraphContext | undefined;
+  readonly learnings?: ReviewLearnings | undefined;
   readonly prTitle?: string | undefined;
   readonly prDescription?: string | undefined;
   readonly availablePatterns: string;
@@ -371,9 +411,9 @@ export interface ToolUsePromptInput {
  * Builds a lean user prompt for tool-use review.
  *
  * @remarks
- * Includes only the diff, structural signals, and available patterns summary.
- * Full file content, knowledge docs, graph context, and learnings are
- * available via tool calls — not stuffed into the prompt.
+ * Includes the diff, bounded file context, structural signals, optional
+ * graph/learnings context, and available patterns summary. Tools remain
+ * available for deeper follow-up without requiring a second prompt path.
  */
 export function buildToolUseFilePrompt(input: ToolUsePromptInput): string {
   const parts: string[] = [];
@@ -383,16 +423,41 @@ export function buildToolUseFilePrompt(input: ToolUsePromptInput): string {
 
   parts.push(...formatDiffSection(input.fileDiff.hunks));
 
+  if (input.fullContent) {
+    parts.push(...buildFileContextSection(input.fullContent, input.fileDiff.hunks));
+  }
+
   parts.push(...buildSignalsSection(input.signals));
   if (input.reviewSignals) {
     parts.push(...buildReviewSignalsSection(input.reviewSignals));
+  }
+
+  if (input.graphContext) {
+    parts.push(...buildGraphContextSection(input.graphContext));
+  }
+
+  if (input.learnings) {
+    parts.push(...buildLearningsSection(input.learnings));
   }
 
   parts.push("");
   parts.push(input.availablePatterns);
 
   parts.push("");
-  parts.push("Review the diff above. Use tools if you need more context about the file, its callers, or relevant anti-patterns. Only produce findings for added lines (prefixed with +). Return findings as JSON.");
+  parts.push("Review the diff above. Use tools if you need more context about the file, its callers, reusable repository abstractions, concrete repository examples, or relevant anti-patterns. Before suggesting a new helper, hook, service, type, or component, check whether the repository already has one you can reuse and inspect a concrete example when that would make the guidance more specific. Only produce findings for added lines (prefixed with +). Return findings as JSON.");
 
   return parts.join("\n");
+}
+
+function truncatePromptText(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  const contentLimit = Math.max(0, maxChars - TRUNCATED_TEXT_SUFFIX.length);
+  return `${value.slice(0, contentLimit)}${TRUNCATED_TEXT_SUFFIX}`;
+}
+
+function countSectionChars(lines: readonly string[]): number {
+  return lines.reduce((total, line) => total + line.length + 1, 0);
 }

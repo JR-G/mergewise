@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
-import { toFilePath } from "@mergewise/shared-types";
+import { toFilePath, toLineNumber } from "@mergewise/shared-types";
 import { buildReviewToolkit } from "./toolkit-adapter";
-import type { DebtGraph, DebtNode, DebtEdge, HotspotEntry } from "./graph-types";
+import type { DebtGraph, DebtNode, DebtEdge, HotspotEntry, IndexedSymbol } from "./graph-types";
 
 function makeNode(filePath: string, centrality: number): DebtNode {
   return {
@@ -37,6 +37,22 @@ function makeHotspot(filePath: string, score: number): HotspotEntry {
     centrality: score,
     signalDensity: 1,
     lineCount: 100,
+  };
+}
+
+function makeSymbol(
+  name: string,
+  filePath: string,
+  overrides: Partial<IndexedSymbol> = {},
+): IndexedSymbol {
+  return {
+    name,
+    kind: "function",
+    file: toFilePath(filePath),
+    line: toLineNumber(10),
+    exported: true,
+    snippet: `export function ${name}(): void {\n  return;\n}`,
+    ...overrides,
   };
 }
 
@@ -175,4 +191,98 @@ describe("buildReviewToolkit", () => {
     expect(result.centrality).toBeNaN();
   });
 
+  test("finds reusable symbols from directly imported files first", () => {
+    const graph = makeGraph(
+      [
+        makeNode("src/feature.ts", 0.7),
+        makeNode("src/shared/hooks.ts", 0.4),
+        makeNode("src/other.ts", 0.2),
+      ],
+      [
+        { source: "src/feature.ts", target: "src/shared/hooks.ts", kind: "imports" },
+      ],
+    );
+    const toolkit = buildReviewToolkit(graph, [], [
+      makeSymbol("useUserFilters", "src/shared/hooks.ts"),
+      makeSymbol("useUserFiltersLegacy", "src/other.ts"),
+    ]);
+
+    const matches = toolkit.findReusableSymbols!(toFilePath("src/feature.ts"), "user filters", 5);
+
+    expect(matches[0]?.filePath).toBe(toFilePath("src/shared/hooks.ts"));
+    expect(matches[0]?.relation).toBe("imports");
+  });
+
+  test("returns empty reusable symbol matches when query is blank", () => {
+    const toolkit = buildReviewToolkit(makeGraph([], []), [], [
+      makeSymbol("useUserFilters", "src/shared/hooks.ts"),
+    ]);
+
+    const matches = toolkit.findReusableSymbols!(toFilePath("src/feature.ts"), "   ", 5);
+
+    expect(matches).toEqual([]);
+  });
+
+  test("returns reusable examples with ranked declaration snippets", () => {
+    const graph = makeGraph(
+      [
+        makeNode("src/feature.ts", 0.7),
+        makeNode("src/shared/hooks.ts", 0.4),
+      ],
+      [
+        { source: "src/feature.ts", target: "src/shared/hooks.ts", kind: "imports" },
+      ],
+    );
+    const toolkit = buildReviewToolkit(graph, [], [
+      makeSymbol("useUserFilters", "src/shared/hooks.ts", {
+        snippet: [
+          "export function useUserFilters(): FilterState {",
+          "  return createFilterState();",
+          "}",
+        ].join("\n"),
+      }),
+    ]);
+
+    const matches = toolkit.findReusableExamples!(toFilePath("src/feature.ts"), "user filters", 5);
+
+    expect(matches[0]?.filePath).toBe(toFilePath("src/shared/hooks.ts"));
+    expect(matches[0]?.relation).toBe("imports");
+    expect(matches[0]?.snippet).toContain("createFilterState");
+  });
+
+  test("skips reusable examples without snippets", () => {
+    const toolkit = buildReviewToolkit(makeGraph([], []), [], [
+      makeSymbol("useUserFilters", "src/shared/hooks.ts", { snippet: "" }),
+    ]);
+
+    const matches = toolkit.findReusableExamples!(toFilePath("src/feature.ts"), "user filters", 5);
+
+    expect(matches).toEqual([]);
+  });
+
+  test("bounds reusable symbol results for invalid and oversized limits", () => {
+    const symbols = Array.from({ length: 12 }, (_, index) =>
+      makeSymbol(`useUserFilters${index}`, `src/shared/hooks-${index}.ts`),
+    );
+    const toolkit = buildReviewToolkit(makeGraph([], []), [], symbols);
+
+    expect(toolkit.findReusableSymbols!(toFilePath("src/feature.ts"), "user filters", 0)).toEqual([]);
+    expect(toolkit.findReusableSymbols!(toFilePath("src/feature.ts"), "user filters", -1)).toEqual([]);
+    expect(toolkit.findReusableSymbols!(toFilePath("src/feature.ts"), "user filters", Number.NaN)).toEqual([]);
+    expect(toolkit.findReusableSymbols!(toFilePath("src/feature.ts"), "user filters", 2.7)).toHaveLength(2);
+    expect(toolkit.findReusableSymbols!(toFilePath("src/feature.ts"), "user filters", 999)).toHaveLength(10);
+  });
+
+  test("bounds reusable example results for invalid and oversized limits", () => {
+    const symbols = Array.from({ length: 12 }, (_, index) =>
+      makeSymbol(`useUserFilters${index}`, `src/shared/hooks-${index}.ts`),
+    );
+    const toolkit = buildReviewToolkit(makeGraph([], []), [], symbols);
+
+    expect(toolkit.findReusableExamples!(toFilePath("src/feature.ts"), "user filters", 0)).toEqual([]);
+    expect(toolkit.findReusableExamples!(toFilePath("src/feature.ts"), "user filters", -1)).toEqual([]);
+    expect(toolkit.findReusableExamples!(toFilePath("src/feature.ts"), "user filters", Number.NaN)).toEqual([]);
+    expect(toolkit.findReusableExamples!(toFilePath("src/feature.ts"), "user filters", 2.7)).toHaveLength(2);
+    expect(toolkit.findReusableExamples!(toFilePath("src/feature.ts"), "user filters", 999)).toHaveLength(10);
+  });
 });
